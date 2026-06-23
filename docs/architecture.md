@@ -4,11 +4,14 @@
 
 ## 1. 产品定位
 
-OpenPetAgent 是一个 macOS 桌面 AI 物理沙盒桌宠：
+OpenPetAgent 是一个建立在**可插拔 PetRenderer 平台**之上的 macOS 桌面 AI 伴侣，不是单一一颗弹力球：
 
-- 一颗与桌面窗口交互、能造雪、能聊天的弹力球
-- 长期目标是从「桌宠」演进为「macOS 桌面级全能个人助理」
+- 默认皮肤 = Metal-SDF 弹力球（Orb），但它只是**五种工作形象之一**，不是产品本身
+- 五种已落地形象（运行时可热切换）：Orb SDF / Slime SDF / Codex·petdex sprite 表 / Shimeji 行为引擎 / Live2D Cubism——经 `PetRenderer` 协议 + `PetPluginRegistry` 注册，`DesktopShellController.replacePetRenderer` 运行时热换，应用内桌宠库 GUI（设置 →「管理桌宠库…」→ `PetLibraryView`，「获取社区桌宠…」→ `CommunityPetsSheet`）切换/导入/在线安装/同屏
+- 与桌面窗口交互、能造雪/雨、能聊天，并能感知外部编码会话；长期目标是从「桌宠」演进为「macOS 桌面级全能个人助理」
 - 核心难点是系统集成（透明 overlay、点击穿透、跨 Space、TCC 权限），不是场景编辑器
+
+> 第 3 节模块清单印证此定位：Rendering 层同时承载抽象 SDF 形象、社区 sprite、Shimeji 引擎、Live2D 四类后端；弹力球只是默认皮肤。
 
 因此长期架构选择 **「原生 macOS 壳层 + 游戏化运行时」**，不走纯 Godot 也不走纯原生：
 
@@ -105,9 +108,9 @@ RuntimeOutput
 ### Swift / AppKit 负责「系统知道什么 + 角色该做什么」
 
 - `NSWindow` / `NSPanel` / `MTKView` 生命周期和层级
-- TCC（Accessibility / Screen Recording 将来）权限申请
+- TCC（Accessibility / Screen Recording / Location / Apple Events，权限中心 `SettingsPermissionsView` 申请，已落地）
 - 桌面上下文采集：window / cursor / frontmost app / accessibility
-- AI 编排、工具调用、安全策略（暂未落地）
+- AI 编排（LLM chat 流式 + 双 provider，已落地）、工具调用（`claude -p` / `codex exec` 子进程，已落地）、安全策略（API key 仍存 UserDefaults，未迁 Keychain）
 - 行为决策（`BehaviorEngine`）
 
 ### pet 运动 runtime（纯 Swift `LocalRuntimeClient`，2026-06-06 起）
@@ -121,7 +124,7 @@ RuntimeOutput
 
 ### Metal 负责「天气/沙物理模拟 + 渲染」（falling-sand，全 Buffer 无离屏纹理）
 
-物理数据**全在 `MTLBuffer`，不用 `MTLTexture`**：`cellBufferA/B`（双缓冲 `atomic_uint` CA 网格，~127K cell @ 4px；payload pack species/age/clock）+ `reservationBuffer`（无锁移动认领）+ `temperatureBuffer`（per-cell Float，相变读）+ `occlusionBuffer`（per-cell UInt8 窗口遮挡 mask）+ `rectsBuffer`（窗口矩形）+ `columnDepthBuffer`（每列雪深）+ 粒子 buffer。
+CA 模拟数据**用 `atomic_uint` `MTLBuffer`，不用 `RWTexture`**，渲染直接画 drawable（无离屏 MRT 纹理）：`cellBufferA/B`（双缓冲 `atomic_uint` CA 网格，~127K cell @ 4px；payload pack species/age/clock）+ `reservationBuffer`（无锁移动认领）+ `temperatureBuffer`（per-cell Float，相变读）+ `occlusionBuffer`（per-cell UInt8 窗口遮挡 mask）+ `rectsBuffer`（窗口矩形）+ `columnDepthBuffer`（每列雪深）+ 粒子 buffer。部分 spawn / temperature 写入与回读走 CPU 路径（`storageModeShared` buffer 的 `.contents()`）。
 
 - **模拟 — compute pass**（`FallingSandKernels` / `FallingSandParticleKernels`）：
   - 飞行粒子：`fs_integrate_particles`（亚像素重力/风/turbulence 积分）→ `fs_particle_land`（触支撑面沉积进 CA cell）
@@ -132,7 +135,7 @@ RuntimeOutput
   - 飞行粒子：`fs_particle_vertex/fragment`，instanced quad（每粒 6 顶点），径向 alpha 软边
   - 透明叠桌面：`CAMetalLayer.isOpaque = false` + alpha blend
 - **设计选择**：网格用 `atomic_uint` **Buffer** + 三 pass 无锁认领，而非 `RWTexture` —— atomic 操作 buffer 比 texture 顺手；渲染 fullscreen fragment 直接读 buffer，省一趟离屏纹理。
-- **未落地**：像素级 alpha mask 碰撞（pet 轮廓堆雪 = 工作块 B）。温度驱动相变（snow↔water↔ice）已落地（`fs_apply_phase`）。
+- **已落地**：pet alpha 轮廓堆雪（`fs_rasterize_pet`，工作块 B1）。温度驱动相变（snow↔water↔ice）已落地（`fs_apply_phase`）。**未落地**：像素级**窗口** alpha 轮廓碰撞（窗口仍按矩形遮挡）。
 
 ## 5. 关键数据流
 
@@ -224,10 +227,10 @@ MinimalAppDelegate.advanceRuntimeFrame (per frame)
 `onScreen + layer == 0 + alpha >= 0.05` 仍然返回**被遮挡的窗口**、**DevTools 浮动面板**、layered popup。我们目前的应对：
 
 - 把 wallpaper 全屏窗口过滤掉（`width >= worldWidth * 0.9 && height >= worldHeight * 0.9`）
-- runtime 端按 CGWindowList 前到后 z-order 做**遮挡感知 settle**：每个 rect 的 top 必须在粒子列 `x` 上未被任何更前 rect 的 `[y, y+h]` 覆盖才算 candidate
+- 遮挡是**纯 2D 矩形**：cell 落在**任意**窗口矩形内即被清除/阻挡（`fs_rasterize_occlusion`），**不看 z-order**。雪堆在窗口顶；浮动窗口**不**夹断其下方敞开的地面；但前景窗口**不会**阻止它视觉遮住的后方窗口顶上堆雪（CGWindowList z-order 仅保留在几何中、**不参与可见性判定**）。pet alpha 轮廓（`fs_rasterize_pet`，B1）作第二个 occluder OR 进同一 mask，每帧重清。
 - `WindowTracker` 100ms TTL（关窗事件不可靠时强制重读）
 
-回归：`snowflakes_settle_on_back_window_in_an_unoccluded_column`、`snowflakes_do_not_settle_when_back_window_top_is_occluded_by_front_window`、`snowflakes_settle_on_tall_back_window_when_short_front_window_does_not_cover_top`、`windowTrackerRefreshesVisibleWindowsAfterCacheLifetimeExpires`。
+回归：`clearsOccludedSnow`（`FallingSandGPUPhaseTests`）、`FallingSandPetOccluderTests`、`windowTrackerRefreshesVisibleWindowsAfterCacheLifetimeExpires`。
 
 ### 6.2 CGWindow top-origin vs runtime bottom-origin
 
@@ -247,7 +250,7 @@ Swift `@main async` 把启动放进 Task，进入 `NSApplication.run()` 时主�
 
 仅设 `clearColor` alpha=0 不够，`CAMetalLayer` 默认 opaque 会把内容涂黑。必须 `layer?.isOpaque = false` + `(layer as? CAMetalLayer)?.isOpaque = false`。
 
-回归：`metalSnowOverlayViewUsesTransparentMetalLayer`。
+回归：`desktopOverlayViewHidesNSTextFieldSnowflakesWhenMetalLayerIsActive`。
 
 ### 6.5 `MTKView.drawableSize` 是物理像素，粒子是点
 
@@ -275,11 +278,10 @@ Swift `@main async` 把启动放进 Task，进入 `NSApplication.run()` 时主�
 
 ### 短期：把 Noita 级硬标准在 GPU 通路上落地
 
-GPU 4K 粒子只是 Noita 级的入门票，达成项目设计标杆的七条硬标准还差三条：
+堆积层（falling-sand CA：列深 / 沉积 / 硬上限 `maxColumnDepth=24` / 三 pass 无锁流动）、相变（融/冻/蒸发/凝结 `fs_apply_phase`）、升华稳态、来自 Open-Meteo 实测 °C 的温度消费均已落地。仍真正未落地的两条：
 
-- **像素级窗口碰撞**：ScreenCaptureKit 拿前景应用 alpha mask，compute shader 采样后让粒子停在窗口几何形状上而不是矩形边
-- **堆积层（falling-sand CA）**：RWTexture 雪堆纹理，每帧 dispatch CA kernel，粒子触底累加 alpha，邻接 cell 滑动遵循 angle of repose
-- **风场 + 温度场 + 相变**：2D 浮点纹理驱动粒子位移与 lifetime；温度 > 阈值 → 雪堆融化、粒子蒸发
+- **窗口遮挡保真度**：当前是 sharp-corner 轴对齐矩形遮挡（`fs_rasterize_occlusion`，不识别 macOS 圆角、无 z-order）。分阶段提升：① 识别**圆角矩形**（四角按 corner-radius SDF 不计遮挡，性价比最高、先做）→ ② z-order 可见性（前景窗口挡住的后方窗口顶不堆雪）→ ③ ScreenCaptureKit 抓前景窗口 alpha 做**逐像素真实轮廓**。pet 轮廓 B1 已落地，差的是窗口侧
+- **CA 网格风场 / 动态天气风**：粒子级风（`particles.windX = rainWindLean`）已被消费，但 **CA 网格风 `engine.windX` 在生产里恒为 0**（snow fall pass 强制 `windX:0`）；天气风速→FS 动态 wind 联动仍是 follow-up
 
 ### 中期：桌面交互能力
 
@@ -289,13 +291,14 @@ GPU 4K 粒子只是 Noita 级的入门票，达成项目设计标杆的七条硬
 
 ### 长期：AI 助理升维
 
-- LLM 编排接入 `Orchestrator.ConversationResponder`，替换当前 echo reply
+> LLM chat 闭环（OpenAI/Anthropic SSE 流式 + 持久化 + 桌面上下文注入 + 工具模式路由）已落地，不在未来工作里。旧 echo reply 现仅作**无状态兜底**——未配置 provider / store 时才回。
+
 - 工具调用框架（窗口操作、文件、剪贴板、Apple 系应用）
 - 桌面感知 → 主动建议（基于 AX / OCR / 活动模式）
 
 ## 8. 工程债务
 
-- `docs/development-guide.md` 仍残留旧架构（SpriteKit / Plugins / Sources/Core/Weather）的描述片段，需要按当前栈重写
+- API key 仍存 UserDefaults，未迁 Keychain（见 §4 安全策略）
 
 ## 9. 历史决策（保留作背景）
 

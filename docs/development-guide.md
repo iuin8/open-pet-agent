@@ -2,6 +2,23 @@
 
 > 当前架构总览在 [architecture.md](architecture.md)。本文档只描述构建、运行、测试、调试的操作步骤。
 
+## 克隆与首次配置
+
+```bash
+# 必须带 --recurse-submodules —— Vivarium 引擎是子模块
+git clone --recurse-submodules https://github.com/iuin8/open-pet-agent.git
+```
+
+⚠️ **`--recurse-submodules` 是强制的**。Vivarium 物理/渲染/行为引擎挂在子模块
+`Packages/Vivarium`(→ `github.com/iuin8/pet-agent-vivarium`)。普通 `git clone`
+会留下空的 `Packages/Vivarium`,`swift build` 直接失败。已 clone 漏了子模块的话补:
+`git submodule update --init --recursive`。
+
+**Live2D 可选,不影响主流程**:Live2D Cubism 形象后端需要自备 Cubism SDK(专有许可,
+不入库),跑 `scripts/setup-cubism.sh` 用你自己下的官方 SDK 安装到 `Vendor/Cubism/`。
+没装 Cubism 时 clone 照常 `swift build && swift run`、桌宠/物理/AI 全功能可用,只是
+Live2D 形象渲染为占位、`Live2DTests` 不参与编译(见下方测试章节)。
+
 ## 构建与运行
 
 ### 日常推荐: 一键 build + 签名 + 装 + 启动
@@ -10,9 +27,10 @@
 ./install.sh
 ```
 
-内部跑 `./build.sh`(`swift build -c release` → 打 `OpenPetAgent.app` bundle →
-Apple Development 证书签名), 然后覆盖装到 `/Applications/OpenPetAgent.app` 并启
-动。**TCC 权限稳定**(Accessibility / 截屏 / 位置不会因为重 install 丢失)。
+内部跑 `./build.sh`(`swift build -c release --arch arm64`(Apple Silicon only) →
+手工组装 `OpenPetAgent.app` bundle → Apple Development 证书签名,无证书则 ad-hoc
+回退), 然后覆盖装到 `/Applications/OpenPetAgent.app` 并启动。**TCC 权限稳定**
+(Accessibility / 截屏 / 位置 / Apple Events 不会因为重 install 丢失)。
 
 详细签名 / 证书配置 / 故障排查见 [signing-and-install.md](signing-and-install.md)。
 
@@ -49,27 +67,43 @@ swift run
 ### Swift 层（壳层、桥接、窗口跟踪、渲染装配）
 
 ```bash
-swift test --parallel                              # 根包:1215 测试(Shell/App/Orchestrator/ToolMode/Weather/Shimeji/Live2D/AgentSensing…)
-swift test --parallel --package-path Packages/Vivarium   # Vivarium 子包:356 测试(Context/RuntimeBridge/Rendering/ShimejiImport/PetCatalog/PetBehavior)
+swift test --parallel                              # 根包(Shell/App/Orchestrator/ToolMode/Weather/AgentSensing/Shimeji/Live2D…)
+swift test --parallel --package-path Packages/Vivarium   # Vivarium 子包(Context/RuntimeBridge/SandboxPhysics/Rendering/ShimejiImport/PetCatalog/PetBehavior)
 ```
 
-> **测试分两包(2026-06-09 P3 后)**：桌宠引擎簇迁入 `Packages/Vivarium` 子包后,`swift test` 按包跑。**全套 = 两条命令都绿**(2026-06-14 实测 1215+356=1571,会随提交增长 —— 数字以 `swift test list` 为准);只跑根包会漏掉 Vivarium 测试、误判全绿。
+> **测试分两包(2026-06-09 P3 后)**：桌宠引擎簇迁入 `Packages/Vivarium` 子包后,`swift test` 按包跑。**全套 = 两条命令都绿**(具体测试数随提交增长,以 `swift test list` 为准);只跑根包会漏掉 Vivarium 测试、误判全绿。
 
-测试模块：根包 `AppTests` / `ShellTests` / `OrchestratorTests` / `ToolModeTests` / `WeatherTests` / `ShimejiTests`(+ `Live2DTests`);Vivarium 子包 `ContextTests` / `RuntimeBridgeTests` / `RenderingTests` / `ShimejiImportTests` / `PetCatalogTests` / `PetBehaviorTests`。
+测试模块：根包 `AppTests` / `ShellTests` / `OrchestratorTests` / `ToolModeTests` / `WeatherTests` / `AgentSensingTests` / `ShimejiTests`(+ `Live2DTests`,**仅当 `Vendor/Cubism` 存在**;Cubism SDK 经 `scripts/setup-cubism.sh` 自装,新 clone 不带 SDK 照常 build/run、无 Live2D 形象、`Live2DTests` 也不存在);Vivarium 子包 `ContextTests` / `RuntimeBridgeTests` / `SandboxPhysicsTests` / `RenderingTests` / `ShimejiImportTests` / `PetCatalogTests` / `PetBehaviorTests`。
 
-> `--parallel` 让 8 个 test target 跨进程并发执行（默认 SwiftPM CLI 是 `--no-parallel`，只在 Swift Testing framework 内 parallel，不跨 target）。实测在本仓库可把全套从 ~46s 压到 ~40s。
+> `--parallel` 让一个包内的多个 test target 跨进程并发执行（默认 SwiftPM CLI 是 `--no-parallel`，只在 Swift Testing framework 内 parallel，不跨 target）。target 数是**按包计**：根包约 8 个(含 `AgentSensingTests`、`Live2DTests` 视 Cubism 而定)、Vivarium 约 7 个(含 `SandboxPhysicsTests`)，`--parallel` 在各自那条命令内生效，不跨包。
 
 ### 关键回归测试（不要让它们挂）
 
 | 回归名 | 防护什么 |
 |--------|---------|
-| `snowflakes_do_not_settle_when_back_window_top_is_occluded_by_front_window` | 上层窗口遮挡时下层 top 不应该接住雪 |
+| `clearsOccludedSnow`(Vivarium `SandboxPhysicsTests/FallingSandGPUPhaseTests`) | 逐格矩形遮挡：落在任意窗口矩形内的格子每帧被清除（2D 遮挡，无 z-order） |
 | `runtimeBridgeFlipsTopOriginWindowBoundsIntoBottomOriginCollisionRects` | CGWindow 顶为 y=0 vs Runtime 底为 y=0 的坐标翻转 |
-| `metalSnowOverlayViewUsesTransparentMetalLayer` | `CAMetalLayer.isOpaque = false`，否则透明叠加层变黑 |
+| `desktopOverlayViewHidesNSTextFieldSnowflakesWhenMetalLayerIsActive`(`ShellTests/DesktopShellControllerTests`) | Metal 层激活后旧 NSTextField 雪花被隐藏，叠加层走 Metal 透明渲染 |
 | `minimalAppDelegateDefaultFrameLoopTicksWithoutRunLoopModeDependence` | 主线程 frame loop 与 `NSApplication.run()` 兼容性 |
 | `windowTrackerRefreshesVisibleWindowsAfterCacheLifetimeExpires` | 关窗事件不可靠时 100ms TTL 强制重读 |
 
 陷阱与对应回归的完整清单见 [architecture.md §6 已知陷阱与设计教训](architecture.md)。
+
+### 桌宠渲染器形象与测试位置
+
+OpenPetAgent 是**可插拔多桌宠平台**：`PetRenderer` 协议 + `PetPluginRegistry`，
+`DesktopShellController.replacePetRenderer` 运行时热切换。弹力球只是默认皮肤。
+五种已工作的形象格式与其测试归属:
+
+| 形象格式 | 渲染器 | 测试 |
+|---------|--------|------|
+| Orb SDF（默认） | `OrbMetalRenderer` | `RenderingTests`(Vivarium) |
+| Slime SDF | `SlimeMetalRenderer` | `RenderingTests`(Vivarium) |
+| Codex·petdex sprite 图集（8×9 + `pet.json`） | `SpriteSheetPetRenderer` + `CodexSpritePackLoader` | `RenderingTests`(Vivarium) |
+| Shimeji | `ShimejiPetRenderer` + 行为引擎 | `ShimejiTests`(根) + `ShimejiImportTests`(Vivarium) |
+| Live2D Cubism | `Live2DPetRenderer` | `Live2DTests`(根,**仅当 Cubism SDK 存在**) |
+
+桌宠库 / 目录 / 行为另有 `PetCatalogTests`、`PetBehaviorTests`(均 Vivarium)。
 
 ## 调试技巧
 
@@ -77,7 +111,7 @@ swift test --parallel --package-path Packages/Vivarium   # Vivarium 子包:356 �
 
 - Xcode → Open Developer Tool → Metal Debugger，attach 到 `OpenPetAgent` 进程
 - `FallingSandDriver.tick` 一次完整 frame 的 compute dispatch（`FallingSandGPUEngine`）+ render pass 可以单帧 capture
-- `[[point_coord]]` fragment shader 出黑屏：检查 `MTKView.layer?.isOpaque = false`（[architecture.md §6.4](architecture.md)）
+- Metal overlay 出黑屏：检查 `MTKView.layer?.isOpaque = false` 且 `(layer as? CAMetalLayer)?.isOpaque = false`（粒子用 instanced quad billboard，macOS 上 `point_size` 被钳到 1，没有 point sprite）（[architecture.md §6.4](architecture.md)）
 - 粒子位置看起来错位：检查 viewport 用 `bounds.size` 还是 `drawableSize`（[architecture.md §6.5](architecture.md)）
 
 ### 物理悬浮 / 不掉雪问题
