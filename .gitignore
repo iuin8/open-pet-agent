@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# Build artifacts
+*.o
+*.d
+*.swp
+releases.json
+.worktrees/
+
+# build.sh 产物 — 不入库, install.sh 用户自跑
+OpenPetAgent.app/
+
+# 工作块 D:Live2D Cubism SDK(专有许可二进制 + 源)—— 绝不入库。
+# 别人拿到本仓后自跑 scripts/setup-cubism.sh <官方SDK.zip> 解进这里(自己下 SDK)。
+# Package.swift 检测此目录是否存在 → 有则启用 Live2D target,无则优雅跳过。
+Vendor/Cubism/
+# setup-cubism.sh 把 Core C 头拷进 CubismCore target(本地解析),那份拷贝也是 SDK 内容,不入库。
+Sources/CubismCore/include/Live2DCubismCore.h

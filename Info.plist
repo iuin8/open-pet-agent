@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleDisplayName</key>
+    <string>OpenPetAgent</string>
+    <key>CFBundleExecutable</key>
+    <string>OpenPetAgent</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.openpetagent</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>OpenPetAgent</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <!-- Accessory app: 无 Dock icon, 只在菜单栏显示 ❄ 图标 + 桌面层 pet/灵动岛 -->
+    <key>LSUIElement</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <!-- TCC 用户友好说明 -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>OpenPetAgent 需要 Apple Events 权限来读取前景窗口和桌面图标位置,用于物理沙盒交互。</string>
+    <key>NSLocationUsageDescription</key>
+    <string>OpenPetAgent 需要位置信息来获取本地真实天气,驱动雪/雨物理沙盒(后续 CoreLocation 接入时启用)。</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>OpenPetAgent 需要位置信息来获取本地真实天气,驱动雪/雨物理沙盒(后续 CoreLocation 接入时启用)。</string>
+    <!-- WeatherKit 后续接入 (需 Apple Dev entitlement, 当前用 Open-Meteo 不需要) -->
+    <!-- 注: Accessibility 权限是通过 AXIsProcessTrusted 触发系统弹窗, 不在 plist 申请 -->
+</dict>
+</plist>

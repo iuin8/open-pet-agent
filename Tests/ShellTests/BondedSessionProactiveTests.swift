@@ -1,0 +1,41 @@
+import AppKit
+import Testing
+@testable import Shell
+
+@MainActor
+@Suite("BondedSession 主动建议注入")
+struct BondedSessionProactiveTests {
+    private func makeSession() -> BondedSession {
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+                           styleMask: [.borderless], backing: .buffered, defer: true)
+        return BondedSession(
+            attachedToPet: win,
+            replyHandler: { _ in "" }
+        )
+    }
+
+    @Test("injectProactiveSuggestion → 单颗暖染色气泡，count==1")
+    func injectSingleBubble() {
+        let session = makeSession()
+        session.injectProactiveSuggestion(context: "深夜", reply: "凌晨了，注意休息", onDismiss: { _ in })
+        #expect(session.chain.bubbleCount == 1)
+        #expect(session.chain.bubble(at: 0)?.kind == .assistantReply)
+    }
+
+    @Test("空 reply → 不注入")
+    func emptyReplyNoOp() {
+        let session = makeSession()
+        session.injectProactiveSuggestion(context: "深夜", reply: "   ", onDismiss: { _ in })
+        #expect(session.chain.bubbleCount == 0)
+    }
+
+    @Test("onDismiss 接到 chain.onAutoDismissed")
+    func dismissWired() {
+        let session = makeSession()
+        var dismissed = false
+        session.injectProactiveSuggestion(context: "专注中", reply: "需要帮忙吗", onDismiss: { _ in dismissed = true })
+        // 直接驱动 chain 回调验证 wiring（不等真实 8s timer）
+        session.chain.onAutoDismissed?(false)
+        #expect(dismissed == true)
+    }
+}

@@ -1,0 +1,3 @@
+[submodule "Packages/Vivarium"]
+	path = Packages/Vivarium
+	url = https://github.com/iuin8/pet-agent-vivarium.git

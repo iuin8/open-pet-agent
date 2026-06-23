@@ -1,0 +1,4 @@
+module Live2DBridge {
+    header "Live2DBridge.h"
+    export *
+}

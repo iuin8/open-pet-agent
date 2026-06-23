@@ -1,0 +1,247 @@
+import AppKit
+import SwiftUI
+
+/// 锚定式多轮对话卡片控制器（替代 Spotlight 式单轮 `QuickAskWindowController`）。
+///
+/// - 双击 pet / ⌥Space / ⌘⇧Space / 灵动岛点击 → `toggle()` 把卡片**弹到 pet 旁**
+///   （`ChatCardAnchor.place` 选边 + clamp，spring 从锚点放大进场）。
+/// - 多轮：每轮经注入的 `streamProvider`（= orchestrator `replyStream`，**读写
+///   ConversationStore** 拼历史上下文）流式；开卡片用 `historyProvider` 从 store 恢复历史。
+/// - 卡片**固定尺寸** + 内部 ScrollView 滚动 → 绕开 `NSHostingView(sizingOptions=[])`
+///   的动态高坑（lessons-learned §3.2）。
+///
+/// 设计参照 AccountyCat (https://github.com/strjonas/AccountyCat) 的 WindowCoordinator（锚定 popover）+ 沿用 QuickAsk 的
+/// NSPanel / 32ms 流式节流 / canBecomeKey 模式。
+@MainActor
+public final class ChatCardWindowController {
+
+    // MARK: - Types
+
+    /// 多轮流式 provider。注入自 App：内部走 `replyStream`（写 ConversationStore + 拼历史）。
+    public typealias StreamProvider = @MainActor (String) -> AsyncThrowingStream<String, Error>
+    /// 历史快照 provider。注入自 App：读 `ConversationStore.messages()` 映射成 `[ChatCardRow]`。
+    public typealias HistoryProvider = @MainActor () async -> [ChatCardRow]
+
+    // MARK: - Public surface
+
+    /// 测试访问器：窗口实例（首次 show 前 nil）。
+    public var window: NSPanel? { panel }
+    /// 测试 / wiring 访问器：卡片状态。
+    public var cardState: ChatCardState { state }
+    /// wiring 访问器：外部会话流 store（Claude Code / Codex tab 渲染源）。
+    /// App 接线层往里喂实时 events（`appendLive`）+ 卡片弹出时回填历史（`setHistory`）。
+    public var agentSessionStore: AgentSessionStore { sessionStore }
+
+    /// App 注入：pet 锚矩形（屏幕坐标）。缺席/拿不到时回退 `.zero` → 卡片落屏幕左下角边距处。
+    public var anchorRectProvider: (@MainActor () -> NSRect)?
+    /// App 注入：屏幕可见区。缺席回退主屏 visibleFrame。
+    public var screenFrameProvider: (@MainActor () -> NSRect)?
+    /// App 注入：开卡片时恢复历史。缺席则不恢复（空卡片）。
+    public var historyProvider: HistoryProvider?
+    /// App 注入：开卡片时回填外部会话历史到 `sessionStore`（读活跃 transcript 尾部）。
+    /// 在卡片**弹出之后**异步调（reader 文件读在后台，store 更新驱动 tab 视图，不阻塞进场）。
+    public var sessionHistoryLoader: (@MainActor () async -> Void)?
+
+    // MARK: - Init
+
+    public init(streamProvider: @escaping StreamProvider) {
+        self.streamProvider = streamProvider
+    }
+
+    // MARK: - 入口
+
+    /// 双击 pet / ⌥Space / 灵动岛点击：已显示 → 隐藏；未显示 → 弹出。
+    public func toggle() {
+        if let panel, panel.isVisible { hide() } else { show(prefill: nil) }
+    }
+
+    /// ⌘⇧Space：有选中文本则预填 composer（**不自动发送**，HermesPet 决策 #17）。
+    public func toggleWithSelectedText(_ text: String?) {
+        if let panel, panel.isVisible { hide(); return }
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        show(prefill: (trimmed?.isEmpty == false) ? trimmed : nil)
+    }
+
+    /// ChoiceCard 点击：填到 composer，不自动发送。
+    public func toggleWithText(_ text: String) {
+        if let panel, panel.isVisible { state.draft = text } else { show(prefill: text) }
+    }
+
+    /// 程序化弹卡到指定 tab（权限/问题来了自动弹 + 切到 Claude Code tab）。
+    /// 已可见 → 只切 tab（不重播进场）；未可见 → 切 tab 后弹出。
+    public func presentOnTab(_ tab: CompanionTab) {
+        state.selectedTab = tab
+        if panel == nil || panel?.isVisible == false { show(prefill: nil) }
+    }
+
+    /// 隐藏 + 取消 in-flight stream（保留 messages，重开仍在）。
+    public func hide() {
+        state.cancelStreaming()
+        state.isShown = false
+        panel?.orderOut(nil)
+    }
+
+    /// 主卡当前钉住态(列容器据此同步层级:容器与主卡作一组,层级须一致)。
+    public var isPinned: Bool { state.isPinned }
+    /// 主卡钉住态切换回调(App 接到 → 同步列容器层级)。
+    public var onPinChanged: ((Bool) -> Void)?
+
+    /// #3 切换主卡钉住:钉住=floating+1+.stationary 常驻浮顶;取消=.normal+.transient 可被盖(标准切应用)。
+    public func togglePin() {
+        state.isPinned.toggle()
+        WindowPinState.apply(panel, pinned: state.isPinned)
+        onPinChanged?(state.isPinned)   // 列容器同步层级(否则主卡浮顶、容器 .normal 切 Space 消失)
+    }
+
+    // MARK: - 发送（乐观追加 + 流式 32ms 节流）。internal 供单测直调。
+
+    func handleSend(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !state.isSending else { return }
+        state.draft = ""
+        let assistantID = state.appendExchangePlaceholder(userText: trimmed)
+        state.isSending = true
+        let provider = streamProvider
+        state.streamTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let stream = provider(trimmed)
+                var full = ""
+                var lastUpdateAt = Date.distantPast
+                for try await delta in stream {
+                    try Task.checkCancellation()
+                    full += delta
+                    let now = Date()
+                    if now.timeIntervalSince(lastUpdateAt) >= 0.032 {
+                        // 逐次清洗：剥推理泄漏（纯推理阶段返回 "" → 显示打点，不流式英文推理）。
+                        self.state.updateAssistant(id: assistantID, text: ChatReplyCleaner.clean(full))
+                        lastUpdateAt = now
+                    }
+                }
+                // 终态：清洗；若清洗后为空（极端：整段是推理没出答案）回退原文，不丢内容。
+                let cleaned = ChatReplyCleaner.clean(full)
+                self.state.updateAssistant(id: assistantID, text: cleaned.isEmpty ? (full.isEmpty ? "（没有回应）" : full) : cleaned)
+            } catch is CancellationError {
+                // 用户主动取消 — silent
+            } catch {
+                self.state.updateAssistant(id: assistantID, text: "❌ \(error.localizedDescription)")
+            }
+            self.state.isSending = false
+        }
+    }
+
+    // MARK: - 私有
+
+    private func show(prefill: String?) {
+        if panel == nil { createPanel() }
+        if let prefill, !prefill.isEmpty { state.draft = prefill }
+        // 先从 store 恢复历史（仅本会话尚无消息时），再定位 + spring 进场 → 卡片弹出即满载，
+        // 不会"开卡时内容一闪而入"。历史读是 actor 快照（亚毫秒级），不会明显拖慢弹出。
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if self.state.messages.isEmpty, let historyProvider = self.historyProvider {
+                self.state.load(history: await historyProvider())
+            }
+            self.positionAndPresent()
+            // 外部会话历史在弹出后台补（文件读在 loader 内部 off-main，store 更新驱动 tab 视图）。
+            await self.sessionHistoryLoader?()
+        }
+    }
+
+    /// 锚定定位 + 弹出 + spring 进场。固定尺寸，不依赖历史。
+    private func positionAndPresent() {
+        guard let panel else { return }
+        applyPlacement(to: panel)
+        state.isShown = false
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        // 下一拍 spring 放大（先渲染缩小态一帧，进场才有"弹"的观感）。
+        DispatchQueue.main.async { [weak self] in
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.74)) {
+                self?.state.isShown = true
+            }
+        }
+    }
+
+    /// 跟随 pet：卡片可见时按 pet 实时位置重算锚定 + 尖角（**不重播 spring**）。
+    /// 由 App 监听 pet 窗口 `didMove` 调用。带位移阈值（3pt）过滤物理微抖，避免 setFrame 抖动 + 毛玻璃反复重绘。
+    public func repositionIfVisible() {
+        guard let panel, panel.isVisible else { return }
+        let petRect = anchorRectProvider?() ?? .zero
+        if let last = lastAnchorMid, abs(last.x - petRect.midX) < 3, abs(last.y - petRect.midY) < 3 { return }
+        applyPlacement(to: panel)
+    }
+
+    /// 算锚定（origin + 边）→ 设 frame + 驱动尖角朝向/位置 + 记录 pet 锚点（供位移阈值判定）。
+    private func applyPlacement(to panel: NSPanel) {
+        let petRect = anchorRectProvider?() ?? .zero
+        let visible = screenFrameProvider?() ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let size = NSSize(width: ChatCardTheme.cardWidth, height: ChatCardTheme.cardHeight)
+        let placement = ChatCardAnchor.place(anchor: petRect, in: visible, cardSize: size)
+        state.entranceEdge = placement.edge
+        state.tailSide = ChatCardAnchor.tailSide(for: placement.edge)
+        state.tailPercent = ChatCardAnchor.tailPercent(
+            edge: placement.edge, petRect: petRect, cardOrigin: placement.origin, cardSize: size
+        )
+        panel.setFrame(NSRect(origin: placement.origin, size: size), display: true)
+        lastAnchorMid = NSPoint(x: petRect.midX, y: petRect.midY)
+    }
+
+    private func createPanel() {
+        let size = NSSize(width: ChatCardTheme.cardWidth, height: ChatCardTheme.cardHeight)
+        let p = ChatCardPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.nonactivatingPanel, .borderless],
+            backing: .buffered, defer: true
+        )
+        // #3 主卡钉住态:默认钉住=floating+1+.stationary(压过 pet/灵动岛/普通窗,低于 menubar;跨 Space 常驻)。
+        // 取消钉住 → .normal+.transient 可被其他 app 盖住(标准切应用)。level + collectionBehavior 经 applyPinState 同步切
+        //(顺带修主卡原 .transient bug:钉住卡切 Space/Mission Control 被系统自动隐藏)。
+        WindowPinState.apply(p, pinned: state.isPinned)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true                              // 系统按 alpha mask 沿圆角精确绘制阴影
+        p.isReleasedWhenClosed = false
+        p.hidesOnDeactivate = false
+        p.animationBehavior = .none
+
+        let host = NSHostingView(rootView: ChatCardView(
+            state: state,
+            sessionStore: sessionStore,
+            onSend: { [weak self] text in self?.handleSend(text) },
+            onClose: { [weak self] in self?.hide() },
+            onTogglePin: { [weak self] in self?.togglePin() }
+        ))
+        host.frame = NSRect(origin: .zero, size: size)
+        host.autoresizingMask = [.width, .height]
+        // 卡片是固定浅色卡，强制 .aqua → 语义色按浅色渲染成深色字，避免系统暗色模式下
+        // markdown 正文 / 代码块（走 .primary）变白 → 浅底白字看不清。
+        host.appearance = NSAppearance(named: .aqua)
+        if #available(macOS 13.0, *) {
+            host.sizingOptions = []  // 防 SwiftUI 反推 setFrame（HermesPet 决策 #6 / §3.2）
+        }
+        p.contentView = host
+
+        self.panel = p
+        self.hostingView = host
+    }
+
+    // MARK: - Stored
+
+    private let streamProvider: StreamProvider
+    private let state = ChatCardState()
+    private let sessionStore = AgentSessionStore()
+    private var panel: ChatCardPanel?
+    private var hostingView: NSHostingView<ChatCardView>?
+    /// 上次定位时的 pet 中心，跟随时用位移阈值过滤微抖。
+    private var lastAnchorMid: NSPoint?
+}
+
+// MARK: - ChatCardPanel
+
+/// 需 `canBecomeKey = true` 才能让 composer 的 NSTextField 接键盘焦点
+/// （.nonactivatingPanel + .borderless 默认不接 key，必须 override）。
+final class ChatCardPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}

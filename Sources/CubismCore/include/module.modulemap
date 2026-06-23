@@ -1,0 +1,4 @@
+module CubismCore {
+    header "CubismCore.h"
+    export *
+}

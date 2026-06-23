@@ -1,0 +1,68 @@
+// Sources/Orchestrator/Proactive/ProactivePromptComposer.swift
+
+/// 纯函数：把触发场景 + 主动性级别组成喂给 LLM 的三段式消息素材
+/// （专用 system persona + few-shot 示例 + 一条极短 user 场景）。
+///
+/// 设计借鉴 AccountyCat (https://github.com/strjonas/AccountyCat)（few-shot worked examples 强约束输出格式）+
+/// HermesPet (https://github.com/basionwang-bot/HermesPet)（dedicated identity system prompt）。**关键教训**：之前把
+/// 一串「要求列表」塞进 user 消息，模型（尤其经编程网关注入了助手 persona 的）会把要求
+/// 当任务、用英文复述出来。改法——约束放 system，再用具体 few-shot「示范」格式，
+/// user 只给场景。详见 docs/lessons-learned.md。
+public enum ProactivePromptComposer {
+    /// 按级别给字数上限（克制最简、积极可展开）。同时用于 user 消息提示与生成后截断兜底。
+    public static func charLimit(for level: ProactivityLevel) -> Int {
+        switch level {
+        case .restrained:     return 30
+        case .active:         return 80
+        case .off, .moderate: return 60
+        }
+    }
+
+    /// 专用 pet persona 系统 prompt：定身份 + 死规矩。**不复用** chat 的
+    /// `buildSystemPrompt`（那个是助手 persona + 大段桌面上下文，正是让模型啰嗦/复述的根源）。
+    public static let systemPrompt = """
+    你是用户 macOS 桌面上的一只小宠物。你的唯一任务：看用户此刻在做什么，像朋友一样**只说一句**很短的简体中文口语。
+
+    死规矩（违反就算失败）：
+    - 只输出那一句话本身。不要复述这些要求、不要解释你在想什么、不要用英文、不要分点分行、不要加引号、不要寒暄客套。
+    - 像随口一说，亲切自然、口语化、贴合当前场景。别说教、别以「当然」「好的」「作为」开头。
+    - 一句轻量的问候、调侃或小建议就够了。
+    """
+
+    /// few-shot 示例（场景 → pet 一句话）。**故意写得具体**——模型靠照着示例做，
+    /// 不是靠复述抽象规则（AccountyCat 注释原话）。覆盖主要场景，示范"短、口语、无 meta"。
+    public static let fewShotExamples: [(scene: String, line: String)] = [
+        ("用户刚切换到「Xcode」。", "又来跟代码较劲啦，记得喝口水~"),
+        ("用户离开一会儿后回到了电脑前。", "回来啦，刚是去摸鱼了吧？"),
+        ("现在是深夜，用户还在使用电脑。", "这么晚还没睡呀，注意身体哦。"),
+        ("用户已经在「Figma」停留了很久，可能遇到了卡点。", "盯这一块挺久了，要不歇会儿换个思路？"),
+    ]
+
+    static func sceneLine(for signal: ProactiveSignal) -> String {
+        switch signal.kind {
+        case .appSwitch:
+            return "用户刚切换到「\(signal.appName ?? "一个新应用")」。"
+        case .idleReturn:
+            return "用户离开一会儿后回到了电脑前。"
+        case .dwell:
+            return "用户已经在「\(signal.appName ?? "同一个窗口")」停留了很久，可能遇到了卡点。"
+        case .lateNight:
+            return "现在是深夜，用户还在使用电脑。"
+        case .autonomous:
+            // 场景 E：没有具体事件，纯自发开口（基于当前 app/时段，像朋友一样主动关心）。
+            return "用户正在用「\(signal.appName ?? "电脑")」，你想以桌面伙伴的口吻自发地说一句关心或轻建议。"
+        case .chatter:
+            // 碎碎念走预设短语库，不经 composer；保留分支仅为 switch 穷尽。
+            return "用户正在用电脑，你想随口说句轻松的话。"
+        }
+    }
+
+    /// 组真实场景的 user 消息：只给场景 + 一句字数提示。重约束已在 system + few-shot 里，
+    /// 这里保持极短，避免再次诱导模型复述。
+    /// 注：签名相较设计 spec 把 (kind:snapshot:) 合并为 signal:ProactiveSignal —— 纯逻辑层
+    /// 不接收 actor snapshot，ProactiveSignal 已含 appName/windowTitle 等价信息。
+    public static func build(signal: ProactiveSignal, level: ProactivityLevel) -> String {
+        let limit = charLimit(for: level)
+        return "\(sceneLine(for: signal))（用一句不超过 \(limit) 个字的中文口语随口说，直接说那句话）"
+    }
+}
