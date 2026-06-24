@@ -181,6 +181,7 @@ final class PetEmotionBubbleView: NSView {
         label.font = ChatBubbleTheme.captionFont
         label.textColor = ChatBubbleTheme.textPrimary
         label.alignment = .center
+        label.isSelectable = true
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 

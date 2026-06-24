@@ -197,6 +197,11 @@ enum OpenPetAgentApp {
         setActivationPolicy: @MainActor (NSApplication.ActivationPolicy) -> Void = { policy in
             NSApplication.shared.setActivationPolicy(policy)
         },
+        // accessory app 无系统菜单栏,标准 Edit 菜单 keyEquivalent 路由链断裂 →
+        // 注入全局兜底主菜单(详见 AppMainMenu)。默认改全局 NSApp,测试可注入空实现。
+        installMainMenu: @MainActor () -> Void = {
+            NSApplication.shared.mainMenu = AppMainMenu.make()
+        },
         installDelegate: @MainActor (NSApplicationDelegate) -> Void = { delegate in
             NSApplication.shared.delegate = delegate
         },
@@ -218,6 +223,7 @@ enum OpenPetAgentApp {
         let delegate = resolvedMakeDelegate(rootSystem)
         retainedDelegate = delegate
         setActivationPolicy(.accessory)
+        installMainMenu()
         installDelegate(delegate)
         runApplication(delegate)
     }

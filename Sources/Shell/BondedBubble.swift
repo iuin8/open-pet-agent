@@ -297,6 +297,7 @@ public final class BondedBubbleView: NSView {
         label.font = ChatBubbleTheme.bodyFont
         label.textColor = ChatBubbleTheme.textPrimary
         label.alignment = .center
+        label.isSelectable = true
         label.maximumNumberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
