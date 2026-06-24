@@ -9,7 +9,7 @@ public enum SessionDirectoryBrowser {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
     }
 
-    /// cwd → Claude 编码目录名(`/Users/me/proj` → `-Users-fa-proj`)。仅 encode(decode 有歧义,不做)。
+    /// cwd → Claude 编码目录名(`/Users/me/proj` → `-Users-me-proj`)。仅 encode(decode 有歧义,不做)。
     public static func encode(cwd: String) -> String {
         let dashed = cwd.replacingOccurrences(of: "/", with: "-")
         return dashed.hasPrefix("-") ? dashed : "-" + dashed
