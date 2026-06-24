@@ -78,6 +78,10 @@ struct SessionPickerView: View {
         }
         .padding(8)
         .frame(width: 300)
+        // 不透明白底:盖住系统 NSPopover 的 vibrancy material(深色模式下变暗)。本卡走固定浅色「白卡深靛字」,
+        // 字色不随系统外观变 → 承载它的 surface 必须铺不透明浅底(与 SessionBrowseSheet:47 / 主卡 ChatCardView 一致);
+        // 漏这层 → 夜间深靛字裸在系统暗 material 上对比度崩、看不清。
+        .background(ChatCardTheme.cardBackground)
     }
 
     /// 「浏览历史…」行 → 关下拉 + 通知上层开访达选目录。
