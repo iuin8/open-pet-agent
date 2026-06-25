@@ -87,6 +87,44 @@ final class SettingsViewModel: ObservableObject {
     @Published var openClawAutoStart: Bool
     @Published var openClawAllowEndpointEnable: Bool
 
+    /// 「防休眠」模式 raw —— "off" / "displayAwake" / "systemAwake" / "lidClosedAwake"。默认 "off"。
+    /// UserDefaults key: "screenAwakeMode"。改动即时提交(modeless)。
+    @Published var screenAwakeModeRaw: String
+
+    /// 防休眠模式 Picker 选项(off 在最前)。raw 与 App 层 `ScreenAwakeMode` 对齐
+    /// (Shell 不依赖 App,故用 raw string,与 thermalOverride 同款)。
+    let screenAwakeModeOptions: [(id: String, displayName: String)] = [
+        ("off", "关闭(正常休眠)"),
+        ("displayAwake", "保持屏幕常亮(屏幕不变暗)"),
+        ("systemAwake", "仅防系统休眠(屏幕可息屏,挂机联网)"),
+        ("lidClosedAwake", "合盖也保持唤醒(无需外接屏 · 需密码)")
+    ]
+
+    /// 模式改动即时提交 → 由 App 注入(写 UD + ScreenAwakeController.apply;lidClosedAwake 弹确认+提权)。
+    var onCommitScreenAwakeMode: (String) -> Void = { _ in }
+
+    /// 「定时自动关」raw —— ScreenAwakeAutoOff。默认 "never"。UD key: "screenAwakeAutoOff"。
+    @Published var screenAwakeAutoOffRaw: String
+
+    /// 定时自动关 Picker 选项(never 在最前)。raw 与 App 层 `ScreenAwakeAutoOff` 对齐。
+    let screenAwakeAutoOffOptions: [(id: String, displayName: String)] = [
+        ("never", "不自动关"),
+        ("min30", "30 分钟后"),
+        ("hour1", "1 小时后"),
+        ("hour2", "2 小时后"),
+        ("hour4", "4 小时后"),
+        ("hour8", "8 小时后")
+    ]
+
+    /// 自动关时长改动即时提交 → 由 App 注入(写 UD + 重排定时器)。
+    var onCommitScreenAwakeAutoOff: (String) -> Void = { _ in }
+
+    /// 「低电量模式时自动关闭防休眠」开关。默认 true。UD key: "screenAwakeDisableOnLowPower"。
+    @Published var screenAwakeDisableOnLowPower: Bool
+
+    /// 开关改动即时提交 → 由 App 注入(写 UD + 更新 controller)。
+    var onCommitScreenAwakeDisableOnLowPower: (Bool) -> Void = { _ in }
+
     // MARK: - 系统权限
 
     /// 四项权限当前状态。初始为空;`refreshPermissions(using:)` 调用后填充。
@@ -316,6 +354,9 @@ final class SettingsViewModel: ObservableObject {
         openClawStatusDescription: String,
         openClawAutoStart: Bool,
         openClawAllowEndpointEnable: Bool,
+        screenAwakeModeRaw: String = "off",
+        screenAwakeAutoOffRaw: String = "never",
+        screenAwakeDisableOnLowPower: Bool = true,
         autoFollowLocation: Bool = false,
         selectedCityID: String = CityCatalog.default.id,
         forcedConditionRaw: String = "auto",
@@ -357,6 +398,9 @@ final class SettingsViewModel: ObservableObject {
         self.openClawStatusDescription = openClawStatusDescription
         self.openClawAutoStart = openClawAutoStart
         self.openClawAllowEndpointEnable = openClawAllowEndpointEnable
+        self.screenAwakeModeRaw = screenAwakeModeRaw
+        self.screenAwakeAutoOffRaw = screenAwakeAutoOffRaw
+        self.screenAwakeDisableOnLowPower = screenAwakeDisableOnLowPower
         self.aboutVersion = aboutVersion
     }
 

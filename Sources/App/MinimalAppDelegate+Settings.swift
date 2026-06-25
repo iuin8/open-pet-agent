@@ -58,6 +58,10 @@ extension MinimalAppDelegate {
             (userDefaults.object(forKey: OpenClawGatewayManager.allowEndpointEnableKey) as? Bool) ?? true
         let islandHidePetOnSwitch =
             (userDefaults.object(forKey: Self.islandHidePetOnSwitchKey) as? Bool) ?? true
+        // 读 controller 的 live 会话状态(而非 UD)——lidClosedAwake 是会话级,UD 启动已降级。
+        let screenAwakeModeRaw = screenAwakeController.mode.rawValue
+        let screenAwakeAutoOffRaw = screenAwakeController.autoOff.rawValue
+        let screenAwakeDisableOnLowPower = screenAwakeController.disableOnLowPower
         let aboutVersion = Self.aboutVersionString()
 
         let controller = SettingsWindowController(
@@ -77,6 +81,9 @@ extension MinimalAppDelegate {
             openClawStatusDescription: "⏳ 正在检测…",
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
+            screenAwakeModeRaw: screenAwakeModeRaw,
+            screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
+            screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
             islandHidePetOnSwitch: islandHidePetOnSwitch,
             autoFollowLocation: userDefaults.bool(forKey: Self.autoFollowLocationKey),
             selectedCityID: userDefaults.string(forKey: CityCatalog.userDefaultsKey) ?? CityCatalog.default.id,
@@ -250,6 +257,64 @@ extension MinimalAppDelegate {
         controller.onSaveIslandHidePetOnSwitch = { [weak self] enabled in
             guard let self else { return }
             self.userDefaults.set(enabled, forKey: Self.islandHidePetOnSwitchKey)
+        }
+
+        // "防休眠" 模式 Picker —— 即时应用 + 持久化。lidClosedAwake 弹风险确认 + 提权(async)。
+        controller.onSaveScreenAwakeMode = { [weak self] raw in
+            guard let self else { return }
+            // 幂等 guard:程序化回退(updateScreenAwakeMode 把 Picker 设回当前真实 mode)触发的
+            // 这次 commit 直接 no-op —— 防 onAutoChange→刷 Picker→onChange→onSave 回环 + 防 lid 重弹确认框。
+            guard raw != self.screenAwakeController.mode.rawValue else { return }
+            let mode = ScreenAwakeMode(rawValue: raw) ?? .off
+            let autoOff = ScreenAwakeAutoOff(rawValue: self.currentScreenAwakeAutoOffRaw()) ?? .never
+
+            if mode == .lidClosedAwake {
+                // 风险确认 alert(散热 / 全局 / 需密码)。取消 → Picker 回退到当前真实模式。
+                guard self.confirmEnableLidClosedAwake() else {
+                    self.settingsWindowController?.updateScreenAwakeMode(self.screenAwakeController.mode.rawValue)
+                    return
+                }
+                // 首次开且「自动关」为 never → 默认置 8h 兜底(防无限期),并反映到 UI。
+                var effectiveAutoOff = autoOff
+                if effectiveAutoOff == .never {
+                    effectiveAutoOff = ScreenAwakeAutoOff.lidClosedDefault
+                    self.userDefaults.set(effectiveAutoOff.rawValue, forKey: Self.screenAwakeAutoOffKey)
+                    self.settingsWindowController?.updateScreenAwakeAutoOff(effectiveAutoOff.rawValue)
+                }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let final = await self.screenAwakeController.apply(mode: .lidClosedAwake, autoOff: effectiveAutoOff)
+                    self.persistScreenAwakeMode(final)
+                    // 提权取消 / 电池拒开 → final != lid,回退 Picker(onAutoChange 也会，updateScreenAwakeMode 幂等)。
+                    if final != .lidClosedAwake {
+                        self.settingsWindowController?.updateScreenAwakeMode(final.rawValue)
+                    }
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let final = await self.screenAwakeController.apply(mode: mode, autoOff: autoOff)
+                    self.persistScreenAwakeMode(final)
+                    // 离开 lid 复位被取消 → final 仍是 lid,回退 Picker。
+                    if final.rawValue != raw {
+                        self.settingsWindowController?.updateScreenAwakeMode(final.rawValue)
+                    }
+                }
+            }
+        }
+
+        // "防休眠" 定时自动关 Picker —— 写 UD + 重排定时器。
+        controller.onSaveScreenAwakeAutoOff = { [weak self] raw in
+            guard let self else { return }
+            self.userDefaults.set(raw, forKey: Self.screenAwakeAutoOffKey)
+            self.screenAwakeController.setAutoOff(ScreenAwakeAutoOff(rawValue: raw) ?? .never)
+        }
+
+        // "低电量自动关" 开关 —— 写 UD + 更新 controller。
+        controller.onSaveScreenAwakeDisableOnLowPower = { [weak self] on in
+            guard let self else { return }
+            self.userDefaults.set(on, forKey: Self.screenAwakeDisableOnLowPowerKey)
+            self.screenAwakeController.disableOnLowPower = on
         }
 
         // 城市 picker — 写 UserDefaults + 通知 WeatherStateManager 立刻切到新城市,
@@ -494,6 +559,43 @@ extension MinimalAppDelegate {
               let settings = try? JSONDecoder().decode(ProactiveSettings.self, from: data)
         else { return .default }
         return settings
+    }
+
+    /// 开启「合盖也保持唤醒」前的风险确认 alert。返回用户是否确认继续。
+    /// 提权(密码框)由 ScreenAwakeController 在确认后再触发。
+    func confirmEnableLidClosedAwake() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "开启「合盖也保持唤醒」?"
+        alert.informativeText = """
+        这会修改系统全局设置(pmset disablesleep),让 Mac 合盖也不休眠、无需外接显示器。
+
+        • 需要输入管理员密码
+        • 仅在接电源时维持(拔电会自动关闭)
+        • 合盖跑负载有散热风险 —— 别放在堵住底部进风的软面上
+        • 退出 App / 切换模式会自动复位;建议设个「自动关闭」时长兜底
+
+        继续?
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "继续(需要密码)")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// 启动自愈:检测到上次「合盖防休眠」未正常复位(崩溃残留)时的解释性确认。
+    /// 透明告知用户为何在启动时弹密码框(避免像钓鱼),返回是否复位。
+    func confirmRecoverSleepResidue() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "恢复系统休眠设置?"
+        alert.informativeText = """
+        检测到上次「合盖防休眠」未正常复位 —— 系统当前被设为不休眠(pmset disablesleep)。
+
+        点「恢复」会把它复位(需要管理员密码)。点「稍后」则保持现状,下次启动会再次提示。
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "恢复(需要密码)")
+        alert.addButton(withTitle: "稍后")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     // MARK: - 系统设置深链(Task 4)

@@ -266,6 +266,99 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         return min(max(raw, 0.5), 2.0)
     }
 
+    /// 「防休眠」模式持久化 key(raw = ScreenAwakeMode,缺省 "off")。
+    static let screenAwakeModeKey = "screenAwakeMode"
+
+    /// 「防休眠」定时自动关 key(raw = ScreenAwakeAutoOff,缺省 "never")。
+    static let screenAwakeAutoOffKey = "screenAwakeAutoOff"
+
+    /// 「低电量模式时自动关闭防休眠」key(Bool,缺省 true)。
+    static let screenAwakeDisableOnLowPowerKey = "screenAwakeDisableOnLowPower"
+
+    /// 「上次会话是否处于 lidClosedAwake 且未干净复位」标志(Bool)。启动自愈据此**只复位我们自己设的**
+    /// `disablesleep` 残留(崩溃/强退留下),绝不误清用户自己用终端设的 disablesleep。
+    static let screenAwakeLidWasActiveKey = "screenAwakeLidWasActive"
+
+    /// 旧布尔 key(单一「保持屏幕常亮」开关),保留用于一次性迁移到 mode。
+    static let legacyKeepScreenAwakeKey = "keepScreenAwake"
+
+    /// 「防休眠」编排器 —— 四态模式 + 定时自动关 + 电源安全闸。
+    let screenAwakeController = ScreenAwakeController()
+
+    /// 从 UD 读当前防休眠模式 raw,缺失时迁移旧布尔 key(true→displayAwake),否则 off。
+    func currentScreenAwakeModeRaw() -> String {
+        if let raw = userDefaults.string(forKey: Self.screenAwakeModeKey) {
+            return raw
+        }
+        // 迁移:老版本只有布尔「保持屏幕常亮」→ 映射成 displayAwake 并写入新 key。
+        if userDefaults.object(forKey: Self.legacyKeepScreenAwakeKey) != nil {
+            let migrated = ScreenAwakeMode.migrating(
+                legacyKeepScreenAwake: userDefaults.bool(forKey: Self.legacyKeepScreenAwakeKey)
+            )
+            userDefaults.set(migrated.rawValue, forKey: Self.screenAwakeModeKey)
+            userDefaults.removeObject(forKey: Self.legacyKeepScreenAwakeKey)
+            return migrated.rawValue
+        }
+        return ScreenAwakeMode.off.rawValue
+    }
+
+    /// 当前「定时自动关」raw(缺省 never)。
+    func currentScreenAwakeAutoOffRaw() -> String {
+        userDefaults.string(forKey: Self.screenAwakeAutoOffKey) ?? ScreenAwakeAutoOff.never.rawValue
+    }
+
+    /// 当前「低电量自动关」开关(缺省 true)。
+    func currentScreenAwakeDisableOnLowPower() -> Bool {
+        (userDefaults.object(forKey: Self.screenAwakeDisableOnLowPowerKey) as? Bool) ?? true
+    }
+
+    /// 启动应用防休眠:接电源监听 + 自动变更回调 + 自愈残留 + 按 UD 应用模式。
+    /// **lidClosedAwake 是会话级特权全局改动 —— 不在启动时静默重新提权**(避免登录弹密码),
+    /// 持久化值若是它则降级为 off + 自愈任何残留;用户需要时再手动开。
+    func applyScreenAwakeMode() {
+        var mode = ScreenAwakeMode(rawValue: currentScreenAwakeModeRaw()) ?? .off
+        if mode == .lidClosedAwake {
+            mode = .off
+            userDefaults.set(ScreenAwakeMode.off.rawValue, forKey: Self.screenAwakeModeKey)
+        }
+        let autoOff = ScreenAwakeAutoOff(rawValue: currentScreenAwakeAutoOffRaw()) ?? .never
+        screenAwakeController.disableOnLowPower = currentScreenAwakeDisableOnLowPower()
+        screenAwakeController.onAutoChange = { [weak self] newMode, reason in
+            guard let self else { return }
+            self.persistScreenAwakeMode(newMode)
+            self.settingsWindowController?.updateScreenAwakeMode(newMode.rawValue)
+            self.notifyScreenAwakeAutoChange(reason)
+        }
+        screenAwakeController.startPowerMonitoring()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            // 启动自愈:仅当「上次是我们开的 lid 且未干净复位」(崩溃残留)才复位,且先解释再提权
+            //(避免无故弹密码像钓鱼);绝不误清用户自己用终端设的 disablesleep。
+            let weLeftLidOn = self.userDefaults.bool(forKey: Self.screenAwakeLidWasActiveKey)
+            if weLeftLidOn, self.screenAwakeController.hasOrphanedSleepResidue() {
+                if self.confirmRecoverSleepResidue() {
+                    await self.screenAwakeController.selfHeal(intendedMode: .off)
+                }
+                self.userDefaults.set(false, forKey: Self.screenAwakeLidWasActiveKey)
+                if self.screenAwakeController.hasOrphanedSleepResidue() {
+                    self.notifyScreenAwakeAutoChange("「合盖防休眠」的系统设置仍未复位 —— 可在终端运行 `sudo pmset -a disablesleep 0`,或到设置→系统→防休眠 开一次再关。")
+                }
+            }
+            _ = await self.screenAwakeController.apply(mode: mode, autoOff: autoOff)
+        }
+    }
+
+    /// 持久化防休眠模式 + 同步「lid 是否激活」标志(供启动自愈精确判断残留来源)。
+    func persistScreenAwakeMode(_ mode: ScreenAwakeMode) {
+        userDefaults.set(mode.rawValue, forKey: Self.screenAwakeModeKey)
+        userDefaults.set(mode == .lidClosedAwake, forKey: Self.screenAwakeLidWasActiveKey)
+    }
+
+    /// 防休眠被安全闸自动关闭时,用 pet 气泡告知用户原因(非侵入)。
+    func notifyScreenAwakeAutoChange(_ reason: String) {
+        bondedSession?.injectProactiveSuggestion(context: "防休眠", reply: reason) { _ in }
+    }
+
     /// 实验 falling-sand CA 雪路径开关 UserDefaults key（重写中，默认 off）。
     static let fallingSandEnabledKey = "useFallingSandCA"
 
@@ -611,6 +704,9 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         // Task B — OpenClaw local gateway probe + auto-launch (best-effort).
         setupOpenClawBootstrap()
 
+        // 「防休眠」—— 按 UD 当前值应用(缺省 off;迁移旧布尔 key)。
+        applyScreenAwakeMode()
+
         // A.3.2 — Chat behavior state machine + shell controller + pet plugin.
         let (controller, wrappedReplyHandler) = setupShellAndStateMachine(
             screenFrame: screenFrame
@@ -719,6 +815,9 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
             petOcclusionObserver = nil
         }
         weatherStateManager?.stop()
+        // 防休眠:停电源监听。lidClosedAwake 的 disablesleep 复位无法在退出时可靠弹密码,
+        // 故退出即复位是 best-effort —— 铁保证是「下次启动 selfHeal 强制复位残留」(见 applyScreenAwakeMode)。
+        screenAwakeController.stopPowerMonitoring()
         // 主动协助引擎清理：停 30s tick timer + 移除 app 切换 observer（防泄漏）。
         // observer 注册在 NSWorkspace.shared.notificationCenter，移除必须用同一个 center。
         proactiveTickTimer?.invalidate()

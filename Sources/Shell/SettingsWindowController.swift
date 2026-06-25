@@ -70,6 +70,15 @@ public final class SettingsWindowController {
     /// Task E: Called when the user taps Save with "灵动岛切桌面时隐藏桌宠" toggle state。
     public var onSaveIslandHidePetOnSwitch: @MainActor (Bool) -> Void = { _ in }
 
+    /// 「防休眠」模式 Picker 改动时触发(modeless 即时提交,raw = ScreenAwakeMode)。
+    public var onSaveScreenAwakeMode: @MainActor (String) -> Void = { _ in }
+
+    /// 「防休眠」定时自动关 Picker 改动时触发(raw = ScreenAwakeAutoOff)。
+    public var onSaveScreenAwakeAutoOff: @MainActor (String) -> Void = { _ in }
+
+    /// 「低电量自动关」开关改动时触发。
+    public var onSaveScreenAwakeDisableOnLowPower: @MainActor (Bool) -> Void = { _ in }
+
     /// Fires with city id (CityCatalog.userDefaultsKey) when user saves.
     public var onSaveCity: @MainActor (String) -> Void = { _ in }
 
@@ -201,6 +210,29 @@ public final class SettingsWindowController {
     /// Task E: 当前 "灵动岛切桌面隐藏桌宠" toggle 是否勾选。
     public var isIslandHidePetOnSwitchOn: Bool { viewModel.islandHidePetOnSwitch }
 
+    /// 当前 "防休眠" 模式 raw("off" / "displayAwake" / "systemAwake" / "lidClosedAwake")。
+    public var selectedScreenAwakeModeRaw: String { viewModel.screenAwakeModeRaw }
+
+    /// 当前 "防休眠" 定时自动关 raw。
+    public var selectedScreenAwakeAutoOffRaw: String { viewModel.screenAwakeAutoOffRaw }
+
+    /// 当前 "低电量自动关" 开关。
+    public var isScreenAwakeDisableOnLowPowerOn: Bool { viewModel.screenAwakeDisableOnLowPower }
+
+    /// App 用:把模式 Picker 程序化设到某值(安全闸自动关 / 提权取消回退)。
+    /// 防回环靠 App 层 `onSaveScreenAwakeMode` 的幂等 guard(raw == 当前真实 mode → no-op),
+    /// 不依赖 onChange 时序,故这里只单纯设值。
+    public func updateScreenAwakeMode(_ raw: String) {
+        guard viewModel.screenAwakeModeRaw != raw else { return }
+        viewModel.screenAwakeModeRaw = raw
+    }
+
+    /// App 用:把「定时自动关」Picker 程序化设到某值(如启用 lid 时默认 8h)。
+    public func updateScreenAwakeAutoOff(_ raw: String) {
+        guard viewModel.screenAwakeAutoOffRaw != raw else { return }
+        viewModel.screenAwakeAutoOffRaw = raw
+    }
+
     /// Task E: 关于面板里显示的版本字符串。
     public var aboutVersionText: String { viewModel.aboutVersion }
 
@@ -250,6 +282,9 @@ public final class SettingsWindowController {
         openClawStatusDescription: String = "⚪ 未启动",
         openClawAutoStart: Bool = true,
         openClawAllowEndpointEnable: Bool = true,
+        screenAwakeModeRaw: String = "off",
+        screenAwakeAutoOffRaw: String = "never",
+        screenAwakeDisableOnLowPower: Bool = true,
         islandHidePetOnSwitch: Bool = true,
         autoFollowLocation: Bool = false,
         selectedCityID: String = "beijing",
@@ -280,6 +315,9 @@ public final class SettingsWindowController {
             openClawStatusDescription: openClawStatusDescription,
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
+            screenAwakeModeRaw: screenAwakeModeRaw,
+            screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
+            screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
             autoFollowLocation: autoFollowLocation,
             selectedCityID: selectedCityID,
             forcedConditionRaw: forcedConditionRaw,
@@ -343,6 +381,9 @@ public final class SettingsWindowController {
         self.viewModel.onCommitToolEngine = { [weak self] raw in self?.onSaveToolEngineKind(raw) }
         self.viewModel.onCommitOpenClawAutoStart = { [weak self] on in self?.onSaveOpenClawAutoStart(on) }
         self.viewModel.onCommitOpenClawAllowEndpoint = { [weak self] on in self?.onSaveOpenClawAllowEndpointEnable(on) }
+        self.viewModel.onCommitScreenAwakeMode = { [weak self] raw in self?.onSaveScreenAwakeMode(raw) }
+        self.viewModel.onCommitScreenAwakeAutoOff = { [weak self] raw in self?.onSaveScreenAwakeAutoOff(raw) }
+        self.viewModel.onCommitScreenAwakeDisableOnLowPower = { [weak self] on in self?.onSaveScreenAwakeDisableOnLowPower(on) }
         self.viewModel.onCommitAutoFollowLocation = { [weak self] on in self?.onCommitAutoFollowLocation(on) }
         self.viewModel.onCommitLLM = { [weak self] in self?.commitLLM() }
 
@@ -512,6 +553,24 @@ public final class SettingsWindowController {
         viewModel.islandHidePetOnSwitch = on
     }
 
+    /// 选择 "防休眠" 模式 by raw(测试用)—— 触发 onCommit，跟真实 Picker.onChange 一致。
+    public func simulateSelectScreenAwakeMode(_ raw: String) {
+        viewModel.screenAwakeModeRaw = raw
+        viewModel.onCommitScreenAwakeMode(raw)
+    }
+
+    /// 选择 "防休眠" 定时自动关 by raw(测试用)。
+    public func simulateSelectScreenAwakeAutoOff(_ raw: String) {
+        viewModel.screenAwakeAutoOffRaw = raw
+        viewModel.onCommitScreenAwakeAutoOff(raw)
+    }
+
+    /// 设 "低电量自动关" 开关(测试用)。
+    public func simulateToggleScreenAwakeDisableOnLowPower(_ on: Bool) {
+        viewModel.screenAwakeDisableOnLowPower = on
+        viewModel.onCommitScreenAwakeDisableOnLowPower(on)
+    }
+
     /// 选择温度档 by raw（测试用）—— 触发 preview，跟真实 Picker.onChange 一致。
     public func simulateSelectThermalOverride(_ raw: String) {
         viewModel.thermalOverrideRaw = raw
@@ -552,6 +611,9 @@ public final class SettingsWindowController {
         onSaveToolEngineKind(viewModel.toolEngineKind)
         onSaveOpenClawAutoStart(viewModel.openClawAutoStart)
         onSaveOpenClawAllowEndpointEnable(viewModel.openClawAllowEndpointEnable)
+        onSaveScreenAwakeMode(viewModel.screenAwakeModeRaw)
+        onSaveScreenAwakeAutoOff(viewModel.screenAwakeAutoOffRaw)
+        onSaveScreenAwakeDisableOnLowPower(viewModel.screenAwakeDisableOnLowPower)
         onSaveIslandHidePetOnSwitch(viewModel.islandHidePetOnSwitch)
         onSaveCity(viewModel.selectedCityID)
         onSaveForcedCondition(viewModel.forcedConditionRaw)

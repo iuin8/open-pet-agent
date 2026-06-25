@@ -32,6 +32,43 @@ struct SettingsSystemSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            GroupBox(label: sectionLabel("防休眠")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("模式", selection: $viewModel.screenAwakeModeRaw) {
+                        ForEach(viewModel.screenAwakeModeOptions, id: \.id) { opt in
+                            Text(opt.displayName).tag(opt.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: viewModel.screenAwakeModeRaw) { newRaw in
+                        viewModel.onCommitScreenAwakeMode(newRaw)
+                    }
+
+                    Picker("自动关闭", selection: $viewModel.screenAwakeAutoOffRaw) {
+                        ForEach(viewModel.screenAwakeAutoOffOptions, id: \.id) { opt in
+                            Text(opt.displayName).tag(opt.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: viewModel.screenAwakeAutoOffRaw) { newRaw in
+                        viewModel.onCommitScreenAwakeAutoOff(newRaw)
+                    }
+
+                    Toggle("低电量模式时自动关闭防休眠", isOn: $viewModel.screenAwakeDisableOnLowPower)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: viewModel.screenAwakeDisableOnLowPower) { newValue in
+                            viewModel.onCommitScreenAwakeDisableOnLowPower(newValue)
+                        }
+
+                    Text("「保持屏幕常亮」= 屏幕不变暗;「仅防系统休眠」= 屏幕可息屏但系统不睡(CPU 跑、网络保持),适合挂 Claude 联网开发。「合盖也保持唤醒」= 改系统全局开关、可合盖挂机无需外接屏 —— ⚠️ 需管理员密码、仅接电源时维持(拔电自动关)、合盖跑负载有散热风险,务必设个「自动关闭」时长兜底。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             SettingsPermissionsView(viewModel: viewModel)
         }
     }

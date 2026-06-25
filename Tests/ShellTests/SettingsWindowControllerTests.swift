@@ -567,6 +567,69 @@ func openClawAllowEndpointEnableDefaultsTrue() {
     #expect(controller.isOpenClawAllowEndpointEnableOn == true)
 }
 
+@Test("防休眠: 默认 off")
+@MainActor
+func screenAwakeModeDefaultsOff() {
+    let controller = SettingsWindowController()
+    #expect(controller.selectedScreenAwakeModeRaw == "off")
+}
+
+@Test("防休眠: screenAwakeModeRaw=displayAwake 初始化 → 选中显示常亮")
+@MainActor
+func screenAwakeModeInitDisplayAwake() {
+    let controller = SettingsWindowController(screenAwakeModeRaw: "displayAwake")
+    #expect(controller.selectedScreenAwakeModeRaw == "displayAwake")
+}
+
+@Test("防休眠: simulateSelectScreenAwakeMode('systemAwake') → callback fire raw(modeless 即时提交)")
+@MainActor
+func screenAwakeModeSelectFiresRaw() {
+    var captured: String?
+    let controller = SettingsWindowController(screenAwakeModeRaw: "off")
+    controller.onSaveScreenAwakeMode = { v in captured = v }
+
+    controller.simulateSelectScreenAwakeMode("systemAwake")
+
+    #expect(captured == "systemAwake")
+    #expect(controller.selectedScreenAwakeModeRaw == "systemAwake")
+}
+
+@Test("防休眠: 定时自动关默认 never + 初始化 + 选择触发回调")
+@MainActor
+func screenAwakeAutoOff() {
+    #expect(SettingsWindowController().selectedScreenAwakeAutoOffRaw == "never")
+    #expect(SettingsWindowController(screenAwakeAutoOffRaw: "hour8").selectedScreenAwakeAutoOffRaw == "hour8")
+
+    var captured: String?
+    let controller = SettingsWindowController()
+    controller.onSaveScreenAwakeAutoOff = { v in captured = v }
+    controller.simulateSelectScreenAwakeAutoOff("hour2")
+    #expect(captured == "hour2")
+}
+
+@Test("防休眠: 低电量自动关默认 true + 初始化 + toggle 触发回调")
+@MainActor
+func screenAwakeDisableOnLowPower() {
+    #expect(SettingsWindowController().isScreenAwakeDisableOnLowPowerOn == true)
+    #expect(SettingsWindowController(screenAwakeDisableOnLowPower: false).isScreenAwakeDisableOnLowPowerOn == false)
+
+    var captured: Bool?
+    let controller = SettingsWindowController()
+    controller.onSaveScreenAwakeDisableOnLowPower = { v in captured = v }
+    controller.simulateToggleScreenAwakeDisableOnLowPower(false)
+    #expect(captured == false)
+}
+
+@Test("防休眠: updateScreenAwakeMode 程序化设值反映到 Picker(回退用,防回环由 App 层幂等 guard)")
+@MainActor
+func screenAwakeModeUpdateReflectsValue() {
+    let controller = SettingsWindowController(screenAwakeModeRaw: "displayAwake")
+    controller.updateScreenAwakeMode("off")
+    #expect(controller.selectedScreenAwakeModeRaw == "off")
+    controller.updateScreenAwakeAutoOff("hour4")
+    #expect(controller.selectedScreenAwakeAutoOffRaw == "hour4")
+}
+
 @Test("Task E: simulateToggleOpenClawAutoStart(false) + Save → callback fire false")
 @MainActor
 func openClawAutoStartSaveFiresFalse() {
