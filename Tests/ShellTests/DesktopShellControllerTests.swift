@@ -638,7 +638,7 @@ func petShellWindowInstallsARightClickMenuWithExit() throws {
 
     let petWindow = try #require(controller.windowSet.petWindow as? PetShellWindow)
     let menu = try #require(petWindow.menu)
-    let exitItem = try #require(menu.items.first(where: { $0.title == "退出" }))
+    let exitItem = try #require(menu.items.first(where: { $0.title == "退出 OpenPetAgent" }))
 
     #expect(petWindow.contentView?.menu === menu)
     #expect(exitItem.isEnabled)
@@ -660,8 +660,8 @@ func petShellWindowExitMenuItemInvokesTheInjectedQuitHandler() throws {
 
     let petWindow = try #require(controller.windowSet.petWindow as? PetShellWindow)
     let menu = try #require(petWindow.menu)
-    let exitItem = try #require(menu.items.first(where: { $0.title == "退出" }))
-    #expect(exitItem.target === petWindow)
+    let exitItem = try #require(menu.items.first(where: { $0.title == "退出 OpenPetAgent" }))
+    // 动作走共享 PetActionMenu(target 不再是 petWindow);经 target+action 派发仍触发注入的 quit。
     let action = try #require(exitItem.action)
 
     NSApp.sendAction(action, to: exitItem.target, from: exitItem)
@@ -683,7 +683,7 @@ func petShellWindowShowChatMenuItemOpensTheChatWindow() throws {
     let petWindow = try #require(controller.windowSet.petWindow as? PetShellWindow)
     let menu = try #require(petWindow.menu)
     let showChatItem = try #require(menu.items.first(where: { $0.title == "显示聊天" }))
-    #expect(showChatItem.target === petWindow)
+    // 动作走共享 PetActionMenu(target 不再是 petWindow);经 target+action 派发仍开聊天窗。
     let action = try #require(showChatItem.action)
 
     NSApp.sendAction(action, to: showChatItem.target, from: showChatItem)
@@ -727,29 +727,28 @@ func petShellWindowNoLongerHasAccessibilityItem() throws {
     controller.windowSet.allWindows.forEach { $0.orderOut(nil) }
 }
 
-@Test("Pet shell window snow menu item emits a snow toggle request")
+// 旧「独立下雪菜单项」测试已移除 —— 雪开关统一进「天气」submenu 单选(强制下雪 / 关闭天气效果),
+// 见下面 petMenuWeatherSubmenuHasUnifiedModeAndClear 覆盖。
+
+@Test("状态栏菜单 与 右键桌宠菜单 结构逐项一致(同一 PetActionMenu source of truth)")
 @MainActor
-func petShellWindowSnowMenuItemEmitsASnowToggleRequest() throws {
-    var emittedEvents: [ShellInteractionEvent] = []
+func menuBarAndPetMenuStructureAreIdentical() throws {
+    let menuBar = MenuBarController()
     let controller = DesktopShellController(
         screenFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
-        initialState: ShellInitialState(petPositionX: 144, petPositionY: 233),
-        interactionEventSink: { event in
-            emittedEvents.append(event)
-        }
+        initialState: ShellInitialState(petPositionX: 144, petPositionY: 233)
     )
-
     let petWindow = try #require(controller.windowSet.petWindow as? PetShellWindow)
-    let menu = try #require(petWindow.menu)
-    let snowItem = try #require(menu.items.first(where: { $0.title == "下雪" }))
-    #expect(snowItem.target === petWindow)
-    let action = try #require(snowItem.action)
+    let petMenu = try #require(petWindow.menu)
 
-    NSApp.sendAction(action, to: snowItem.target, from: snowItem)
-
-    #expect(controller.interactionEvents == [.snowToggleRequested])
-    #expect(emittedEvents == [.snowToggleRequested])
-
+    func topTitles(_ menu: NSMenu) -> [String] { menu.items.map(\.title) }
+    func weatherTitles(_ menu: NSMenu) -> [String] {
+        (menu.items.first { $0.title == "天气" })?.submenu?.items.map(\.title) ?? []
+    }
+    // 两 surface 走同一 PetActionMenu → 顶层项 + 天气 submenu 顺序/标题逐项相同。
+    #expect(topTitles(menuBar.menuForTesting) == topTitles(petMenu))
+    #expect(weatherTitles(menuBar.menuForTesting) == weatherTitles(petMenu))
+    #expect(weatherTitles(petMenu).isEmpty == false)   // 防两边都空的假阳性
     controller.windowSet.allWindows.forEach { $0.orderOut(nil) }
 }
 
@@ -779,9 +778,6 @@ func desktopShellControllerTogglesSnowPlaceholderOnOverlay() throws {
     )
 
     let overlayView = try #require(controller.windowSet.overlayWindow.contentView as? DesktopOverlayView)
-    let petWindow = try #require(controller.windowSet.petWindow as? PetShellWindow)
-    let menu = try #require(petWindow.menu)
-    let snowItem = try #require(menu.items.first(where: { $0.title == "下雪" }))
     let particles: [CGPoint] = [
         CGPoint(x: 21, y: 34),
         CGPoint(x: 55, y: 89),
@@ -791,8 +787,6 @@ func desktopShellControllerTogglesSnowPlaceholderOnOverlay() throws {
     ]
     controller.syncSnowPlaceholder(isEnabled: true, particles: particles)
     #expect(overlayView.isSnowPlaceholderVisible)
-    #expect(snowItem.state == .on)
-    #expect(snowItem.title == "停止下雪")
     // Metal renders the visible snow when its layer is present; the
     // NSTextField glyph layer becomes a hidden fallback that still tracks
     // particle positions for future fallback rendering and animation tests.
@@ -809,8 +803,6 @@ func desktopShellControllerTogglesSnowPlaceholderOnOverlay() throws {
     let disabledFrameY = overlayView.firstSnowflakeFrame.minY
     controller.syncSnowPlaceholder(isEnabled: false)
     #expect(overlayView.isSnowPlaceholderVisible == false)
-    #expect(snowItem.state == .off)
-    #expect(snowItem.title == "下雪")
     #expect(overlayView.visibleSnowflakeCount == 0)
     #expect(overlayView.isSnowPlaceholderAnimating == false)
 

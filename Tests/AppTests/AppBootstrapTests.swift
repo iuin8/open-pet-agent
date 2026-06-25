@@ -1093,14 +1093,10 @@ func minimalAppDelegateTogglesSnowStateFromShellInteraction() async throws {
 
     delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
     let shellController = try #require(delegate.launchedShellController)
-    let petWindow = try #require(shellController.windowSet.petWindow as? PetShellWindow)
-    let menu = try #require(petWindow.menu)
-    let snowItem = try #require(menu.items.first(where: { $0.title == "下雪" }))
-    let action = try #require(snowItem.action)
-
+    // 雪开关已统一进「天气」submenu(无独立下雪菜单项)→ 用 shell 交互事件直接验证 snow toggle plumbing。
     let overlayView = try #require(shellController.windowSet.overlayWindow.contentView as? DesktopOverlayView)
 
-    NSApp.sendAction(action, to: snowItem.target, from: snowItem)
+    delegate.recordShellInteraction(.snowToggleRequested)
     #expect(delegate.isSnowEnabled)
     #expect(delegate.currentRenderState.isSnowEnabled)
     #expect(overlayView.isSnowPlaceholderVisible)
@@ -1110,7 +1106,7 @@ func minimalAppDelegateTogglesSnowStateFromShellInteraction() async throws {
     await tick()
     #expect(delegate.currentRenderState.particleCount == 5)
 
-    NSApp.sendAction(action, to: snowItem.target, from: snowItem)
+    delegate.recordShellInteraction(.snowToggleRequested)
     #expect(delegate.isSnowEnabled == false)
     #expect(delegate.currentRenderState.isSnowEnabled == false)
     #expect(overlayView.isSnowPlaceholderVisible == false)

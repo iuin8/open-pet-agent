@@ -624,6 +624,7 @@ extension MinimalAppDelegate {
         currentWeatherDescription = desc
         settingsWindowController?.updateCurrentWeatherDescription(desc)
         menuBarController.updateWeatherCurrent(desc)
+        shellController?.updateMenuWeatherCurrent(desc)   // pet 右键菜单天气行同步(两菜单一致)
     }
 
     /// 启动 `WeatherStateManager` 并把 onUpdate 闭包 wire 进物理沙盒。
@@ -667,10 +668,8 @@ extension MinimalAppDelegate {
             // source of truth — snowy → 雪开 + 雨关;rainy → 雨开 + 雪关;
             // 其他 condition (sunny/cloudy/windy) → 都关。
             //
-            // 用户的"持续覆盖" 通过 Settings → 强制天气 picker 实现(forcedCondition
-            // 持久覆盖 snapshot.condition, 任何 weather refresh 都尊重)。
-            // pet 右键 "下雪" 临时 toggle 仍可用 (snowToggleRequested),但
-            // 下次 weather refresh (15min) 会覆盖回去。
+            // 用户的"持续覆盖" 通过 Settings → 强制天气 / 菜单「天气」submenu 单选实现
+            //(forcedCondition 持久覆盖 snapshot.condition, 任何 weather refresh 都尊重)。
             // 降水联动 — 受天气总开关 gate（weatherEffectsEnabled off → 雪/雨全关）。
             self.applyPrecipitation(condition: snapshot.condition)
         }

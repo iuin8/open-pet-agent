@@ -162,9 +162,6 @@ public final class DesktopShellController {
             onShowChat: { [weak self] in
                 self?.showChatWindow()
             },
-            onSnowToggle: { [weak self] in
-                self?.recordInteractionEvent(.snowToggleRequested)
-            },
             onQuit: quitHandler
         )
         self.windowSet.petWindow.delegate = petWindowDragAdapter
@@ -194,7 +191,7 @@ public final class DesktopShellController {
         if !petOrbDisabled, let orb = OrbMetalRenderer() {
             // Carry over the right-click menu from the placeholder (installed
             // by `PetShellWindow.installContextMenu` a few lines above) so
-            // 显示聊天 / 下雪 / 退出 still fire on the new view.
+            // 显示聊天 / 设置 / 天气 / 退出 still fire on the new view.
             let inheritedMenu = self.windowSet.petWindow.contentView?.menu
             let host = PetLayerHostView(content: orb.contentLayer)
             host.menu = inheritedMenu
@@ -318,9 +315,7 @@ public final class DesktopShellController {
             isEnabled,
             particles: particles
         )
-        let snowItem = windowSet.petWindow.menu?.items.first { $0.title == "下雪" || $0.title == "停止下雪" }
-        snowItem?.state = isEnabled ? .on : .off
-        snowItem?.title = isEnabled ? "停止下雪" : "下雪"
+        // 雪开关已统一进「天气」submenu 单选(强制下雪 / 关闭天气效果),不再有独立「下雪」菜单项。
     }
 
     public func advanceSnowPlaceholderFrame() {
@@ -357,6 +352,11 @@ public final class DesktopShellController {
     /// 把当前天气模式 raw(含 "off")同步到 pet 右键菜单 submenu check state。
     public func syncForcedConditionState(_ raw: String) {
         (windowSet.petWindow as? PetShellWindow)?.syncForcedConditionState(raw)
+    }
+
+    /// 把「当前天气」展示行同步到 pet 右键菜单(与状态栏一致,weather 更新时调)。
+    public func updateMenuWeatherCurrent(_ description: String) {
+        (windowSet.petWindow as? PetShellWindow)?.updateWeatherCurrent(description)
     }
 
     /// 把跟随 / 漫游开关状态同步到 pet 右键菜单 check state(跨入口一致)。
