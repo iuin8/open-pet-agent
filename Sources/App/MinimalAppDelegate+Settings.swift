@@ -58,6 +58,8 @@ extension MinimalAppDelegate {
             (userDefaults.object(forKey: OpenClawGatewayManager.allowEndpointEnableKey) as? Bool) ?? true
         let islandHidePetOnSwitch =
             (userDefaults.object(forKey: Self.islandHidePetOnSwitchKey) as? Bool) ?? true
+        // 开机自启:读 SMAppService 当前状态(权威源,含 requiresApproval 视为已请求 → 勾上)。
+        let launchAtLogin = launchAtLoginManager.isEnabled || launchAtLoginManager.requiresApproval
         // 读 controller 的 live 会话状态(而非 UD)——lidClosedAwake 是会话级,UD 启动已降级。
         let screenAwakeModeRaw = screenAwakeController.mode.rawValue
         let screenAwakeAutoOffRaw = screenAwakeController.autoOff.rawValue
@@ -81,6 +83,7 @@ extension MinimalAppDelegate {
             openClawStatusDescription: "⏳ 正在检测…",
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
+            launchAtLogin: launchAtLogin,
             screenAwakeModeRaw: screenAwakeModeRaw,
             screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
             screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
@@ -239,6 +242,23 @@ extension MinimalAppDelegate {
 
         // Task E: OpenClaw autoStart toggle —— 写 UserDefaults, 下次启动生效。
         // 当前会话不强拉 daemon (避免用户切回 off 又 on 的过程中反复 spawn 进程)。
+        // 开机自启 toggle —— register/unregister SMAppService.mainApp(权威源,无 UD)。
+        // 失败 → 回退 toggle 到真实状态 + 提示;requiresApproval(用户曾在登录项关过)→ 引导去系统设置。
+        controller.onSaveLaunchAtLogin = { [weak self] enabled in
+            guard let self else { return }
+            do {
+                try self.launchAtLoginManager.setEnabled(enabled)
+            } catch {
+                self.settingsWindowController?.updateLaunchAtLogin(self.launchAtLoginManager.isEnabled)
+                self.notifyLaunchAtLogin("设置开机自启失败:\(error.localizedDescription)")
+                return
+            }
+            if enabled, self.launchAtLoginManager.requiresApproval {
+                self.notifyLaunchAtLogin("已请求开机自启 —— 请在 系统设置 › 通用 › 登录项 中允许 OpenPetAgent。")
+                Self.openLoginItemsSettings()
+            }
+        }
+
         controller.onSaveOpenClawAutoStart = { [weak self] enabled in
             guard let self else { return }
             self.userDefaults.set(enabled, forKey: OpenClawGatewayManager.autoStartKey)
@@ -596,6 +616,18 @@ extension MinimalAppDelegate {
         alert.addButton(withTitle: "恢复(需要密码)")
         alert.addButton(withTitle: "稍后")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// 开机自启相关提示走 pet 气泡(context「启动」,与防休眠分开)。
+    func notifyLaunchAtLogin(_ reason: String) {
+        bondedSession?.injectProactiveSuggestion(context: "启动", reply: reason) { _ in }
+    }
+
+    /// 打开 系统设置 › 通用 › 登录项(macOS 13+ 深链)。
+    static func openLoginItemsSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // MARK: - 系统设置深链(Task 4)

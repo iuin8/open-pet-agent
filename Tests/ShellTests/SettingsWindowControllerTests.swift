@@ -546,6 +546,24 @@ func openClawStatusAsyncUpdate() {
     #expect(controller.openClawStatusText == "⚪ 未安装")
 }
 
+@Test("开机自启: 默认 off + 初始化 + simulate 触发回调 + 程序化回退")
+@MainActor
+func launchAtLoginWiring() {
+    #expect(SettingsWindowController().isLaunchAtLoginOn == false)
+    #expect(SettingsWindowController(launchAtLogin: true).isLaunchAtLoginOn == true)
+
+    var captured: Bool?
+    let controller = SettingsWindowController(launchAtLogin: false)
+    controller.onSaveLaunchAtLogin = { v in captured = v }
+    controller.simulateToggleLaunchAtLogin(true)
+    #expect(captured == true)
+    #expect(controller.isLaunchAtLoginOn == true)
+
+    // 注册失败时 App 回退 toggle 到真实状态。
+    controller.updateLaunchAtLogin(false)
+    #expect(controller.isLaunchAtLoginOn == false)
+}
+
 @Test("Task E: OpenClaw autoStart 默认 true")
 @MainActor
 func openClawAutoStartDefaultsTrue() {

@@ -285,6 +285,9 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// 「防休眠」编排器 —— 四态模式 + 定时自动关 + 电源安全闸。
     let screenAwakeController = ScreenAwakeController()
 
+    /// 开机自启管理(SMAppService.mainApp)。`status` 是权威源,不另存 UD。
+    let launchAtLoginManager: LaunchAtLoginManaging = SMAppServiceLaunchAtLogin()
+
     /// 从 UD 读当前防休眠模式 raw,缺失时迁移旧布尔 key(true→displayAwake),否则 off。
     func currentScreenAwakeModeRaw() -> String {
         if let raw = userDefaults.string(forKey: Self.screenAwakeModeKey) {

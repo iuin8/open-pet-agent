@@ -61,6 +61,9 @@ public final class SettingsWindowController {
     /// Task E: Called when the user taps Save with the chosen 工具 engine kind raw string。
     public var onSaveToolEngineKind: @MainActor (String) -> Void = { _ in }
 
+    /// 开机自启 toggle 改动时触发(modeless 即时提交)。
+    public var onSaveLaunchAtLogin: @MainActor (Bool) -> Void = { _ in }
+
     /// Task E: Called when the user taps Save with the OpenClaw "启动时自动探测 daemon" toggle state。
     public var onSaveOpenClawAutoStart: @MainActor (Bool) -> Void = { _ in }
 
@@ -201,6 +204,15 @@ public final class SettingsWindowController {
     /// Task E: 当前选中的 tool engine kind raw string。
     public var selectedToolEngineKind: String { viewModel.toolEngineKind }
 
+    /// 当前 "开机自启" toggle 是否勾选。
+    public var isLaunchAtLoginOn: Bool { viewModel.launchAtLogin }
+
+    /// App 用:把开机自启 toggle 程序化设到真实状态(注册失败回退用)。
+    public func updateLaunchAtLogin(_ on: Bool) {
+        guard viewModel.launchAtLogin != on else { return }
+        viewModel.launchAtLogin = on
+    }
+
     /// Task E: 当前 OpenClaw 自动启动 toggle 是否勾选。
     public var isOpenClawAutoStartOn: Bool { viewModel.openClawAutoStart }
 
@@ -282,6 +294,7 @@ public final class SettingsWindowController {
         openClawStatusDescription: String = "⚪ 未启动",
         openClawAutoStart: Bool = true,
         openClawAllowEndpointEnable: Bool = true,
+        launchAtLogin: Bool = false,
         screenAwakeModeRaw: String = "off",
         screenAwakeAutoOffRaw: String = "never",
         screenAwakeDisableOnLowPower: Bool = true,
@@ -315,6 +328,7 @@ public final class SettingsWindowController {
             openClawStatusDescription: openClawStatusDescription,
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
+            launchAtLogin: launchAtLogin,
             screenAwakeModeRaw: screenAwakeModeRaw,
             screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
             screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
@@ -379,6 +393,7 @@ public final class SettingsWindowController {
         self.viewModel.onCommitIslandHidePet = { [weak self] on in self?.onSaveIslandHidePetOnSwitch(on) }
         self.viewModel.onCommitToolMode = { [weak self] on in self?.onSaveToolModeEnabled(on) }
         self.viewModel.onCommitToolEngine = { [weak self] raw in self?.onSaveToolEngineKind(raw) }
+        self.viewModel.onCommitLaunchAtLogin = { [weak self] on in self?.onSaveLaunchAtLogin(on) }
         self.viewModel.onCommitOpenClawAutoStart = { [weak self] on in self?.onSaveOpenClawAutoStart(on) }
         self.viewModel.onCommitOpenClawAllowEndpoint = { [weak self] on in self?.onSaveOpenClawAllowEndpointEnable(on) }
         self.viewModel.onCommitScreenAwakeMode = { [weak self] raw in self?.onSaveScreenAwakeMode(raw) }
@@ -538,6 +553,12 @@ public final class SettingsWindowController {
         viewModel.selectToolEngineKind(kindRaw)
     }
 
+    /// 直接设置 "开机自启" toggle(测试用)—— 触发 onCommit,跟真实 Toggle.onChange 一致。
+    public func simulateToggleLaunchAtLogin(_ on: Bool) {
+        viewModel.launchAtLogin = on
+        viewModel.onCommitLaunchAtLogin(on)
+    }
+
     /// Task E: 直接设置 OpenClaw 自动启动 toggle(测试用)。
     public func simulateToggleOpenClawAutoStart(_ on: Bool) {
         viewModel.openClawAutoStart = on
@@ -609,6 +630,7 @@ public final class SettingsWindowController {
         onSaveIslandEnabled(viewModel.effectiveIslandOn)
         onSaveToolModeEnabled(viewModel.toolModeEnabled)
         onSaveToolEngineKind(viewModel.toolEngineKind)
+        onSaveLaunchAtLogin(viewModel.launchAtLogin)
         onSaveOpenClawAutoStart(viewModel.openClawAutoStart)
         onSaveOpenClawAllowEndpointEnable(viewModel.openClawAllowEndpointEnable)
         onSaveScreenAwakeMode(viewModel.screenAwakeModeRaw)

@@ -8,6 +8,22 @@ struct SettingsSystemSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            GroupBox(label: sectionLabel("启动")) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("开机自动启动", isOn: $viewModel.launchAtLogin)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: viewModel.launchAtLogin) { newValue in
+                            viewModel.onCommitLaunchAtLogin(newValue)
+                        }
+                    Text("登录 macOS 时自动启动 OpenPetAgent。可随时在 系统设置 › 通用 › 登录项 中调整。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             GroupBox(label: sectionLabel("OpenClaw 守护进程")) {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle(

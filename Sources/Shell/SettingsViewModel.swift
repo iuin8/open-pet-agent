@@ -87,6 +87,12 @@ final class SettingsViewModel: ObservableObject {
     @Published var openClawAutoStart: Bool
     @Published var openClawAllowEndpointEnable: Bool
 
+    /// 开机自启开关。反映 SMAppService 当前状态(权威源,无 UD)。
+    @Published var launchAtLogin: Bool
+
+    /// 开关改动即时提交 → 由 App 注入(register/unregister + 失败回退)。
+    var onCommitLaunchAtLogin: (Bool) -> Void = { _ in }
+
     /// 「防休眠」模式 raw —— "off" / "displayAwake" / "systemAwake" / "lidClosedAwake"。默认 "off"。
     /// UserDefaults key: "screenAwakeMode"。改动即时提交(modeless)。
     @Published var screenAwakeModeRaw: String
@@ -354,6 +360,7 @@ final class SettingsViewModel: ObservableObject {
         openClawStatusDescription: String,
         openClawAutoStart: Bool,
         openClawAllowEndpointEnable: Bool,
+        launchAtLogin: Bool = false,
         screenAwakeModeRaw: String = "off",
         screenAwakeAutoOffRaw: String = "never",
         screenAwakeDisableOnLowPower: Bool = true,
@@ -398,6 +405,7 @@ final class SettingsViewModel: ObservableObject {
         self.openClawStatusDescription = openClawStatusDescription
         self.openClawAutoStart = openClawAutoStart
         self.openClawAllowEndpointEnable = openClawAllowEndpointEnable
+        self.launchAtLogin = launchAtLogin
         self.screenAwakeModeRaw = screenAwakeModeRaw
         self.screenAwakeAutoOffRaw = screenAwakeAutoOffRaw
         self.screenAwakeDisableOnLowPower = screenAwakeDisableOnLowPower
