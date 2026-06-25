@@ -89,19 +89,14 @@ func menuBarFollowingOffRoamingOnByDefault() {
     #expect(controller.isRoamingEnabled == true)
 }
 
-@Test("「交互时冻结 pet」默认开 + 点击 toggle 状态 + 触发 onToggleFreezeWhenInteracting")
+@Test("感知/权限应答/交互冻结 已迁到 设置 → 系统,菜单不再含这 3 项(保持精简一致)")
 @MainActor
-func menuBarFreezeWhenInteractingToggle() throws {
+func menuBarNoLongerExposesMigratedToggles() {
     let controller = MenuBarController()
-    #expect(controller.isFreezeWhenInteractingEnabled == true)   // 默认 on
-    var observed: [Bool] = []
-    controller.onToggleFreezeWhenInteracting = { observed.append($0) }
-    let item = try #require(controller.menuForTesting.items.first(where: { $0.title == "交互时冻结 pet (卡片/右键菜单/悬停)" }))
-    let action = try #require(item.action)
-    _ = (item.target as? NSObject)?.perform(action, with: item)
-    #expect(controller.isFreezeWhenInteractingEnabled == false)   // 点一下变 off
-    #expect(item.state == .off)
-    #expect(observed == [false])
+    let titles = controller.menuForTesting.items.map(\.title)
+    #expect(titles.contains("感知编码会话 (Claude Code / Codex)") == false)
+    #expect(titles.contains("在卡片上回答权限/问题") == false)
+    #expect(titles.contains("交互时冻结 pet (卡片/右键菜单/悬停)") == false)
 }
 
 @Test("温度模式已迁移到设置 → 天气，菜单不再含温度模式入口")

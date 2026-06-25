@@ -504,16 +504,13 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         // 启动从 UserDefaults 恢复两个空间行为开关(跟随默认 off / 漫游默认 on)。
         let followingOn = (userDefaults.object(forKey: Self.followingEnabledKey) as? Bool) ?? false
         let roamingOn = (userDefaults.object(forKey: Self.roamingEnabledKey) as? Bool) ?? true
-        let sensingOn = (userDefaults.object(forKey: Self.agentSensingEnabledKey) as? Bool) ?? true
-        let permAnswerOn = (userDefaults.object(forKey: Self.permissionAnsweringEnabledKey) as? Bool) ?? false
+        // 感知/权限应答 启用态在各自 wiring(setupAgentSensing / setupPermissionAnswering)启动时直接读 UD,
+        // 不再经 MenuBarController。交互冻结启动态读 UD 喂 App 镜像字段。
         let freezeOn = (userDefaults.object(forKey: Self.freezeWhenInteractingEnabledKey) as? Bool) ?? true
         self.menuBarController = menuBarController
             ?? MenuBarController(
                 initialFollowingEnabled: followingOn,
-                initialRoamingEnabled: roamingOn,
-                initialAgentSensingEnabled: sensingOn,
-                initialPermissionAnsweringEnabled: permAnswerOn,
-                initialFreezeWhenInteractingEnabled: freezeOn
+                initialRoamingEnabled: roamingOn
             )
         self.userDefaults = userDefaults
         self.llmProviderBox = llmProviderBox
@@ -529,7 +526,7 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         self.lastFrameTime = currentTime()
         self.isFollowingEnabled = self.menuBarController.isFollowingEnabled
         self.isRoamingEnabled = self.menuBarController.isRoamingEnabled
-        self.isFreezeWhenInteractingEnabled = self.menuBarController.isFreezeWhenInteractingEnabled
+        self.isFreezeWhenInteractingEnabled = freezeOn
         super.init()
         // 跟随/漫游开关仅对程序化形象(Orb/Slime)生效;换上 petdex/Live2D/Shimeji 时菜单灰掉。
         // pull 式闭包,菜单每次打开读当前 renderer 的 driveModel,换形象后自动反映、不会 stale。
@@ -548,19 +545,7 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
             self.userDefaults.set(enabled, forKey: Self.roamingEnabledKey)
             self.syncSpatialBehaviorAcrossSurfaces()
         }
-        self.menuBarController.onToggleAgentSensing = { [weak self] enabled in
-            guard let self else { return }
-            self.userDefaults.set(enabled, forKey: Self.agentSensingEnabledKey)
-            Task { await self.agentSensingService?.setEnabled(enabled) }
-        }
-        self.menuBarController.onTogglePermissionAnswering = { [weak self] enabled in
-            self?.setPermissionAnswering(enabled: enabled)
-        }
-        self.menuBarController.onToggleFreezeWhenInteracting = { [weak self] enabled in
-            guard let self else { return }
-            self.isFreezeWhenInteractingEnabled = enabled
-            self.userDefaults.set(enabled, forKey: Self.freezeWhenInteractingEnabledKey)
-        }
+        // 感知/权限应答/交互冻结 已迁到 设置 → 系统 →「感知与交互」,onSave 回调见 buildSettingsController。
         // 「温度模式」已迁移到 设置 → 天气 tab（applyThermalOverride 即时生效），
         // 不再走状态栏菜单。
         self.menuBarController.onSettings = { [weak self] in

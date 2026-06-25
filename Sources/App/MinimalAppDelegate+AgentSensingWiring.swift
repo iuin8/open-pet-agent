@@ -21,7 +21,7 @@ extension MinimalAppDelegate {
     func setupAgentSensing() {
         guard bondedSession != nil else { return }   // 气泡落点缺席 → 不构造
 
-        let enabledNow = menuBarController.isAgentSensingEnabled
+        let enabledNow = (userDefaults.object(forKey: Self.agentSensingEnabledKey) as? Bool) ?? true
         let service = AgentSensingService(
             enabled: enabledNow,
             sink: { [weak self] output in

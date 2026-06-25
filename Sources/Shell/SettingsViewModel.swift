@@ -99,6 +99,20 @@ final class SettingsViewModel: ObservableObject {
     /// 开关改动即时提交 → 由 App 注入(写 UD + MenuBarController.setStatusItemVisible)。
     var onCommitMenuBarIconVisible: (Bool) -> Void = { _ in }
 
+    // MARK: - 感知与交互(从菜单迁入,set-once 进阶开关)
+
+    /// 感知外部编码会话(Claude Code / Codex)。默认 true。UD key: "agentSensingEnabled"。
+    @Published var agentSensingEnabled: Bool
+    var onCommitAgentSensing: (Bool) -> Void = { _ in }
+
+    /// 在卡片上回答权限/问题(装/卸 http hook + 起/停 server)。默认 false。
+    @Published var permissionAnsweringEnabled: Bool
+    var onCommitPermissionAnswering: (Bool) -> Void = { _ in }
+
+    /// 交互时冻结 pet(卡片/右键菜单/悬停时不漫步)。默认 true。
+    @Published var freezeWhenInteracting: Bool
+    var onCommitFreezeWhenInteracting: (Bool) -> Void = { _ in }
+
     /// 「防休眠」模式 raw —— "off" / "displayAwake" / "systemAwake" / "lidClosedAwake"。默认 "off"。
     /// UserDefaults key: "screenAwakeMode"。改动即时提交(modeless)。
     @Published var screenAwakeModeRaw: String
@@ -368,6 +382,9 @@ final class SettingsViewModel: ObservableObject {
         openClawAllowEndpointEnable: Bool,
         launchAtLogin: Bool = false,
         menuBarIconVisible: Bool = false,
+        agentSensingEnabled: Bool = true,
+        permissionAnsweringEnabled: Bool = false,
+        freezeWhenInteracting: Bool = true,
         screenAwakeModeRaw: String = "off",
         screenAwakeAutoOffRaw: String = "never",
         screenAwakeDisableOnLowPower: Bool = true,
@@ -414,6 +431,9 @@ final class SettingsViewModel: ObservableObject {
         self.openClawAllowEndpointEnable = openClawAllowEndpointEnable
         self.launchAtLogin = launchAtLogin
         self.menuBarIconVisible = menuBarIconVisible
+        self.agentSensingEnabled = agentSensingEnabled
+        self.permissionAnsweringEnabled = permissionAnsweringEnabled
+        self.freezeWhenInteracting = freezeWhenInteracting
         self.screenAwakeModeRaw = screenAwakeModeRaw
         self.screenAwakeAutoOffRaw = screenAwakeAutoOffRaw
         self.screenAwakeDisableOnLowPower = screenAwakeDisableOnLowPower

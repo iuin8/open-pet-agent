@@ -34,6 +34,32 @@ struct SettingsSystemSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            GroupBox(label: sectionLabel("感知与交互")) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("感知编码会话 (Claude Code / Codex)", isOn: $viewModel.agentSensingEnabled)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: viewModel.agentSensingEnabled) { newValue in
+                            viewModel.onCommitAgentSensing(newValue)
+                        }
+                    Toggle("在卡片上回答权限/问题", isOn: $viewModel.permissionAnsweringEnabled)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: viewModel.permissionAnsweringEnabled) { newValue in
+                            viewModel.onCommitPermissionAnswering(newValue)
+                        }
+                    Toggle("交互时冻结桌宠 (卡片/右键菜单/悬停时不漫步)", isOn: $viewModel.freezeWhenInteracting)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: viewModel.freezeWhenInteracting) { newValue in
+                            viewModel.onCommitFreezeWhenInteracting(newValue)
+                        }
+                    Text("这几个 set-once 开关已从菜单迁到此处,菜单(状态栏 + 右键桌宠)保持精简一致。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             GroupBox(label: sectionLabel("OpenClaw 守护进程")) {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle(

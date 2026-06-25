@@ -67,6 +67,13 @@ public final class SettingsWindowController {
     /// 「在菜单栏显示图标」toggle 改动时触发(modeless 即时提交)。
     public var onSaveMenuBarIconVisible: @MainActor (Bool) -> Void = { _ in }
 
+    /// 「感知编码会话」toggle 改动时触发(从菜单迁入)。
+    public var onSaveAgentSensing: @MainActor (Bool) -> Void = { _ in }
+    /// 「在卡片上回答权限/问题」toggle 改动时触发(从菜单迁入)。
+    public var onSavePermissionAnswering: @MainActor (Bool) -> Void = { _ in }
+    /// 「交互时冻结桌宠」toggle 改动时触发(从菜单迁入)。
+    public var onSaveFreezeWhenInteracting: @MainActor (Bool) -> Void = { _ in }
+
     /// Task E: Called when the user taps Save with the OpenClaw "启动时自动探测 daemon" toggle state。
     public var onSaveOpenClawAutoStart: @MainActor (Bool) -> Void = { _ in }
 
@@ -213,6 +220,11 @@ public final class SettingsWindowController {
     /// 当前 "在菜单栏显示图标" toggle 是否勾选。
     public var isMenuBarIconVisibleOn: Bool { viewModel.menuBarIconVisible }
 
+    /// 当前 "感知编码会话" / "权限应答" / "交互冻结" toggle 状态(测试用)。
+    public var isAgentSensingOn: Bool { viewModel.agentSensingEnabled }
+    public var isPermissionAnsweringOn: Bool { viewModel.permissionAnsweringEnabled }
+    public var isFreezeWhenInteractingOn: Bool { viewModel.freezeWhenInteracting }
+
     /// App 用:把开机自启 toggle 程序化设到真实状态(注册失败回退用)。
     public func updateLaunchAtLogin(_ on: Bool) {
         guard viewModel.launchAtLogin != on else { return }
@@ -302,6 +314,9 @@ public final class SettingsWindowController {
         openClawAllowEndpointEnable: Bool = true,
         launchAtLogin: Bool = false,
         menuBarIconVisible: Bool = false,
+        agentSensingEnabled: Bool = true,
+        permissionAnsweringEnabled: Bool = false,
+        freezeWhenInteracting: Bool = true,
         screenAwakeModeRaw: String = "off",
         screenAwakeAutoOffRaw: String = "never",
         screenAwakeDisableOnLowPower: Bool = true,
@@ -337,6 +352,9 @@ public final class SettingsWindowController {
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
             launchAtLogin: launchAtLogin,
             menuBarIconVisible: menuBarIconVisible,
+            agentSensingEnabled: agentSensingEnabled,
+            permissionAnsweringEnabled: permissionAnsweringEnabled,
+            freezeWhenInteracting: freezeWhenInteracting,
             screenAwakeModeRaw: screenAwakeModeRaw,
             screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
             screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
@@ -403,6 +421,9 @@ public final class SettingsWindowController {
         self.viewModel.onCommitToolEngine = { [weak self] raw in self?.onSaveToolEngineKind(raw) }
         self.viewModel.onCommitLaunchAtLogin = { [weak self] on in self?.onSaveLaunchAtLogin(on) }
         self.viewModel.onCommitMenuBarIconVisible = { [weak self] on in self?.onSaveMenuBarIconVisible(on) }
+        self.viewModel.onCommitAgentSensing = { [weak self] on in self?.onSaveAgentSensing(on) }
+        self.viewModel.onCommitPermissionAnswering = { [weak self] on in self?.onSavePermissionAnswering(on) }
+        self.viewModel.onCommitFreezeWhenInteracting = { [weak self] on in self?.onSaveFreezeWhenInteracting(on) }
         self.viewModel.onCommitOpenClawAutoStart = { [weak self] on in self?.onSaveOpenClawAutoStart(on) }
         self.viewModel.onCommitOpenClawAllowEndpoint = { [weak self] on in self?.onSaveOpenClawAllowEndpointEnable(on) }
         self.viewModel.onCommitScreenAwakeMode = { [weak self] raw in self?.onSaveScreenAwakeMode(raw) }
@@ -574,6 +595,20 @@ public final class SettingsWindowController {
         viewModel.onCommitMenuBarIconVisible(on)
     }
 
+    /// 直接设置 感知/权限/冻结 toggle(测试用)。
+    public func simulateToggleAgentSensing(_ on: Bool) {
+        viewModel.agentSensingEnabled = on
+        viewModel.onCommitAgentSensing(on)
+    }
+    public func simulateTogglePermissionAnswering(_ on: Bool) {
+        viewModel.permissionAnsweringEnabled = on
+        viewModel.onCommitPermissionAnswering(on)
+    }
+    public func simulateToggleFreezeWhenInteracting(_ on: Bool) {
+        viewModel.freezeWhenInteracting = on
+        viewModel.onCommitFreezeWhenInteracting(on)
+    }
+
     /// Task E: 直接设置 OpenClaw 自动启动 toggle(测试用)。
     public func simulateToggleOpenClawAutoStart(_ on: Bool) {
         viewModel.openClawAutoStart = on
@@ -647,6 +682,9 @@ public final class SettingsWindowController {
         onSaveToolEngineKind(viewModel.toolEngineKind)
         onSaveLaunchAtLogin(viewModel.launchAtLogin)
         onSaveMenuBarIconVisible(viewModel.menuBarIconVisible)
+        onSaveAgentSensing(viewModel.agentSensingEnabled)
+        onSavePermissionAnswering(viewModel.permissionAnsweringEnabled)
+        onSaveFreezeWhenInteracting(viewModel.freezeWhenInteracting)
         onSaveOpenClawAutoStart(viewModel.openClawAutoStart)
         onSaveOpenClawAllowEndpointEnable(viewModel.openClawAllowEndpointEnable)
         onSaveScreenAwakeMode(viewModel.screenAwakeModeRaw)

@@ -546,6 +546,33 @@ func openClawStatusAsyncUpdate() {
     #expect(controller.openClawStatusText == "⚪ 未安装")
 }
 
+@Test("感知与交互(从菜单迁入): 默认值 + 初始化 + simulate 触发回调")
+@MainActor
+func senseAndInteractToggles() {
+    // 默认:感知 on / 权限应答 off / 交互冻结 on(与原菜单默认一致)。
+    let def = SettingsWindowController()
+    #expect(def.isAgentSensingOn == true)
+    #expect(def.isPermissionAnsweringOn == false)
+    #expect(def.isFreezeWhenInteractingOn == true)
+
+    let custom = SettingsWindowController(agentSensingEnabled: false, permissionAnsweringEnabled: true, freezeWhenInteracting: false)
+    #expect(custom.isAgentSensingOn == false)
+    #expect(custom.isPermissionAnsweringOn == true)
+    #expect(custom.isFreezeWhenInteractingOn == false)
+
+    var sensing: Bool?, perm: Bool?, freeze: Bool?
+    let c = SettingsWindowController()
+    c.onSaveAgentSensing = { sensing = $0 }
+    c.onSavePermissionAnswering = { perm = $0 }
+    c.onSaveFreezeWhenInteracting = { freeze = $0 }
+    c.simulateToggleAgentSensing(false)
+    c.simulateTogglePermissionAnswering(true)
+    c.simulateToggleFreezeWhenInteracting(false)
+    #expect(sensing == false)
+    #expect(perm == true)
+    #expect(freeze == false)
+}
+
 @Test("菜单栏图标: 默认 off + 初始化 + simulate 触发回调")
 @MainActor
 func menuBarIconVisibleWiring() {

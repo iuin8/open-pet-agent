@@ -13,12 +13,7 @@ public final class MenuBarController: NSObject {
     public var onToggleFollowing: @MainActor (Bool) -> Void = { _ in }
     /// 「桌面漫游」开关切换(自主漫步 + 爬墙)。
     public var onToggleRoaming: @MainActor (Bool) -> Void = { _ in }
-    /// 「感知编码会话」开关切换(只读 tail 外部 Claude Code / Codex transcript → 桌宠反应)。
-    public var onToggleAgentSensing: @MainActor (Bool) -> Void = { _ in }
-    /// 「在卡片上回答权限/问题」开关切换(装/卸 OpenPetAgent 自己的 http hook + 起/停 server)。
-    public var onTogglePermissionAnswering: @MainActor (Bool) -> Void = { _ in }
-    /// 「交互时冻结 pet」开关切换(卡片可见 / 设置面板打开 / 鼠标悬停 pet 上时,pet 停在原地不漫步)。
-    public var onToggleFreezeWhenInteracting: @MainActor (Bool) -> Void = { _ in }
+    // 感知编码会话 / 权限应答 / 交互冻结 已迁到 设置 → 系统 →「感知与交互」,不再走菜单。
     public var onChat: @MainActor () -> Void = {}
     public var onSettings: @MainActor () -> Void = {}
     public var onShareScreenshot: @MainActor () -> Void = {}
@@ -35,16 +30,10 @@ public final class MenuBarController: NSObject {
 
     public private(set) var isFollowingEnabled: Bool
     public private(set) var isRoamingEnabled: Bool
-    public private(set) var isAgentSensingEnabled: Bool
-    public private(set) var isPermissionAnsweringEnabled: Bool
-    public private(set) var isFreezeWhenInteractingEnabled: Bool
 
     private let menu = NSMenu()
     private let followingItem: NSMenuItem
     private let roamingItem: NSMenuItem
-    private let agentSensingItem: NSMenuItem
-    private let permissionAnsweringItem: NSMenuItem
-    private let freezeWhenInteractingItem: NSMenuItem
     private var statusItem: NSStatusItem?
 
     /// 天气 submenu 内 "当前天气" 信息 row (disabled, 仅展示)。
@@ -74,31 +63,16 @@ public final class MenuBarController: NSObject {
 
     public init(
         initialFollowingEnabled: Bool = false,
-        initialRoamingEnabled: Bool = true,
-        initialAgentSensingEnabled: Bool = true,
-        initialPermissionAnsweringEnabled: Bool = false,
-        initialFreezeWhenInteractingEnabled: Bool = true
+        initialRoamingEnabled: Bool = true
     ) {
         self.isFollowingEnabled = initialFollowingEnabled
         self.isRoamingEnabled = initialRoamingEnabled
-        self.isAgentSensingEnabled = initialAgentSensingEnabled
-        self.isPermissionAnsweringEnabled = initialPermissionAnsweringEnabled
-        self.isFreezeWhenInteractingEnabled = initialFreezeWhenInteractingEnabled
         followingItem = NSMenuItem(title: "跟随光标", action: nil, keyEquivalent: "")
         followingItem.image = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: nil)
         followingItem.state = initialFollowingEnabled ? .on : .off
         roamingItem = NSMenuItem(title: "桌面漫游", action: nil, keyEquivalent: "")
         roamingItem.image = NSImage(systemSymbolName: "figure.walk", accessibilityDescription: nil)
         roamingItem.state = initialRoamingEnabled ? .on : .off
-        agentSensingItem = NSMenuItem(title: "感知编码会话 (Claude Code / Codex)", action: nil, keyEquivalent: "")
-        agentSensingItem.image = NSImage(systemSymbolName: "sensor.tag.radiowaves.forward", accessibilityDescription: nil)
-        agentSensingItem.state = initialAgentSensingEnabled ? .on : .off
-        permissionAnsweringItem = NSMenuItem(title: "在卡片上回答权限/问题", action: nil, keyEquivalent: "")
-        permissionAnsweringItem.image = NSImage(systemSymbolName: "checkmark.bubble", accessibilityDescription: nil)
-        permissionAnsweringItem.state = initialPermissionAnsweringEnabled ? .on : .off
-        freezeWhenInteractingItem = NSMenuItem(title: "交互时冻结 pet (卡片/右键菜单/悬停)", action: nil, keyEquivalent: "")
-        freezeWhenInteractingItem.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: nil)
-        freezeWhenInteractingItem.state = initialFreezeWhenInteractingEnabled ? .on : .off
         super.init()
         followingItem.target = self
         followingItem.action = #selector(handleFollowingToggle(_:))
@@ -106,15 +80,8 @@ public final class MenuBarController: NSObject {
         roamingItem.target = self
         roamingItem.action = #selector(handleRoamingToggle(_:))
         menu.addItem(roamingItem)
-        agentSensingItem.target = self
-        agentSensingItem.action = #selector(handleAgentSensingToggle(_:))
-        menu.addItem(agentSensingItem)
-        permissionAnsweringItem.target = self
-        permissionAnsweringItem.action = #selector(handlePermissionAnsweringToggle(_:))
-        menu.addItem(permissionAnsweringItem)
-        freezeWhenInteractingItem.target = self
-        freezeWhenInteractingItem.action = #selector(handleFreezeWhenInteractingToggle(_:))
-        menu.addItem(freezeWhenInteractingItem)
+        // 感知编码会话 / 权限应答 / 交互冻结 这 3 个 set-once 进阶开关已迁到 设置 → 系统 →「感知与交互」,
+        // 菜单(状态栏 + pet 右键)保持精简且一致。
         menu.addItem(.separator())
 
         let chatItem = NSMenuItem(title: "打开聊天浮窗", action: #selector(handleChat(_:)), keyEquivalent: " ")
@@ -242,36 +209,6 @@ public final class MenuBarController: NSObject {
     /// `driveModel.supportsHostDrivenMotion`。pull 式:菜单每次打开经 `validateMenuItem` 实时求值,
     /// 换形象后无需推送、不会 stale。默认 `{ true }`(未注入时维持旧行为=恒可点)。
     public var isMotionApplicable: () -> Bool = { true }
-
-    @objc private func handleAgentSensingToggle(_ sender: Any?) {
-        isAgentSensingEnabled.toggle()
-        agentSensingItem.state = isAgentSensingEnabled ? .on : .off
-        onToggleAgentSensing(isAgentSensingEnabled)
-    }
-
-    @objc private func handleFreezeWhenInteractingToggle(_ sender: Any?) {
-        isFreezeWhenInteractingEnabled.toggle()
-        freezeWhenInteractingItem.state = isFreezeWhenInteractingEnabled ? .on : .off
-        onToggleFreezeWhenInteracting(isFreezeWhenInteractingEnabled)
-    }
-
-    /// 由 caller 把感知状态同步到菜单 check state, 不触发 callback。
-    public func syncAgentSensingState(_ enabled: Bool) {
-        isAgentSensingEnabled = enabled
-        agentSensingItem.state = enabled ? .on : .off
-    }
-
-    @objc private func handlePermissionAnsweringToggle(_ sender: Any?) {
-        isPermissionAnsweringEnabled.toggle()
-        permissionAnsweringItem.state = isPermissionAnsweringEnabled ? .on : .off
-        onTogglePermissionAnswering(isPermissionAnsweringEnabled)
-    }
-
-    /// 由 caller 把权限应答状态同步到菜单 check state, 不触发 callback。
-    public func syncPermissionAnsweringState(_ enabled: Bool) {
-        isPermissionAnsweringEnabled = enabled
-        permissionAnsweringItem.state = enabled ? .on : .off
-    }
 
     @objc private func handleClearWeather(_ sender: Any?) {
         onClearWeather()

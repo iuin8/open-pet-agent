@@ -61,6 +61,10 @@ extension MinimalAppDelegate {
         // 开机自启:读 SMAppService 当前状态(权威源,含 requiresApproval 视为已请求 → 勾上)。
         let launchAtLogin = launchAtLoginManager.isEnabled || launchAtLoginManager.requiresApproval
         let menuBarIconVisible = menuBarIconVisibleSetting()
+        // 感知与交互(从菜单迁入):读各自 UD 当前态(与启动期 wiring 同款默认)。
+        let agentSensingOn = (userDefaults.object(forKey: Self.agentSensingEnabledKey) as? Bool) ?? true
+        let permissionAnsweringOn = (userDefaults.object(forKey: Self.permissionAnsweringEnabledKey) as? Bool) ?? false
+        let freezeOn = (userDefaults.object(forKey: Self.freezeWhenInteractingEnabledKey) as? Bool) ?? true
         // 读 controller 的 live 会话状态(而非 UD)——lidClosedAwake 是会话级,UD 启动已降级。
         let screenAwakeModeRaw = screenAwakeController.mode.rawValue
         let screenAwakeAutoOffRaw = screenAwakeController.autoOff.rawValue
@@ -86,6 +90,9 @@ extension MinimalAppDelegate {
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
             launchAtLogin: launchAtLogin,
             menuBarIconVisible: menuBarIconVisible,
+            agentSensingEnabled: agentSensingOn,
+            permissionAnsweringEnabled: permissionAnsweringOn,
+            freezeWhenInteracting: freezeOn,
             screenAwakeModeRaw: screenAwakeModeRaw,
             screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
             screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
@@ -266,6 +273,21 @@ extension MinimalAppDelegate {
             guard let self else { return }
             self.userDefaults.set(visible, forKey: Self.menuBarIconVisibleKey)
             self.menuBarController.setStatusItemVisible(visible)
+        }
+
+        // 感知与交互(从菜单迁入)—— 复用原菜单栏的同款 apply 逻辑。
+        controller.onSaveAgentSensing = { [weak self] enabled in
+            guard let self else { return }
+            self.userDefaults.set(enabled, forKey: Self.agentSensingEnabledKey)
+            Task { await self.agentSensingService?.setEnabled(enabled) }
+        }
+        controller.onSavePermissionAnswering = { [weak self] enabled in
+            self?.setPermissionAnswering(enabled: enabled)
+        }
+        controller.onSaveFreezeWhenInteracting = { [weak self] enabled in
+            guard let self else { return }
+            self.isFreezeWhenInteractingEnabled = enabled
+            self.userDefaults.set(enabled, forKey: Self.freezeWhenInteractingEnabledKey)
         }
 
         controller.onSaveOpenClawAutoStart = { [weak self] enabled in
