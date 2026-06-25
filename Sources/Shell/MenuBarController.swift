@@ -197,6 +197,23 @@ public final class MenuBarController: NSObject {
         return item
     }
 
+    /// 显示 / 隐藏菜单栏状态项(由设置开关驱动,默认隐藏)。隐藏时彻底移除 NSStatusItem
+    /// (不只是 isVisible=false,避免占位)。截图分享的锚点已有 overlay 兜底,隐藏无碍。
+    public func setStatusItemVisible(_ visible: Bool, title: String = "❄") {
+        if visible {
+            if statusItem == nil { _ = attachToSystemStatusBar(title: title) }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
+    /// 当前菜单栏状态项是否显示(测试用)。
+    public var isStatusItemVisible: Bool { statusItem != nil }
+
+    /// 状态项按钮(截图分享锚点用);隐藏时为 nil → 调用方回退到 overlay。
+    public var statusItemButton: NSStatusBarButton? { statusItem?.button }
+
     @objc private func handleFollowingToggle(_ sender: Any?) {
         isFollowingEnabled.toggle()
         followingItem.state = isFollowingEnabled ? .on : .off

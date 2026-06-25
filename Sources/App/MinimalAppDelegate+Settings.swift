@@ -60,6 +60,7 @@ extension MinimalAppDelegate {
             (userDefaults.object(forKey: Self.islandHidePetOnSwitchKey) as? Bool) ?? true
         // 开机自启:读 SMAppService 当前状态(权威源,含 requiresApproval 视为已请求 → 勾上)。
         let launchAtLogin = launchAtLoginManager.isEnabled || launchAtLoginManager.requiresApproval
+        let menuBarIconVisible = menuBarIconVisibleSetting()
         // 读 controller 的 live 会话状态(而非 UD)——lidClosedAwake 是会话级,UD 启动已降级。
         let screenAwakeModeRaw = screenAwakeController.mode.rawValue
         let screenAwakeAutoOffRaw = screenAwakeController.autoOff.rawValue
@@ -84,6 +85,7 @@ extension MinimalAppDelegate {
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
             launchAtLogin: launchAtLogin,
+            menuBarIconVisible: menuBarIconVisible,
             screenAwakeModeRaw: screenAwakeModeRaw,
             screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
             screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
@@ -257,6 +259,13 @@ extension MinimalAppDelegate {
                 self.notifyLaunchAtLogin("已请求开机自启 —— 请在 系统设置 › 通用 › 登录项 中允许 OpenPetAgent。")
                 Self.openLoginItemsSettings()
             }
+        }
+
+        // "在菜单栏显示图标" toggle —— 写 UD + 即时显隐状态项(MenuBarController 自管生命周期)。
+        controller.onSaveMenuBarIconVisible = { [weak self] visible in
+            guard let self else { return }
+            self.userDefaults.set(visible, forKey: Self.menuBarIconVisibleKey)
+            self.menuBarController.setStatusItemVisible(visible)
         }
 
         controller.onSaveOpenClawAutoStart = { [weak self] enabled in
@@ -674,7 +683,7 @@ extension MinimalAppDelegate {
         // Anchor the NSSharingServicePicker to the status bar button when
         // available; fall back to the overlay window's content view so the
         // picker always has a valid NSView to attach to.
-        let anchorView: NSView = statusItem?.button ?? overlayWindow.contentView ?? NSView()
+        let anchorView: NSView = menuBarController.statusItemButton ?? overlayWindow.contentView ?? NSView()
 
         screenshotService.captureAndShare(window: overlayWindow, anchorView: anchorView)
     }

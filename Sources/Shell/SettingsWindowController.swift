@@ -64,6 +64,9 @@ public final class SettingsWindowController {
     /// 开机自启 toggle 改动时触发(modeless 即时提交)。
     public var onSaveLaunchAtLogin: @MainActor (Bool) -> Void = { _ in }
 
+    /// 「在菜单栏显示图标」toggle 改动时触发(modeless 即时提交)。
+    public var onSaveMenuBarIconVisible: @MainActor (Bool) -> Void = { _ in }
+
     /// Task E: Called when the user taps Save with the OpenClaw "启动时自动探测 daemon" toggle state。
     public var onSaveOpenClawAutoStart: @MainActor (Bool) -> Void = { _ in }
 
@@ -207,6 +210,9 @@ public final class SettingsWindowController {
     /// 当前 "开机自启" toggle 是否勾选。
     public var isLaunchAtLoginOn: Bool { viewModel.launchAtLogin }
 
+    /// 当前 "在菜单栏显示图标" toggle 是否勾选。
+    public var isMenuBarIconVisibleOn: Bool { viewModel.menuBarIconVisible }
+
     /// App 用:把开机自启 toggle 程序化设到真实状态(注册失败回退用)。
     public func updateLaunchAtLogin(_ on: Bool) {
         guard viewModel.launchAtLogin != on else { return }
@@ -295,6 +301,7 @@ public final class SettingsWindowController {
         openClawAutoStart: Bool = true,
         openClawAllowEndpointEnable: Bool = true,
         launchAtLogin: Bool = false,
+        menuBarIconVisible: Bool = false,
         screenAwakeModeRaw: String = "off",
         screenAwakeAutoOffRaw: String = "never",
         screenAwakeDisableOnLowPower: Bool = true,
@@ -329,6 +336,7 @@ public final class SettingsWindowController {
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
             launchAtLogin: launchAtLogin,
+            menuBarIconVisible: menuBarIconVisible,
             screenAwakeModeRaw: screenAwakeModeRaw,
             screenAwakeAutoOffRaw: screenAwakeAutoOffRaw,
             screenAwakeDisableOnLowPower: screenAwakeDisableOnLowPower,
@@ -394,6 +402,7 @@ public final class SettingsWindowController {
         self.viewModel.onCommitToolMode = { [weak self] on in self?.onSaveToolModeEnabled(on) }
         self.viewModel.onCommitToolEngine = { [weak self] raw in self?.onSaveToolEngineKind(raw) }
         self.viewModel.onCommitLaunchAtLogin = { [weak self] on in self?.onSaveLaunchAtLogin(on) }
+        self.viewModel.onCommitMenuBarIconVisible = { [weak self] on in self?.onSaveMenuBarIconVisible(on) }
         self.viewModel.onCommitOpenClawAutoStart = { [weak self] on in self?.onSaveOpenClawAutoStart(on) }
         self.viewModel.onCommitOpenClawAllowEndpoint = { [weak self] on in self?.onSaveOpenClawAllowEndpointEnable(on) }
         self.viewModel.onCommitScreenAwakeMode = { [weak self] raw in self?.onSaveScreenAwakeMode(raw) }
@@ -559,6 +568,12 @@ public final class SettingsWindowController {
         viewModel.onCommitLaunchAtLogin(on)
     }
 
+    /// 直接设置 "在菜单栏显示图标" toggle(测试用)。
+    public func simulateToggleMenuBarIconVisible(_ on: Bool) {
+        viewModel.menuBarIconVisible = on
+        viewModel.onCommitMenuBarIconVisible(on)
+    }
+
     /// Task E: 直接设置 OpenClaw 自动启动 toggle(测试用)。
     public func simulateToggleOpenClawAutoStart(_ on: Bool) {
         viewModel.openClawAutoStart = on
@@ -631,6 +646,7 @@ public final class SettingsWindowController {
         onSaveToolModeEnabled(viewModel.toolModeEnabled)
         onSaveToolEngineKind(viewModel.toolEngineKind)
         onSaveLaunchAtLogin(viewModel.launchAtLogin)
+        onSaveMenuBarIconVisible(viewModel.menuBarIconVisible)
         onSaveOpenClawAutoStart(viewModel.openClawAutoStart)
         onSaveOpenClawAllowEndpointEnable(viewModel.openClawAllowEndpointEnable)
         onSaveScreenAwakeMode(viewModel.screenAwakeModeRaw)

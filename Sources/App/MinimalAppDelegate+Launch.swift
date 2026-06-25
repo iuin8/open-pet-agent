@@ -511,9 +511,9 @@ extension MinimalAppDelegate {
 
     /// falling-sand 启用 + 帧循环安装 + 状态栏挂载 + companion live-context wire-up。
     func setupRuntimeAndStatusBar(controller: DesktopShellController) {
-        if statusItem == nil {
-            statusItem = menuBarController.attachToSystemStatusBar()
-        }
+        // 菜单栏图标默认隐藏(用户可在 设置→系统→启动 开启)。pet 右键菜单是常驻入口。
+        // 状态项生命周期由 MenuBarController 自管(setStatusItemVisible),App 不再单独持 statusItem。
+        menuBarController.setStatusItemVisible(menuBarIconVisibleSetting())
         // falling-sand 是唯一雪路径，启动即启用（按 cellSize 建 engine）。
         controller.setFallingSandEnabled(true, cellSize: Self.fallingSandCellSize)
         SnowDiagnostics.log("fallingSandEnabledAtLaunch")

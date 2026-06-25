@@ -93,6 +93,12 @@ final class SettingsViewModel: ObservableObject {
     /// 开关改动即时提交 → 由 App 注入(register/unregister + 失败回退)。
     var onCommitLaunchAtLogin: (Bool) -> Void = { _ in }
 
+    /// 「在菜单栏显示图标」开关。默认 false。UD key: "menuBarIconVisible"。
+    @Published var menuBarIconVisible: Bool
+
+    /// 开关改动即时提交 → 由 App 注入(写 UD + MenuBarController.setStatusItemVisible)。
+    var onCommitMenuBarIconVisible: (Bool) -> Void = { _ in }
+
     /// 「防休眠」模式 raw —— "off" / "displayAwake" / "systemAwake" / "lidClosedAwake"。默认 "off"。
     /// UserDefaults key: "screenAwakeMode"。改动即时提交(modeless)。
     @Published var screenAwakeModeRaw: String
@@ -361,6 +367,7 @@ final class SettingsViewModel: ObservableObject {
         openClawAutoStart: Bool,
         openClawAllowEndpointEnable: Bool,
         launchAtLogin: Bool = false,
+        menuBarIconVisible: Bool = false,
         screenAwakeModeRaw: String = "off",
         screenAwakeAutoOffRaw: String = "never",
         screenAwakeDisableOnLowPower: Bool = true,
@@ -406,6 +413,7 @@ final class SettingsViewModel: ObservableObject {
         self.openClawAutoStart = openClawAutoStart
         self.openClawAllowEndpointEnable = openClawAllowEndpointEnable
         self.launchAtLogin = launchAtLogin
+        self.menuBarIconVisible = menuBarIconVisible
         self.screenAwakeModeRaw = screenAwakeModeRaw
         self.screenAwakeAutoOffRaw = screenAwakeAutoOffRaw
         self.screenAwakeDisableOnLowPower = screenAwakeDisableOnLowPower

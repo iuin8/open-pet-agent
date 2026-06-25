@@ -288,6 +288,14 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// 开机自启管理(SMAppService.mainApp)。`status` 是权威源,不另存 UD。
     let launchAtLoginManager: LaunchAtLoginManaging = SMAppServiceLaunchAtLogin()
 
+    /// 「在菜单栏显示图标」开关持久化 key(默认 false → 启动不挂状态项)。
+    static let menuBarIconVisibleKey = "menuBarIconVisible"
+
+    /// 当前是否应显示菜单栏图标(缺省 false)。
+    func menuBarIconVisibleSetting() -> Bool {
+        (userDefaults.object(forKey: Self.menuBarIconVisibleKey) as? Bool) ?? false
+    }
+
     /// 从 UD 读当前防休眠模式 raw,缺失时迁移旧布尔 key(true→displayAwake),否则 off。
     func currentScreenAwakeModeRaw() -> String {
         if let raw = userDefaults.string(forKey: Self.screenAwakeModeKey) {
@@ -387,7 +395,7 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     static let freezeWhenInteractingEnabledKey = "petFreezeWhenInteracting"
 
     let menuBarController: MenuBarController
-    var statusItem: NSStatusItem?
+    // 状态项生命周期由 MenuBarController 自管(显隐开关);App 不再单独持 statusItem。
     var isFollowingEnabled = false
     /// 桌面漫游（自主漫步 + 爬墙）开关。默认 on，启动从 UserDefaults 恢复。
     var isRoamingEnabled = true

@@ -546,6 +546,20 @@ func openClawStatusAsyncUpdate() {
     #expect(controller.openClawStatusText == "⚪ 未安装")
 }
 
+@Test("菜单栏图标: 默认 off + 初始化 + simulate 触发回调")
+@MainActor
+func menuBarIconVisibleWiring() {
+    #expect(SettingsWindowController().isMenuBarIconVisibleOn == false)
+    #expect(SettingsWindowController(menuBarIconVisible: true).isMenuBarIconVisibleOn == true)
+
+    var captured: Bool?
+    let controller = SettingsWindowController(menuBarIconVisible: false)
+    controller.onSaveMenuBarIconVisible = { v in captured = v }
+    controller.simulateToggleMenuBarIconVisible(true)
+    #expect(captured == true)
+    #expect(controller.isMenuBarIconVisibleOn == true)
+}
+
 @Test("开机自启: 默认 off + 初始化 + simulate 触发回调 + 程序化回退")
 @MainActor
 func launchAtLoginWiring() {

@@ -19,6 +19,16 @@ struct SettingsSystemSection: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Toggle("在菜单栏显示图标", isOn: $viewModel.menuBarIconVisible)
+                        .toggleStyle(.checkbox)
+                        .onChange(of: viewModel.menuBarIconVisible) { newValue in
+                            viewModel.onCommitMenuBarIconVisible(newValue)
+                        }
+                    Text("关闭后菜单栏不显示图标(默认)。所有功能可经右键点击桌宠的菜单访问 —— 两个菜单内容一致。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
