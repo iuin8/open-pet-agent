@@ -994,7 +994,10 @@ func minimalAppDelegateRoamsToGroundWhenIdle() async throws {
     let tick = try #require(capturedTick)
     let shellController = try #require(delegate.launchedShellController)
     for _ in 0..<180 { await tick() } // ~3s:漫步把 pet 降到地面贴地溜达
-    let endY = shellController.windowSet.petWindow.frame.origin.y
+    // 读运动仲裁每帧**同步**写入的逻辑位置(currentRenderState),而非 petWindow.frame.origin.y ——
+    // 后者是 NSWindow frame、异步落位,紧跟 tick 循环后立刻读会滞后到中途值(曾误读 ~204,实际逻辑已贴地 0),
+    // 造成测试与帧调度时序耦合而 flaky。逻辑位置由帧循环 tick 驱动,同样证明「漫步在帧循环里生效」。
+    let endY = delegate.currentRenderState.petPositionY
     // physics 会拽到光标 y≈560;roaming 降到地面 ≈0。贴地 → 漫步在帧循环里生效。
     #expect(endY < 50)
     shellController.windowSet.allWindows.forEach { $0.orderOut(nil) }
