@@ -34,9 +34,15 @@ public actor ProactiveSuggestionEngine {
     private var nextAutonomousAt: Date?
     /// 上一句碎碎念（避免立刻重复）。
     private var lastChatterQuote: String?
+    /// 最近应用切换轨迹（chronological，去抖后的真实切换序列），喂场景「这之前用过 A → B」脉络。
+    private var recentAppRing: [String] = []
 
     /// app 切换去抖窗口（秒）。
     private static let appSwitchDebounce: TimeInterval = 3
+    /// 轨迹环上限（防无界增长）。
+    private static let recentAppRingCap = 6
+    /// 场景行附带的最近应用数（取轨迹末尾 N，已剔除当前 app）。
+    private static let recentAppsInScene = 3
     /// tick 周期（秒），dwell 每 tick +此值。
     public static let tickIntervalSeconds: TimeInterval = 30
 
@@ -80,7 +86,26 @@ public actor ProactiveSuggestionEngine {
         lastAppName = appName
         lastAppSwitchAt = n
         dwellFired = false  // 切 app 复位 dwell 锁
-        _ = await attempt(ProactiveSignal(kind: .appSwitch, appName: appName))
+        pushRecentApp(appName)
+        _ = await attempt(ProactiveSignal(kind: .appSwitch, appName: appName,
+                                          recentApps: recentApps(excluding: appName)))
+    }
+
+    /// 把切换到的 app 追加进轨迹环（去连续重复 + 截断到 cap）。
+    private func pushRecentApp(_ appName: String) {
+        guard recentAppRing.last != appName else { return }
+        recentAppRing.append(appName)
+        if recentAppRing.count > Self.recentAppRingCap {
+            recentAppRing.removeFirst(recentAppRing.count - Self.recentAppRingCap)
+        }
+    }
+
+    /// 取场景用的最近轨迹（末尾 N，**剔除当前 app**避免与主场景句重复）。空 → nil。
+    private func recentApps(excluding current: String?) -> [String]? {
+        var ring = recentAppRing
+        if let c = current, ring.last == c { ring.removeLast() }
+        let tail = Array(ring.suffix(Self.recentAppsInScene))
+        return tail.isEmpty ? nil : tail
     }
 
     // MARK: - 入口 B：睡眠态翻转（true=睡 / false=回来）
@@ -110,7 +135,8 @@ public actor ProactiveSuggestionEngine {
                 kind: .dwell,
                 appName: snap?.visibleApplicationName,
                 windowTitle: snap?.visibleWindows.first?.title,
-                dwellSeconds: dwellSeconds
+                dwellSeconds: dwellSeconds,
+                recentApps: recentApps(excluding: snap?.visibleApplicationName)
             )
             if ProactiveTriggerEvaluator.evaluate(signal: dwellSignal, settings: settings, hour: hour, isSleeping: sleeping) != nil {
                 if await attempt(dwellSignal, snapshot: snap) { dwellFired = true }
@@ -151,7 +177,12 @@ public actor ProactiveSuggestionEngine {
         if nextAutonomousAt == nil { nextAutonomousAt = n.addingTimeInterval(random(range)) }
         guard let due = nextAutonomousAt, n >= due else { return }
         nextAutonomousAt = n.addingTimeInterval(random(range))
-        _ = await attempt(ProactiveSignal(kind: .autonomous, appName: snap?.visibleApplicationName), snapshot: snap)
+        _ = await attempt(ProactiveSignal(
+            kind: .autonomous,
+            appName: snap?.visibleApplicationName,
+            windowTitle: snap?.visibleWindows.first?.title,
+            recentApps: recentApps(excluding: snap?.visibleApplicationName)
+        ), snapshot: snap)
     }
 
     // MARK: - 私有
@@ -185,9 +216,20 @@ public actor ProactiveSuggestionEngine {
         // 注：`??` 的 RHS 是 autoclosure，不支持 await（Swift 并发限制），改用显式分支保持等价语义。
         let snap: DesktopSnapshot?
         if let snapshot { snap = snapshot } else { snap = await snapshotProvider() }
-        let prompt = ProactivePromptComposer.build(signal: signal, level: settings.level)
+        // 从 snap 补全 signal 的 appName/windowTitle（appSwitch 入口构造时尚无 snap，windowTitle 缺失）。
+        let enriched = ProactiveSignal(
+            kind: signal.kind,
+            appName: signal.appName ?? snap?.visibleApplicationName,
+            windowTitle: signal.windowTitle ?? snap?.visibleWindows.first?.title,
+            awaySeconds: signal.awaySeconds,
+            dwellSeconds: signal.dwellSeconds,
+            recentApps: signal.recentApps
+        )
+        let prompt = ProactivePromptComposer.build(signal: enriched, level: settings.level)
+        // system prompt 含 pet persona + 可选用户 persona（按当前 settings.personaText 组）。
+        let systemPrompt = ProactivePromptComposer.systemPrompt(personaText: settings.personaText)
         do {
-            let reply = try await generator.generate(prompt: prompt, snapshot: snap)
+            let reply = try await generator.generate(systemPrompt: systemPrompt, prompt: prompt, snapshot: snap)
             // 兜底①：模型把要求当正文复述（英文 meta / 几乎无中文）→ 静默跳过这条，不弹废话气泡。
             guard !ProactiveReplyTrimmer.isLikelyMetaEcho(reply) else { return false }
             // 兜底②：长度——模型偶尔不守字数约束 → 按级别 charLimit 句界截断（折成一行）。

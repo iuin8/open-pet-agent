@@ -29,7 +29,9 @@ struct CompanionOrchestratorProactiveTests {
             modelName: nil   // proactiveSuggestion 不依赖 modelName（不走 truncatedMessages）
         )
         let snap = DesktopSnapshot(visibleApplicationName: "Xcode")
-        let reply = try await orchestrator.proactiveSuggestion(for: "测试 prompt", snapshot: snap)
+        // 传入含用户 persona 的 system prompt（引擎实际就这么组好传入）。
+        let sys = ProactivePromptComposer.systemPrompt(personaText: "叫我老王，后端工程师")
+        let reply = try await orchestrator.proactiveSuggestion(systemPrompt: sys, for: "测试 prompt", snapshot: snap)
 
         #expect(reply == "你好呀")
         let msgs = await spy.lastMessages
@@ -40,6 +42,8 @@ struct CompanionOrchestratorProactiveTests {
         #expect(msgs.first?.role == .system)
         #expect(msgs.first?.content.contains("只说一句") == true)
         #expect(msgs.first?.content.contains("Xcode") == false)
+        // 传入的用户 persona 被原样用作 system（orchestrator 不再引用静态基底）。
+        #expect(msgs.first?.content.contains("老王") == true)
         // few-shot：至少有一条 assistant 示范，且示范不来自历史
         #expect(msgs.contains { $0.role == .assistant })
         // 真实场景在最后一条 user
@@ -71,7 +75,8 @@ struct CompanionOrchestratorProactiveTests {
     func accumulatesStreamingDeltas() async throws {
         let spy = StreamingSpyProvider()
         let orchestrator = CompanionOrchestrator(llmProvider: spy, modelName: nil)
-        let reply = try await orchestrator.proactiveSuggestion(for: "测试", snapshot: nil)
+        let reply = try await orchestrator.proactiveSuggestion(
+            systemPrompt: ProactivePromptComposer.systemPrompt(personaText: ""), for: "测试", snapshot: nil)
         #expect(reply == "凌晨了，早点休息")
     }
 
@@ -85,7 +90,8 @@ struct CompanionOrchestratorProactiveTests {
         }
         let orchestrator = CompanionOrchestrator(llmProvider: EmptyStreamProvider(), modelName: nil)
         await #expect(throws: LLMProviderError.emptyResponse) {
-            _ = try await orchestrator.proactiveSuggestion(for: "x", snapshot: nil)
+            _ = try await orchestrator.proactiveSuggestion(
+                systemPrompt: ProactivePromptComposer.systemPrompt(personaText: ""), for: "x", snapshot: nil)
         }
     }
 
@@ -93,7 +99,8 @@ struct CompanionOrchestratorProactiveTests {
     func noProviderThrows() async {
         let orchestrator = CompanionOrchestrator()  // 无 provider
         await #expect(throws: LLMProviderError.self) {
-            _ = try await orchestrator.proactiveSuggestion(for: "x", snapshot: nil)
+            _ = try await orchestrator.proactiveSuggestion(
+                systemPrompt: ProactivePromptComposer.systemPrompt(personaText: ""), for: "x", snapshot: nil)
         }
     }
 
@@ -103,7 +110,8 @@ struct CompanionOrchestratorProactiveTests {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("proactive-\(UUID()).json")
         let store = ConversationStore(storeURL: tmp)
         let orchestrator = CompanionOrchestrator(llmProvider: spy, conversationStore: store, modelName: nil)
-        _ = try await orchestrator.proactiveSuggestion(for: "p", snapshot: nil)
+        _ = try await orchestrator.proactiveSuggestion(
+            systemPrompt: ProactivePromptComposer.systemPrompt(personaText: ""), for: "p", snapshot: nil)
         let stored = await store.messages()
         #expect(stored.isEmpty)
     }

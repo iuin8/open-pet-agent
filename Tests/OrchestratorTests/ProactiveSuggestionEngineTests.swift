@@ -10,8 +10,13 @@ struct ProactiveSuggestionEngineTests {
     final class MockGenerator: ProactiveSuggestionGenerating, @unchecked Sendable {
         let reply: String
         let error: Error?
+        /// 捕获最近一次调用的 systemPrompt / prompt（供断言 persona 注入 + 场景脉络注入）。
+        private(set) var lastSystemPrompt: String?
+        private(set) var lastPrompt: String?
         init(reply: String = "建议内容", error: Error? = nil) { self.reply = reply; self.error = error }
-        func generate(prompt: String, snapshot: DesktopSnapshot?) async throws -> String {
+        func generate(systemPrompt: String, prompt: String, snapshot: DesktopSnapshot?) async throws -> String {
+            lastSystemPrompt = systemPrompt
+            lastPrompt = prompt
             if let error { throw error }
             return reply
         }
@@ -59,6 +64,39 @@ struct ProactiveSuggestionEngineTests {
         #expect(calls.count == 1)
         #expect(calls.first?.label == "应用切换")
         #expect(calls.first?.reply == "建议内容")
+    }
+
+    @Test("persona + 窗口标题 + 最近 app 轨迹 注入到 generate")
+    func personaAndSceneContextInjected() async {
+        let sink = SinkSpy()
+        let gen = MockGenerator()
+        var s = ProactiveSettings.default
+        s.personaText = "叫我老王，后端工程师"
+        let snap = DesktopSnapshot(
+            visibleApplicationName: "Xcode",
+            visibleWindows: [VisibleWindowSnapshot(ownerName: "Xcode", bounds: .zero, title: "Foo.swift")]
+        )
+        var t = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let engine = ProactiveSuggestionEngine(
+            settings: s,
+            snapshotProvider: { snap },
+            generator: gen,
+            sink: { l, r in await sink.record(l, r) },
+            isStreamingProvider: { false },
+            now: { t },
+            calendar: Calendar(identifier: .gregorian)
+        )
+        // 建立轨迹：Slack → Chrome → Xcode，每步 > minInterval(600s) 让其都 fire 并入轨迹环。
+        await engine.feedAppSwitch(appName: "Slack");  t = t.addingTimeInterval(700)
+        await engine.feedAppSwitch(appName: "Chrome"); t = t.addingTimeInterval(700)
+        await engine.feedAppSwitch(appName: "Xcode")
+        // persona 注入 systemPrompt；windowTitle 从 snap 补全进场景 prompt；轨迹剔除当前 Xcode。
+        #expect(gen.lastSystemPrompt?.contains("老王") == true)
+        #expect(gen.lastPrompt?.contains("Foo.swift") == true)
+        #expect(gen.lastPrompt?.contains("这之前用过") == true)
+        #expect(gen.lastPrompt?.contains("Slack") == true)
+        #expect(gen.lastPrompt?.contains("Chrome") == true)
+        #expect(gen.lastPrompt?.contains("用户刚切换到「Xcode」") == true)
     }
 
     @Test("level=off → 不触发")

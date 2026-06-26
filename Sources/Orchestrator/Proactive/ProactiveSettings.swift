@@ -24,6 +24,9 @@ public struct ProactiveSettings: Codable, Sendable, Equatable {
     public var chatterEnabled: Bool
     /// 第 2 层：LLM 自主闲聊（场景 E）。默认关——更费 token / 更易烦，opt-in。
     public var triggerAutonomous: Bool
+    /// 用户 persona 自由文本（称呼/职业/语气偏好，1 行即可）。注入主动建议 system prompt，
+    /// **仅调整称呼与语气**（composer 用固定包裹句限制作用域，不当指令、不越权）。空 = 不注入。
+    public var personaText: String
 
     public init(
         level: ProactivityLevel = .moderate,
@@ -33,7 +36,8 @@ public struct ProactiveSettings: Codable, Sendable, Equatable {
         triggerLateNight: Bool = true,
         dwellThresholdSeconds: TimeInterval = 600,
         chatterEnabled: Bool = true,
-        triggerAutonomous: Bool = false
+        triggerAutonomous: Bool = false,
+        personaText: String = ""
     ) {
         self.level = level
         self.triggerAppSwitch = triggerAppSwitch
@@ -43,6 +47,7 @@ public struct ProactiveSettings: Codable, Sendable, Equatable {
         self.dwellThresholdSeconds = dwellThresholdSeconds
         self.chatterEnabled = chatterEnabled
         self.triggerAutonomous = triggerAutonomous
+        self.personaText = personaText
     }
 
     /// 工厂默认：适度·察言观色，A/B/D 开、C 关、dwell 10min；碎碎念开、自主闲聊关。
@@ -52,7 +57,7 @@ public struct ProactiveSettings: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case level, triggerAppSwitch, triggerIdleReturn, triggerDwell, triggerLateNight
-        case dwellThresholdSeconds, chatterEnabled, triggerAutonomous
+        case dwellThresholdSeconds, chatterEnabled, triggerAutonomous, personaText
     }
 
     /// 韧性解码：缺任一字段时回落该字段默认值——上线后加字段不会清空用户既有配置。
@@ -67,6 +72,7 @@ public struct ProactiveSettings: Codable, Sendable, Equatable {
         self.dwellThresholdSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .dwellThresholdSeconds) ?? 600
         self.chatterEnabled = try c.decodeIfPresent(Bool.self, forKey: .chatterEnabled) ?? true
         self.triggerAutonomous = try c.decodeIfPresent(Bool.self, forKey: .triggerAutonomous) ?? false
+        self.personaText = try c.decodeIfPresent(String.self, forKey: .personaText) ?? ""
     }
 
     // MARK: - 节流参数（从 level 查表，只读）

@@ -34,18 +34,23 @@ public struct ProactiveSignal: Sendable, Equatable {
     public let windowTitle: String?
     public let awaySeconds: TimeInterval?
     public let dwellSeconds: TimeInterval?
+    /// 最近的应用切换轨迹（这次之前用过的几个 app，chronological，最多 ~3）。
+    /// 给模型「用户刚从哪来」的脉络，让建议贴当前工作流而非泛泛。nil/空 = 无轨迹。
+    public let recentApps: [String]?
 
     public init(
         kind: TriggerKind,
         appName: String? = nil,
         windowTitle: String? = nil,
         awaySeconds: TimeInterval? = nil,
-        dwellSeconds: TimeInterval? = nil
+        dwellSeconds: TimeInterval? = nil,
+        recentApps: [String]? = nil
     ) {
         self.kind = kind
         self.appName = appName
         self.windowTitle = windowTitle
         self.awaySeconds = awaySeconds
         self.dwellSeconds = dwellSeconds
+        self.recentApps = recentApps
     }
 }

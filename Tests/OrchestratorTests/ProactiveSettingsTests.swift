@@ -16,6 +16,7 @@ struct ProactiveSettingsTests {
         #expect(s.dwellThresholdSeconds == 600)
         #expect(s.chatterEnabled == true)        // 生命感低风险，默认开
         #expect(s.triggerAutonomous == false)    // LLM 自主更费/更易烦，opt-in
+        #expect(s.personaText == "")             // 默认无 persona
     }
 
     @Test("chatter 间隔随 level 查表：off/restrained 不触发，moderate 5-10min，active 2-5min")
@@ -78,9 +79,11 @@ struct ProactiveSettingsTests {
         s.dwellThresholdSeconds = 420
         s.chatterEnabled = false
         s.triggerAutonomous = true
+        s.personaText = "叫我老王，后端工程师，说话随意点"
         let data = try JSONEncoder().encode(s)
         let decoded = try JSONDecoder().decode(ProactiveSettings.self, from: data)
         #expect(decoded == s)
+        #expect(decoded.personaText == "叫我老王，后端工程师，说话随意点")
     }
 
     @Test("部分字段 legacy JSON → 缺的字段用默认值解码成功（含新增 chatter/autonomous）")
@@ -92,5 +95,6 @@ struct ProactiveSettingsTests {
         #expect(decoded.dwellThresholdSeconds == 600)  // 缺 → 默认
         #expect(decoded.chatterEnabled == true)        // 缺 → 默认开
         #expect(decoded.triggerAutonomous == false)    // 缺 → 默认关
+        #expect(decoded.personaText == "")             // 缺 → 默认空（老用户升级不报错）
     }
 }

@@ -43,6 +43,25 @@ struct SettingsProactiveSection: View {
                 Label("主动性级别", systemImage: "brain.head.profile").font(.headline)
             }
 
+            // MARK: - 称呼与语气（persona：注入主动建议 system prompt，让它更贴你）
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("一句话告诉桌宠怎么称呼你、你的身份或喜欢的语气，它主动开口时会更贴合你（只影响语气，不会照搬这句话）。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextField(
+                        "例：叫我老王，后端工程师，说话随意点",
+                        text: $viewModel.proactiveSettings.personaText,
+                        axis: .vertical
+                    )
+                    .lineLimit(1...3)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(viewModel.proactiveSettings.level == .off)
+                }
+                .padding(8)
+            } label: {
+                Label("称呼与语气", systemImage: "person.text.rectangle").font(.headline)
+            }
+
             // MARK: - 触发场景
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {

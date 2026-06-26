@@ -14,7 +14,9 @@ extension CompanionOrchestrator {
     ///     docs/lessons-learned.md）。改用 `ProactivePromptComposer` 的专用 pet persona
     ///     system prompt + few-shot 示例「示范」格式（借鉴 AccountyCat），user 只给场景。
     ///   - `snapshot` 参数保留以满足 `ProactiveSuggestionGenerating` 协议，但场景里已含
-    ///     app 名（composer 用 signal 组好），故本路径不再二次注入桌面上下文。
+    ///     app 名 + 窗口标题 + 最近轨迹（composer 用 signal 组好），故本路径不再二次注入桌面上下文。
+    ///   - `systemPrompt` 由引擎按当前 `settings.personaText` 用 composer 组好传入（含 pet persona
+    ///     + 可选用户 persona），本路径直接用，不再引用静态基底。
     ///
     /// **走 `streamChat` 而非 `chat`**：很多 OpenAI 兼容网关（含本地代理）只接受
     /// `stream:true` 的请求，非流式 `chat` 会直接挂（连接无响应）。全 app 其它聊天
@@ -23,15 +25,17 @@ extension CompanionOrchestrator {
     ///
     /// 失败抛错（引擎静默跳过，不弹错误气泡——不给用户没要的东西弹错误）。
     public func proactiveSuggestion(
+        systemPrompt: String,
         for prompt: String,
         snapshot: DesktopSnapshot?
     ) async throws -> String {
         guard let provider = await llmProviderBox.current else {
             throw LLMProviderError.missingAPIKey
         }
-        // 三段式：专用 persona system → few-shot（场景→pet 一句话）示范格式 → 真实场景。
+        // 三段式：专用 persona system（含可选用户 persona，引擎组好传入）→ few-shot（场景→pet
+        // 一句话）示范格式 → 真实场景。
         var messages: [LLMMessage] = [
-            LLMMessage(role: .system, content: ProactivePromptComposer.systemPrompt)
+            LLMMessage(role: .system, content: systemPrompt)
         ]
         for example in ProactivePromptComposer.fewShotExamples {
             messages.append(LLMMessage(role: .user, content: example.scene))
@@ -49,7 +53,7 @@ extension CompanionOrchestrator {
 
 /// `CompanionOrchestrator` 作为主动建议生成器：调上面的 no-history 入口。
 extension CompanionOrchestrator: ProactiveSuggestionGenerating {
-    public func generate(prompt: String, snapshot: DesktopSnapshot?) async throws -> String {
-        try await proactiveSuggestion(for: prompt, snapshot: snapshot)
+    public func generate(systemPrompt: String, prompt: String, snapshot: DesktopSnapshot?) async throws -> String {
+        try await proactiveSuggestion(systemPrompt: systemPrompt, for: prompt, snapshot: snapshot)
     }
 }
