@@ -148,4 +148,31 @@ struct SessionDiscoveryTests {
         let ghost = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)")
         #expect(SessionDiscovery.recentJSONL(under: ghost).isEmpty)
     }
+
+    @Test("excludeInternal:剪掉 subagents/workflows/tool-results 子树(含深层),保留父会话 + Codex 日期嵌套")
+    func excludesInternalSubtrees() throws {
+        let root = try tempRoot()
+        let now = Date(timeIntervalSince1970: 10_000)
+        let fm = FileManager.default
+        // 父会话(直属项目目录)→ 应收
+        _ = try writeJSONL("session.jsonl", mtime: now, under: root)
+        // 内部子树 `<proj>/<uuid>/subagents/...`(含再嵌套)→ 应整棵剪掉
+        let sub = root.appendingPathComponent("uuid").appendingPathComponent("subagents")
+        try fm.createDirectory(at: sub, withIntermediateDirectories: true)
+        _ = try writeJSONL("agent-1.jsonl", mtime: now, under: sub)
+        let deep = sub.appendingPathComponent("nested")
+        try fm.createDirectory(at: deep, withIntermediateDirectories: true)
+        _ = try writeJSONL("agent-2.jsonl", mtime: now, under: deep)
+        // Codex 风格日期嵌套(目录名非内部名)→ 应照常递归收到
+        let dated = root.appendingPathComponent("2026/06/26")
+        try fm.createDirectory(at: dated, withIntermediateDirectories: true)
+        _ = try writeJSONL("rollout-x.jsonl", mtime: now, under: dated)
+
+        let kept = Set(SessionDiscovery.recentJSONL(under: root, within: 90, now: now).map(\.lastPathComponent))
+        #expect(kept == ["session.jsonl", "rollout-x.jsonl"])   // subagents 子树两文件被剪,日期嵌套保留
+
+        // excludeInternal=false → 不剪,全收(含内部),验证开关仍生效
+        let all = SessionDiscovery.recentJSONL(under: root, within: 90, now: now, excludeInternal: false)
+        #expect(all.count == 4)
+    }
 }

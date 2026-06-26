@@ -36,7 +36,7 @@ public enum SessionDiscovery {
         now: Date = Date(),
         excludeInternal: Bool = true
     ) -> [URL] {
-        let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey]
         guard let enumerator = FileManager.default.enumerator(
             at: root,
             includingPropertiesForKeys: keys,
@@ -44,14 +44,23 @@ public enum SessionDiscovery {
         ) else { return [] }
 
         var hits: [(url: URL, mtime: Date)] = []
-        for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-            // 子 agent / 内部子目录文件 → 跳过(不当独立会话)。父会话文件直接在项目目录下,无这些路径段。
-            if excludeInternal, url.pathComponents.contains(where: internalSubdirs.contains) { continue }
-            guard let values = try? url.resourceValues(forKeys: Set(keys)),
-                  values.isRegularFile == true,
-                  let mtime = values.contentModificationDate
+        for case let url as URL in enumerator {
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            // 内部子目录(subagents/workflows/tool-results)→ 在目录层整棵剪掉,**不下钻**。
+            // 这些子树常占 ~97% 文件却全非独立会话;旧实现递归走完整棵树再按 pathComponents 事后丢,
+            // = 白走全树(每目录 getattrlistbulk + 每文件 stat,随 ~/.claude 历史线性恶化)。
+            // skipDescendants 对 Claude 的 `<proj>/<uuid>/subagents` 任意深度通用,
+            // 且不影响 Codex `sessions/<年>/<月>/<日>` 日期嵌套(非内部名 → 照常递归)。
+            if excludeInternal, values?.isDirectory == true,
+               internalSubdirs.contains(url.lastPathComponent) {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard url.pathExtension == "jsonl",
+                  values?.isRegularFile == true,
+                  let mtime = values?.contentModificationDate,
+                  now.timeIntervalSince(mtime) <= within
             else { continue }
-            guard now.timeIntervalSince(mtime) <= within else { continue }
             hits.append((url, mtime))
         }
         return hits.sorted { $0.mtime > $1.mtime }.map(\.url)
