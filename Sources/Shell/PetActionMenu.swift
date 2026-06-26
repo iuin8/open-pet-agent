@@ -120,6 +120,16 @@ public final class PetActionMenu: NSObject, NSMenuItemValidation {
 
     // MARK: - 状态同步(外部驱动 check / 灰显 / 当前天气,不触发回调)
 
+    /// 便捷重载 —— surface 直接传 4 个镜像字段,免各自手拼 `State`(去 surface 间重复)。
+    public func applyState(following: Bool, roaming: Bool, forcedConditionRaw: String, weatherCurrentText: String) {
+        var s = State()
+        s.following = following
+        s.roaming = roaming
+        s.forcedConditionRaw = forcedConditionRaw
+        s.weatherCurrentText = weatherCurrentText
+        applyState(s)
+    }
+
     public func applyState(_ newState: State) {
         state = newState
         followingItem?.state = newState.following ? .on : .off

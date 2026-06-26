@@ -161,12 +161,8 @@ public final class PetShellWindow: NSWindow {
     public func syncSpatialBehavior(following: Bool, roaming: Bool) {
         isFollowingEnabled = following
         isRoamingEnabled = roaming
-        var s = PetActionMenu.State()
-        s.following = following
-        s.roaming = roaming
-        s.forcedConditionRaw = currentForcedConditionRaw
-        s.weatherCurrentText = currentWeatherText
-        actionMenu?.applyState(s)
+        actionMenu?.applyState(following: following, roaming: roaming,
+                               forcedConditionRaw: currentForcedConditionRaw, weatherCurrentText: currentWeatherText)
     }
 
     /// 设置 force condition (UI check state + 通知 callback)。

@@ -120,11 +120,7 @@ public final class MenuBarController: NSObject {
     }
 
     private func applyMenuState() {
-        var s = PetActionMenu.State()
-        s.following = isFollowingEnabled
-        s.roaming = isRoamingEnabled
-        s.forcedConditionRaw = currentForcedConditionRaw
-        s.weatherCurrentText = currentWeatherText
-        actionMenu.applyState(s)
+        actionMenu.applyState(following: isFollowingEnabled, roaming: isRoamingEnabled,
+                              forcedConditionRaw: currentForcedConditionRaw, weatherCurrentText: currentWeatherText)
     }
 }
