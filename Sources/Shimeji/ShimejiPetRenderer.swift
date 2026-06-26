@@ -16,6 +16,8 @@ public final class ShimejiPetRenderer: PetRenderer {
     private let engine: ShimejiMascotEngine
     private let imageDirectory: URL
     private var imageCache: [String: CGImage] = [:]
+    /// 翻转后的独立位图,按原图名缓存(免每帧重翻 + 重分配)。详见 §6.3。
+    private var flippedCache: [String: CGImage] = [:]
     private let spriteLayer = CALayer()
     private var paused = false
     /// PF6 全局大小因子(1=原始);每帧 present 时缩放窗口+锚点。host 经 `applyScale` 注入。
@@ -89,7 +91,7 @@ public final class ShimejiPetRenderer: PetRenderer {
         let mirror = frame.lookRight && frame.imageRight == nil
         let baseName = useRight ? frame.imageRight : frame.image
         guard let baseName, let base = loadImage(baseName) else { return nil }   // 无图保持上帧
-        let display = mirror ? (flippedHorizontally(base) ?? base) : base
+        let display = mirror ? (flippedImage(named: baseName, base: base) ?? base) : base
         spriteLayer.contents = display
 
         let w = Double(base.width), h = Double(base.height)
@@ -104,8 +106,31 @@ public final class ShimejiPetRenderer: PetRenderer {
         let url = imageDirectory.appendingPathComponent(name)
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
-        imageCache[name] = img
-        return img
+        // 展平成独立位图(§6.3):CGImageSource 出来的是惰性 data-provider 图,当 CALayer.contents
+        // 时 CA 每 commit 都要 decode+copy 到自己 backing(多宠活跃态每只每帧一次 copy_image)。
+        // 展平后是 CA 友好的独立 surface,首帧准备后被缓存、后续 commit 零成本。
+        let standalone = standaloneCopy(img) ?? img
+        imageCache[name] = standalone
+        return standalone
+    }
+
+    /// 翻转图(按原图名缓存):miss 才翻一次存入,免每帧重翻 + 重分配。翻出的本就是独立位图(CA 友好)。
+    private func flippedImage(named name: String, base: CGImage) -> CGImage? {
+        if let cached = flippedCache[name] { return cached }
+        guard let flipped = flippedHorizontally(base) else { return nil }
+        flippedCache[name] = flipped
+        return flipped
+    }
+
+    /// 把惰性 CGImage 展平成独立位图(draw 进 RGBA context + makeImage)。保留源 colorSpace + 像素感。
+    private func standaloneCopy(_ image: CGImage) -> CGImage? {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0, let ctx = CGContext(
+            data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+            space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
     }
 
     /// 水平翻转(左向原图 → 右向显示)。失败返回 nil(调用方退回原图)。
