@@ -656,6 +656,13 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// walkTimer 30→6fps 同款思路。
     nonisolated static let idleFrameLoopHz: Double = 6.0
 
+    /// 可见但**静止**(无任何运动/物理驱动:雪/雨/跟随/漫游/拖拽/淋湿淡出/Shimeji 引擎/装饰宠)时的
+    /// advanceRuntimeFrame 频率。静止时 pose 恒定 → 降频肉眼无差,省窗口枚举 + orchestrator 开销。
+    /// **不踩 §6.1 的坑**:那是「输入空闲」降频(盯着看的动宠会卡);本信号是「无运动」(pet 本就不动)。
+    /// 自纠正:每 tick `updateFrameRate()` 重算,任一驱动一活即升回 30Hz(≤~100ms 延迟,肉眼无感)。
+    /// 取 10(非 6)留余量:万一漏判某运动源,最坏是 10Hz 轻微 choppy,不是 6Hz 明显卡。
+    nonisolated static let visibleIdleFrameLoopHz: Double = 10.0
+
     static func makeDefaultFrameLoop(
         _ tick: @escaping @MainActor () async -> Void,
         makeTimer: () -> DispatchSourceTimer = {

@@ -656,7 +656,12 @@ extension AppBootstrap {
             readVisibleWindows: {
                 visibleWindowsProvider.current()
             },
-            observeChanges: observeWindowChanges
+            observeChanges: observeWindowChanges,
+            // 0.1s→0.5s:`sample()` 每帧调,旧 0.1s TTL ≈10Hz `CGWindowListCopyWindowInfo`(屏幕窗口多时
+            // 是开卡常态 CPU 大头,§6.6 残留)。observeChanges 已即时失效前台/激活/space 变化,故拉长 backstop
+            // 到 0.5s 只让**后台窗口**碰撞矩形最多滞后 0.5s(雪堆/pet perch 位置略晚,无雪无碰撞时更无感),
+            // 换枚举频率 5× 下降。光标(跟随用)在 sample 里独立每帧读,不受影响。
+            cacheLifetime: 0.5
         )
         let spaceTracker = SpaceTracker(
             readActiveSpaceIdentifier: {

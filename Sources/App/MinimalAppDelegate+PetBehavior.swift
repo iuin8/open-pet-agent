@@ -39,11 +39,30 @@ extension MinimalAppDelegate {
     /// 窗口遮挡变化 → 调帧率。**宠物可见**(用户看得到)= 满 30Hz 顺滑;**完全被遮挡 / 不可见** = 降 6Hz
     /// 省电(看不到时降频无感)。这是取代「按键鼠空闲降频」的**正确信号** —— 修「盯着看也卡 / 像休眠」。
     /// 事件驱动(`NSWindow.didChangeOcclusionStateNotification`),非每帧轮询;只在目标频率变化时 reschedule。
-    func handlePetVisibilityChange() {
-        let desiredHz = Self.desiredHz(petVisible: isAnyPetWindowVisible())
-        guard desiredHz != currentFrameLoopHz else { return }
-        currentFrameLoopHz = desiredHz
-        frameLoopHandle?.setRate(desiredHz)
+    func handlePetVisibilityChange() { updateFrameRate() }
+
+    /// pet 当前是否有「需 30Hz `advanceRuntimeFrame` 推进」的运动/物理。
+    /// 都没有 → pet 静止,advanceRuntimeFrame 产出恒定 pose → 可降频(`visibleIdleFrameLoopHz`)。
+    /// **只数 advanceRuntimeFrame 驱动的运动**;呼吸/squash/聊天动画走 CALayer·CVDisplayLink·Timer,
+    /// 独立于本循环,不计入(故聊天「说话」时也能降频,动画仍由 CALayer 平滑驱动)。
+    func petHasActiveMotion() -> Bool {
+        if isSnowEnabled || isRainEnabled { return true }            // 物理每帧 step
+        if isFollowingEnabled || isRoamingEnabled { return true }    // 位置每帧仲裁
+        if shellController?.isPetBeingDragged == true { return true }
+        if abs(petWetness) > 0.01 { return true }                    // 淋湿淡出未 settle(rain off 后 ~1s)
+        if !decorativePets.isEmpty { return true }                   // 装饰宠各自每帧引擎自驱
+        if shellController?.petRenderer?.driveModel == .autonomousEngine { return true }  // Shimeji 引擎自驱
+        return false
+    }
+
+    /// 据「可见 + 是否有运动」算目标帧率并(仅变化时)reschedule:
+    /// 遮挡不可见→6Hz / 可见静止→10Hz / 可见有运动→30Hz。`advanceRuntimeFrame` 每 tick 末调(自纠正:
+    /// 驱动一活下个 tick 即升回 30Hz)+ 遮挡事件调。
+    func updateFrameRate() {
+        let desired = Self.desiredHz(petVisible: isAnyPetWindowVisible(), hasActiveMotion: petHasActiveMotion())
+        guard desired != currentFrameLoopHz else { return }
+        currentFrameLoopHz = desired
+        frameLoopHandle?.setRate(desired)
     }
 
     /// 主宠或任一装饰宠窗口当前可见(未被完全遮挡)。无主宠窗口 → 按可见(宁可顺滑,不误降)。
@@ -53,8 +72,10 @@ extension MinimalAppDelegate {
         return decorativePets.contains { $0.pet.isWindowVisible }
     }
 
-    /// 纯逻辑(便于单测):宠物可见 → 满帧率;不可见 → idle 省电频率。
-    nonisolated static func desiredHz(petVisible: Bool) -> Double {
-        petVisible ? frameLoopHz : idleFrameLoopHz
+    /// 纯逻辑(便于单测):不可见(遮挡)→ idle 省电频率;可见且**有运动**→ 满帧率;可见但**静止**→ 可见 idle 频率。
+    /// `hasActiveMotion` 默认 true(保旧调用/测试语义:可见即满帧)。
+    nonisolated static func desiredHz(petVisible: Bool, hasActiveMotion: Bool = true) -> Double {
+        guard petVisible else { return idleFrameLoopHz }
+        return hasActiveMotion ? frameLoopHz : visibleIdleFrameLoopHz
     }
 }

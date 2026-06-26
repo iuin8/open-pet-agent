@@ -20,4 +20,18 @@ struct FrameRateMotionTests {
     func fullRateExceedsIdle() {
         #expect(MinimalAppDelegate.desiredHz(petVisible: true) > MinimalAppDelegate.desiredHz(petVisible: false))
     }
+
+    @Test("可见但静止(无运动驱动)→ 降到可见 idle 频率(§6.6 残留:省窗口枚举/orchestrator)")
+    func visibleIdleThrottled() {
+        let idle = MinimalAppDelegate.desiredHz(petVisible: true, hasActiveMotion: false)
+        #expect(idle == MinimalAppDelegate.visibleIdleFrameLoopHz)
+        // 静止降频区间合理:遮挡(6) < 可见静止(10) < 可见有运动(30)
+        #expect(idle < MinimalAppDelegate.frameLoopHz)
+        #expect(idle > MinimalAppDelegate.idleFrameLoopHz)
+    }
+
+    @Test("可见且有运动 → 仍满帧率(动宠盯着看不卡,不踩 §6.1)")
+    func visibleActiveFullRate() {
+        #expect(MinimalAppDelegate.desiredHz(petVisible: true, hasActiveMotion: true) == MinimalAppDelegate.frameLoopHz)
+    }
 }

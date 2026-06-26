@@ -261,6 +261,9 @@ extension MinimalAppDelegate {
             runtimeFrameError = error
             SnowDiagnostics.log("frameError \(error.localizedDescription)")
         }
+        // 自纠正帧率:静止(无运动驱动)→ 降到 visibleIdleFrameLoopHz 省窗口枚举/orchestrator;
+        // 任一驱动一活下个 tick 即升回 30Hz(仅频率变化时 reschedule)。
+        updateFrameRate()
     }
 
     /// P4-B-5:驱动 Shimeji 原始帧引擎一拍 —— 建 top-origin 环境 → tick → 摆窗 → 同步世界位置。
