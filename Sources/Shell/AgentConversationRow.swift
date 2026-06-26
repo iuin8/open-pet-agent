@@ -383,26 +383,9 @@ struct AgentConversationRow: View {
 
 }
 
-/// P3.7-③ 源行 halo:accent 脉冲圆环,呼吸式 stroke 在「细+亮 ↔ 粗+淡」间往返,
-/// 指示「正在侧宽卡里看这一行」。`isHighlighted` 时插入(onAppear 启动呼吸),收起侧卡即移除。
-private struct HaloRing: View {
-    @State private var pulse = false
-    var body: some View {
-        ZStack {
-            // 外层白环:托底 —— 让 selection 在 accent 橙底 user 行也可见(teal 对橙底对比仅 1.21,单 teal 看不见)。
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(Color.white.opacity(pulse ? 0.5 : 0.9), lineWidth: pulse ? 4 : 3)
-            // 内层 teal 环:保留「正在侧卡看这行」的既有视觉语义,在白/奶白底 assistant 行清晰(对白底 2.63)。
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(ChatCardTheme.selectionHalo.opacity(pulse ? 0.4 : 1.0), lineWidth: pulse ? 2 : 1.5)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: AnimTok.breathe).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
-        }
-    }
-}
+// `HaloRing`(P3.7-③ 源行 halo,呼吸式 stroke 在「细+亮 ↔ 粗+淡」间往返,指示「正在侧卡看这行」)
+// 现为 CALayer 驱动(`BreathingLayerViews.swift`)—— SwiftUI `.repeatForever` 会把整棵卡片树标脏每帧
+// 重评。CA 动画在 render server 跑,不进 AttributeGraph。`isHighlighted` 时以 overlay 插入,收起即移除。
 
 extension View {
     /// 可点元素的悬停光圈(深靛细环,提示「可点」)。metadata 栏等**无展开图标**的可点元素用它。`enabled=false` 透传。

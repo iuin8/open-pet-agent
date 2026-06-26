@@ -118,12 +118,5 @@ struct TurnMetadataBar: View {
 
 }
 
-/// 进行中脉冲点(呼吸式 accent 圆点)。
-private struct PulseDot: View {
-    @State private var on = false
-    var body: some View {
-        Circle().fill(ChatCardTheme.accent.opacity(on ? 0.3 : 0.95))
-            .frame(width: 6, height: 6)
-            .onAppear { withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { on = true } }
-    }
-}
+// `PulseDot` 现为 CALayer 驱动(`BreathingLayerViews.swift`)—— SwiftUI `.repeatForever` 会把整棵
+// 卡片树标脏每帧重评,实测开卡片时占 ~65% CPU。CA 动画在 render server 跑,不进 AttributeGraph。
