@@ -92,7 +92,15 @@ final class TranscriptListCoordinator: NSObject, NSTableViewDataSource, NSTableV
 
         // 宽度变了(卡片定宽,理论上不变)→ 高度缓存全失效。
         let width = measureWidth(table)
-        if width != lastMeasureWidth { heightCache.removeAll(); lastMeasureWidth = width }
+        let widthChanged = (width != lastMeasureWidth)
+        if widthChanged { heightCache.removeAll(); lastMeasureWidth = width }
+
+        // ⭐ keystone 短路:rows / 会话 / 宽度都没变的「纯重渲染帧」→ 零成本早退。
+        // SwiftUI 对 NSViewRepresentable 不做 Equatable 短路:只要有持续脏源(流式动画/帧循环耦合等)
+        // 让 ChatCardView body 每帧重评,就每帧无条件重调 updateNSView → apply。若不在此早退,每帧要做
+        // 5 处 O(行数) 的 diff/测量/签名,而会话行数随运行时长单调增长 → CPU「越跑越高」(本次根因)。
+        // TranscriptRow 廉价 Equatable(只比渲染指纹,不比图字节)。详见 docs/lessons-learned §6.6。
+        if !widthChanged, sessionId == lastSessionId, newRows == rows { return }
 
         let oldRows = rows
         let clip = scroll.contentView

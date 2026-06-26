@@ -121,3 +121,59 @@ final class BreathingHaloNSView: NSView {
         l.add(group, forKey: "breathe")
     }
 }
+
+/// pet 气泡流式开始(answer 仍空)的三颗脉冲点 —— CALayer 驱动(不进 AttributeGraph)。
+/// 旧 SwiftUI `.animation(.repeatForever, value:)` 版会在流式时持续脏化整棵 ChatCardView 树
+/// 每帧重评(同 PulseDot/HaloRing,§6.4)。会话流式是常态,故这是 idle 外的主要每帧脏源之一。
+struct TypingDots: NSViewRepresentable {
+    func makeNSView(context: Context) -> BreathingDotsNSView { BreathingDotsNSView() }
+    func updateNSView(_ nsView: BreathingDotsNSView, context: Context) {}
+}
+
+/// 三颗点,opacity 在 0.3↔1.0 间 0.6s 呼吸往返、按 idx×0.2s 错相(CA 驱动)。
+final class BreathingDotsNSView: NSView {
+    private let dots: [CALayer] = (0..<3).map { _ in CALayer() }
+    private static let dotSize: CGFloat = 6, gap: CGFloat = 4
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        let base = ChatBubbleTheme.textPrimary.withAlphaComponent(0.45).cgColor
+        for d in dots {
+            d.backgroundColor = base
+            d.cornerRadius = Self.dotSize / 2
+            d.opacity = 0.3
+            layer?.addSublayer(d)
+        }
+    }
+    required init?(coder: NSCoder) { nil }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: Self.dotSize * 3 + Self.gap * 2, height: Self.dotSize)
+    }
+
+    override func layout() {
+        super.layout()
+        let y = (bounds.height - Self.dotSize) / 2
+        for (i, d) in dots.enumerated() {
+            d.frame = CGRect(x: CGFloat(i) * (Self.dotSize + Self.gap), y: y, width: Self.dotSize, height: Self.dotSize)
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { dots.forEach { $0.removeAnimation(forKey: "typing") }; return }
+        let now = CACurrentMediaTime()
+        for (i, d) in dots.enumerated() where d.animation(forKey: "typing") == nil {
+            let a = CABasicAnimation(keyPath: "opacity")
+            a.fromValue = 0.3
+            a.toValue = 1.0
+            a.duration = 0.6
+            a.autoreverses = true
+            a.repeatCount = .infinity
+            a.beginTime = now + Double(i) * 0.2   // 错相
+            a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            d.add(a, forKey: "typing")
+        }
+    }
+}

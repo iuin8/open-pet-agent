@@ -182,6 +182,15 @@ struct TranscriptRow {
         return heightSignature + h
     }
 
+    /// 影响渲染的内容指纹(Int,廉价)。供 `Equatable` 短路用 —— 与 `heightSignature` 同源但免每次拼串。
+    var contentToken: Int {
+        switch kind {
+        case .loadEarlier: return loading ? 1 : 0
+        case .item(let it): return itemContentToken(it)
+        case .codexHint: return 0
+        }
+    }
+
     private func itemContentToken(_ it: ConversationItem) -> Int {
         switch it.kind {
         case .user(let t):   // 行高随文字 + 缩略图条(P1-5:有图行更高,签名须含附件数)
@@ -201,6 +210,19 @@ struct TranscriptRow {
 
 extension ConversationItem.ToolState {
     var hashValue: Int { switch self { case .running: return 1; case .ok: return 2; case .error: return 3 } }
+}
+
+extension TranscriptRow: Equatable {
+    /// **廉价**比较:只看影响渲染的字段(id / loading / 高亮子区 / subagent 有无 / 内容指纹 Int),
+    /// **绝不比 `ConversationItem` 内容或图片字节**(§6.2:重数据旁挂字段配廉价 Equatable,否则 diff 热路径被拖垮)。
+    /// 语义对齐 `renderSignature`,供 `TranscriptListCoordinator.apply` 在「行未变」时零成本早退(§6.6 根因:越跑越高)。
+    static func == (l: TranscriptRow, r: TranscriptRow) -> Bool {
+        l.id == r.id
+            && l.loading == r.loading
+            && l.highlightRegion == r.highlightRegion
+            && (l.subagent == nil) == (r.subagent == nil)
+            && l.contentToken == r.contentToken
+    }
 }
 
 /// 行 → SwiftUI 视图的构建器(测量与显示共用同一份 → 高度一致)。

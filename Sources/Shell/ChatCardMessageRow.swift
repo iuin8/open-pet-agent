@@ -85,25 +85,5 @@ struct ChatCardMessageRow: View {
 
 // MARK: - 流式打点占位
 
-/// pet 气泡流式开始（answer 仍空）时的三颗脉冲点。
-struct TypingDots: View {
-    @State private var animating = false
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { idx in
-                Circle()
-                    .fill(ChatCardTheme.textPrimary.opacity(0.45))
-                    .frame(width: 6, height: 6)
-                    .opacity(animating ? 1.0 : 0.3)
-                    .animation(
-                        .easeInOut(duration: 0.6)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(idx) * 0.2),
-                        value: animating
-                    )
-            }
-        }
-        .onAppear { animating = true }
-    }
-}
+// `TypingDots`(流式开始的三颗脉冲点)现为 CALayer 驱动(`BreathingLayerViews.swift`)——
+// 旧 SwiftUI `.repeatForever` 会让整棵卡片树每帧重评(§6.4)。CA 动画在 render server 跑,不进 AttributeGraph。
