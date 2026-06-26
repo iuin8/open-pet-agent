@@ -526,6 +526,7 @@ extension MinimalAppDelegate {
             await self?.advanceRuntimeFrame()
         }
         SnowDiagnostics.log("frameLoopInstalled hasHandle=\(frameLoopHandle != nil)")
+        PerfDiagnostic.startIfEnabled()   // PETAGENT_DEBUG_PERF=1 → 每 5s 性能心跳(未设则零成本)
         // 防 App Nap 把 main-queue 帧循环 timer 合并成卡顿突发(后台/失焦时尤甚 —— 这是「移动变卡」的帮凶)。
         // `userInitiatedAllowingIdleSystemSleep`:既免 App Nap,又允许系统在用户离开时正常息屏睡眠。
         // token 在 applicationWillTerminate 释放。

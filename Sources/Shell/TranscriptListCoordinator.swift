@@ -88,6 +88,8 @@ final class TranscriptListCoordinator: NSObject, NSTableViewDataSource, NSTableV
     // MARK: - 应用一帧:reloadData + 锚点恢复 / 跟随到底
 
     func apply(rows newRows: [TranscriptRow], sessionId: String?) {
+        PerfDiagnostic.applyCalls += 1                 // 自诊断:重渲染压力计数(PETAGENT_DEBUG_PERF)
+        PerfDiagnostic.lastRowCount = newRows.count
         guard let table, let scroll else { rows = newRows; return }
 
         // 宽度变了(卡片定宽,理论上不变)→ 高度缓存全失效。
@@ -100,7 +102,10 @@ final class TranscriptListCoordinator: NSObject, NSTableViewDataSource, NSTableV
         // 让 ChatCardView body 每帧重评,就每帧无条件重调 updateNSView → apply。若不在此早退,每帧要做
         // 5 处 O(行数) 的 diff/测量/签名,而会话行数随运行时长单调增长 → CPU「越跑越高」(本次根因)。
         // TranscriptRow 廉价 Equatable(只比渲染指纹,不比图字节)。详见 docs/lessons-learned §6.6。
-        if !widthChanged, sessionId == lastSessionId, newRows == rows { return }
+        if !widthChanged, sessionId == lastSessionId, newRows == rows {
+            PerfDiagnostic.applyEarlyOuts += 1          // 健康时 earlyOut≈applyCalls;偏低=有脏源在每帧逼重渲
+            return
+        }
 
         let oldRows = rows
         let clip = scroll.contentView
