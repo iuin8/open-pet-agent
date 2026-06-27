@@ -65,6 +65,16 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// 用户最后一次键鼠输入距今秒数源(漫步/爬墙触发阈值)。可注入,测试用
     /// fixture 控制空闲时长。默认走 `CGEventSource`(同 `IdleStateTracker`)。
     let idleSecondsProvider: @MainActor () -> Double
+
+    // MARK: - 生命感 signature 派发(.greet / .signatureIdle,反应路由未来项 B 第 3 刀)
+    /// 久闲 ≥ 此秒数 → 派 `.signatureIdle`(招牌闲置:sprite 伸懒腰 / Live2D 动作;Orb no-op 由呼吸兜底)。
+    static let signatureIdleThreshold = 45.0
+    /// 空闲降回此秒数内视为「回来了」→ 久闲后回归派 `.greet`(打招呼)。
+    static let greetReturnThreshold = 2.0
+    /// 上一帧用户是否「活跃」(供久闲→回归 边沿派 `.greet`)。
+    var petWasActiveForGreet = true
+    /// 本次久闲会话是否已派过 `.signatureIdle`(每次久闲只派一次,免逐帧刷屏)。
+    var petSignatureIdleFired = false
     /// 工作块 B3 —— pet 淋湿程度(0..1)。每帧按 isRainEnabled 朝目标 lerp,
     /// 转发给 sprite 形象叠蓝色水渍。停雨平滑回落,不硬切。
     var petWetness: Float = 0

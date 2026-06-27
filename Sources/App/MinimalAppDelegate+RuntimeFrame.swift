@@ -30,6 +30,25 @@ extension MinimalAppDelegate {
         return false
     }
 
+    /// 据用户空闲时长向当前形象派 `.signatureIdle`(久闲招牌动作,每次久闲一次)/ `.greet`(久闲后回来)。
+    /// 经 `dispatchSignature` 按 `supportedSignatures` 过滤 —— 不支持的形象自动 no-op(如 Orb 不演 signatureIdle)。
+    func updateGreetIdleSignals(_ shell: DesktopShellController) {
+        let idle = idleSecondsProvider()
+        if idle >= Self.signatureIdleThreshold {
+            if !petSignatureIdleFired {
+                shell.dispatchSignature(.signatureIdle)
+                petSignatureIdleFired = true
+            }
+            petWasActiveForGreet = false
+        } else if idle < Self.greetReturnThreshold {
+            if !petWasActiveForGreet {
+                shell.dispatchSignature(.greet)   // 久闲后回来 → 打招呼
+            }
+            petWasActiveForGreet = true
+            petSignatureIdleFired = false
+        }
+    }
+
     func shouldFreezePetMotion() -> Bool {
         if shouldFreezeForStickySurface() { return true }
         // 鼠标悬停在 pet 窗口上(想点/拖 pet 时它别躲)。仅约束漫步/跟随,不约束抛射回弹。
@@ -74,6 +93,9 @@ extension MinimalAppDelegate {
 
         // A.3.2 — Drive idle-fallback timer so timed-out states revert to .idle.
         chatBehaviorStateMachine?.tickIdleFallback(now: CACurrentMediaTime())
+
+        // 生命感 signature:据空闲时长派 .signatureIdle(久闲)/ .greet(久闲后回来)。
+        updateGreetIdleSignals(shellController)
 
         let previousRenderState = currentRenderState
         let capturedInteractionVersion = shellInteractionVersion

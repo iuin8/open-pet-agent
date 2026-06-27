@@ -523,6 +523,12 @@ extension MinimalAppDelegate {
         fallingSandTuning = Self.loadFallingSandTuning(from: userDefaults)
         controller.setFallingSandTuning(fallingSandTuning)
         petMotionController.tuning = Self.loadBallisticTuning(from: userDefaults)   // 弹力球抛射调参(设置→调试)
+        // 启动打招呼:延迟 0.6s 让 pet 窗口先现身,再做一次 .greet(Orb scale-pop / sprite wave / Live2D 招手);
+        // 不支持 .greet 的形象经 dispatchSignature 自动 no-op。
+        Task { @MainActor [weak controller] in
+            try? await Task.sleep(for: .milliseconds(600))
+            controller?.dispatchSignature(.greet)
+        }
         SnowDiagnostics.log("didFinishLaunching shellShown windows=\(controller.windowSet.allWindows.count)")
         frameLoopHandle = startFrameLoop { [weak self] in
             SnowDiagnostics.log("timerTick")

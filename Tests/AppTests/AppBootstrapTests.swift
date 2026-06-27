@@ -25,6 +25,24 @@ private final class RoamingPetRendererDouble: PetRenderer {
     var supportsAutonomousRoaming: Bool { true }
 }
 
+/// 记录 trigger 的 PetRenderer 替身 —— 支持全部 signature,断言 shell 向它派了哪些(.greet/.signatureIdle 等)。
+@MainActor
+private final class SignatureRecordingRenderer: PetRenderer {
+    let contentLayer = CALayer()
+    private(set) var triggered: [SignatureAction] = []
+    var supportedSignatures: Set<SignatureAction> {
+        [.greet, .signatureIdle, .celebrate, .acknowledge, .refuse, .reactToDragEnd]
+    }
+    func updateForState(_ state: PetEmotionState) {}
+    func trigger(_ signature: SignatureAction) { triggered.append(signature) }
+    func reset() { triggered.removeAll() }
+}
+
+/// 可脚本化的空闲秒数源(测试逐帧改 `seconds` 模拟用户离开/回来)。
+private final class IdleSecondsBox: @unchecked Sendable {
+    var seconds: Double = 0
+}
+
 private final class DelegateProxy: NSObject, NSApplicationDelegate {}
 
 private final class SamplerDisplaySnapshotQueue: @unchecked Sendable {
@@ -1055,6 +1073,46 @@ func minimalAppDelegatePhysicsOnlyPetDoesNotRoamWhenIdle() async throws {
     for _ in 0..<180 { await tick() }
     let endY = delegate.currentRenderState.petPositionY
     #expect(endY > 500)   // 停在高处光标附近,未降到地面 → 证明不漫游
+    shellController.windowSet.allWindows.forEach { $0.orderOut(nil) }
+}
+
+@Test("久闲 → 派 .signatureIdle(一次);久闲后回来 → 派 .greet")
+@MainActor
+func minimalAppDelegateDispatchesGreetAndSignatureIdleByIdle() async throws {
+    let idle = IdleSecondsBox()
+    let rootSystem = try await AppBootstrap(
+        snapshotSampler: DesktopSnapshotSampler(
+            currentDisplays: { [] },
+            activeSpaceIdentifier: { "unknown" },
+            currentCursorPosition: { Point(x: 400, y: 300) },
+            frontmostApplicationName: { nil },
+            currentVisibleWindows: { [] }
+        )
+    ).makeRootSystem()
+    var capturedTick: (@MainActor () async -> Void)?
+    let delegate = MinimalAppDelegate(
+        rootSystem: rootSystem,
+        currentScreenFrame: { NSRect(x: 0, y: 0, width: 800, height: 600) },
+        currentTime: { 0 },
+        menuBarController: MenuBarController(),
+        startFrameLoop: { tick in capturedTick = tick; return nil },
+        showShellWindows: { controller in controller.windowSet.allWindows.forEach { $0.orderOut(nil) } },
+        idleSecondsProvider: { idle.seconds }
+    )
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let tick = try #require(capturedTick)
+    let shellController = try #require(delegate.launchedShellController)
+    // 换上记录型替身(支持全 signature;启动那次延迟 .greet 落默认 Orb,不污染本替身)。
+    let rec = SignatureRecordingRenderer()
+    shellController.petRenderer = rec
+
+    idle.seconds = 0; await tick()                      // 活跃基线
+    idle.seconds = 60; await tick(); await tick()       // 久闲 → signatureIdle,且多帧只派一次
+    // signatureIdle 只由久闲派(启动那次只派 .greet,不污染此计数)。
+    #expect(rec.triggered.filter { $0 == .signatureIdle }.count == 1)
+    rec.reset()                                         // 清掉(含可能已落的启动 .greet)
+    idle.seconds = 0; await tick()                      // 久闲后回来 → greet
+    #expect(rec.triggered.contains(.greet))
     shellController.windowSet.allWindows.forEach { $0.orderOut(nil) }
 }
 
