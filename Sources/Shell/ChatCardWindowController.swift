@@ -38,6 +38,9 @@ public final class ChatCardWindowController {
     public var screenFrameProvider: (@MainActor () -> NSRect)?
     /// App 注入：开卡片时恢复历史。缺席则不恢复（空卡片）。
     public var historyProvider: HistoryProvider?
+    /// App 注入：「清空对话」点击 → app 弹确认框 → 清 `ConversationStore` + `clearMessages()`。
+    /// 仅 Pet Chat tab + 有消息时卡片才露出清空按钮（`ChatCardView` 控制可见性）。
+    public var onClearConversation: (@MainActor () -> Void)?
     /// App 注入：开卡片时回填外部会话历史到 `sessionStore`（读活跃 transcript 尾部）。
     /// 在卡片**弹出之后**异步调（reader 文件读在后台，store 更新驱动 tab 视图，不阻塞进场）。
     public var sessionHistoryLoader: (@MainActor () async -> Void)?
@@ -218,7 +221,8 @@ public final class ChatCardWindowController {
             sessionStore: sessionStore,
             onSend: { [weak self] text in self?.handleSend(text) },
             onClose: { [weak self] in self?.hide() },
-            onTogglePin: { [weak self] in self?.togglePin() }
+            onTogglePin: { [weak self] in self?.togglePin() },
+            onClearConversation: { [weak self] in self?.onClearConversation?() }
         ))
         host.frame = NSRect(origin: .zero, size: size)
         host.autoresizingMask = [.width, .height]

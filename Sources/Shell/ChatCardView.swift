@@ -18,6 +18,8 @@ struct ChatCardView: View {
     let onSend: (String) -> Void
     let onClose: () -> Void
     var onTogglePin: () -> Void = {}
+    /// 「清空对话」(经 app 确认弹窗 → 清 ConversationStore + 重置卡片)。仅 Pet Chat tab + 有消息时露出。
+    var onClearConversation: () -> Void = {}
 
     var body: some View {
         let shape = ChatCardShape(
@@ -28,7 +30,9 @@ struct ChatCardView: View {
         )
         VStack(spacing: 0) {
             CompanionTabBar(selectedTab: $state.selectedTab, onClose: onClose, badgeFor: tabBadge,
-                            isPinned: state.isPinned, onTogglePin: onTogglePin)
+                            isPinned: state.isPinned, onTogglePin: onTogglePin,
+                            onClearConversation: (state.selectedTab == .petChat && !state.messages.isEmpty)
+                                ? onClearConversation : nil)
             tabContent
         }
         .padding(tailEdgeInsets)   // 给尖角让出空间（仅 tail 那一侧 tailHeight），窗口尺寸不变

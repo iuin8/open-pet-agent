@@ -189,7 +189,6 @@ extension MinimalAppDelegate {
             onShareScreenshot: { [weak self] in self?.shareOverlayScreenshot() },
             onForceConditionSelected: { [weak self] raw in self?.selectWeatherMode(raw) },
             onClearWeather: { [weak self] in self?.shellController?.clearFallingSand() },
-            onClearConversation: { [weak self] in self?.confirmAndClearConversation() },
             initialForcedConditionRaw: currentWeatherModeRaw,
             onToggleFollowing: { [weak self] enabled in
                 guard let self else { return }
@@ -428,6 +427,8 @@ extension MinimalAppDelegate {
         cardCtrl.screenFrameProvider = { [weak self] in
             self?.currentScreenFrame() ?? NSScreen.main?.visibleFrame ?? .zero
         }
+        // 「清空对话」：卡片 trash 按钮 → app 确认弹窗 → 清 ConversationStore + 重置卡片。
+        cardCtrl.onClearConversation = { [weak self] in self?.confirmAndClearConversation() }
         // 开卡片从 ConversationStore 恢复多轮历史（system 消息不展示）。
         cardCtrl.historyProvider = { [weak self] in
             guard let store = self?.rootSystem.conversationStore else { return [] }

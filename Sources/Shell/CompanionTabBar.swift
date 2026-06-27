@@ -14,6 +14,9 @@ struct CompanionTabBar: View {
     /// #3 主卡钉住态 + 切换。默认钉住(常驻浮顶);取消 → 可被其他 app 盖住。
     var isPinned: Bool = true
     var onTogglePin: () -> Void = {}
+    /// 「清空对话」动作。**仅 Pet Chat tab + 有消息时**由调用方传入(否则 nil → 不显示按钮);
+    /// 清空只对 pet 对话有意义,Claude/Codex tab 是只读外部会话故不显示。
+    var onClearConversation: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 2) {
@@ -21,6 +24,7 @@ struct CompanionTabBar: View {
                 tabButton(tab)
             }
             Spacer(minLength: 4)
+            if let onClearConversation { clearButton(onClearConversation) }   // 仅 Pet Chat 有消息时
             CardPinButton(isPinned: isPinned, onToggle: onTogglePin)   // #3:钉住开关(close 左侧)
             closeButton
         }
@@ -98,6 +102,20 @@ struct CompanionTabBar: View {
 
     /// 当前 tab 的徽标状态（由调用方注入的 `badgeFor` 按外部会话状态决定）。
     private func badge(for tab: CompanionTab) -> TabBadge { badgeFor(tab) }
+
+    // MARK: - 清空对话按钮（仅 Pet Chat tab + 有消息时显示；destructive 由 app 层确认弹窗兜）
+
+    private func clearButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.4))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("清空对话")
+    }
 
     // MARK: - 关闭按钮（沿用旧 header 的 xmark）
 

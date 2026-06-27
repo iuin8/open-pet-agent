@@ -12,7 +12,6 @@ public final class PetActionMenu: NSObject, NSMenuItemValidation {
     /// 各菜单动作的回调集 —— surface 注入,点击即调。
     public struct Callbacks {
         public var chat: () -> Void = {}
-        public var clearConversation: () -> Void = {}
         public var screenshot: () -> Void = {}
         public var settings: () -> Void = {}
         /// toggle 点击后回调新值(surface 据此更新自身镜像态 + 触发真实动作)。
@@ -72,7 +71,6 @@ public final class PetActionMenu: NSObject, NSMenuItemValidation {
     private func build() {
         addAction("显示聊天", symbol: "bubble.left.and.bubble.right.fill", key: " ",
                   modifiers: [.command, .shift], action: #selector(handleChat))
-        addAction("清空对话", symbol: "trash", action: #selector(handleClearConversation))
         addAction("截图分享", symbol: "camera.fill", action: #selector(handleScreenshot))
         menu.addItem(.separator())
         addAction("设置...", symbol: "gearshape.fill", key: ",", action: #selector(handleSettings))
@@ -155,7 +153,6 @@ public final class PetActionMenu: NSObject, NSMenuItemValidation {
     // MARK: - 动作(target = self,转发闭包)
 
     @objc private func handleChat() { callbacks.chat() }
-    @objc private func handleClearConversation() { callbacks.clearConversation() }
     @objc private func handleScreenshot() { callbacks.screenshot() }
     @objc private func handleSettings() { callbacks.settings() }
     @objc private func handleClearWeather() { callbacks.clearWeather() }

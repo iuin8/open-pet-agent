@@ -575,10 +575,6 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         self.menuBarController.onClearWeather = { [weak self] in
             self?.shellController?.clearFallingSand()
         }
-        // 清空对话：确认弹窗 → 清 ConversationStore + 重置卡片（与 pet 右键菜单同一路径）。
-        self.menuBarController.onClearConversation = { [weak self] in
-            self?.confirmAndClearConversation()
-        }
     }
 
     /// 统一天气模式选择(菜单栏 / pet 右键 / 设置面板共用)。
