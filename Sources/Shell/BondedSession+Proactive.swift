@@ -28,5 +28,8 @@ extension BondedSession {
         // append 内部先 clear 掉上一轮旧 timer 再起新 8s timer，归零时 fire 回调。
         chain.onAutoDismissed = { hovered in onDismiss(hovered) }
         chain.appendProactiveSuggestion(context: context, text: trimmedReply)
+        // 反应路由 B#2:pet 主动开口 → perk-up 反应(App 注入 → dispatchSignature(.greet),
+        // 不支持的形象自动 no-op)。
+        onProactiveBubbleShown?()
     }
 }

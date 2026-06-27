@@ -29,6 +29,32 @@ struct BondedSessionProactiveTests {
         #expect(session.chain.bubbleCount == 0)
     }
 
+    private func makeSession(onProactiveBubbleShown: @escaping () -> Void) -> BondedSession {
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+                           styleMask: [.borderless], backing: .buffered, defer: true)
+        return BondedSession(
+            attachedToPet: win,
+            replyHandler: { _ in "" },
+            onProactiveBubbleShown: onProactiveBubbleShown
+        )
+    }
+
+    @Test("反应路由 B#2:气泡冒出 → 触发 onProactiveBubbleShown(pet perk-up)")
+    func bubbleShownFiresSignalCallback() {
+        var fired = 0
+        let session = makeSession(onProactiveBubbleShown: { fired += 1 })
+        session.injectProactiveSuggestion(context: "专注中", reply: "需要帮忙吗", onDismiss: { _ in })
+        #expect(fired == 1)
+    }
+
+    @Test("空 reply → 不触发 onProactiveBubbleShown(无气泡=无反应)")
+    func emptyReplyNoSignal() {
+        var fired = 0
+        let session = makeSession(onProactiveBubbleShown: { fired += 1 })
+        session.injectProactiveSuggestion(context: "专注中", reply: "  ", onDismiss: { _ in })
+        #expect(fired == 0)
+    }
+
     @Test("onDismiss 接到 chain.onAutoDismissed")
     func dismissWired() {
         let session = makeSession()

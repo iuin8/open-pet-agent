@@ -349,6 +349,11 @@ extension MinimalAppDelegate {
             // 仍由 BondedSession.catch 内部 surface, 这里只是额外加 signal。
             onErrorSignal: { [weak self] _ in
                 self?.shellController?.dispatchSignature(.refuse)
+            },
+            onProactiveBubbleShown: { [weak self] in
+                // 反应路由 B#2:pet 主动建议/碎碎念气泡冒出 → .greet perk-up(Orb scale-pop;
+                // 不支持的形象 no-op)。让 pet 对自己主动开口有反应。
+                self?.shellController?.dispatchSignature(.greet)
             }
         )
         self.bondedSession = bondedSession

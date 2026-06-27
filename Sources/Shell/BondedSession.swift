@@ -60,7 +60,8 @@ public final class BondedSession {
         replyHandler: @escaping ReplyHandler,
         streamingReplyHandler: StreamingReplyHandler? = nil,
         onChoiceSelected: ((String) -> Void)? = nil,
-        onErrorSignal: ((Error) -> Void)? = nil
+        onErrorSignal: ((Error) -> Void)? = nil,
+        onProactiveBubbleShown: (() -> Void)? = nil
     ) {
         self.chain = BondedBubbleChain(
             attachedTo: petWindow,
@@ -69,6 +70,7 @@ public final class BondedSession {
         self.replyHandler = replyHandler
         self.streamingReplyHandler = streamingReplyHandler
         self.onErrorSignal = onErrorSignal
+        self.onProactiveBubbleShown = onProactiveBubbleShown
     }
 
     // MARK: - Handler hot-swap (mirrors Stage / ChatShellView)
@@ -190,6 +192,10 @@ public final class BondedSession {
     /// N3.3 — streaming 错误时通知 callback (chain 错误气泡 surface 之后调,
     /// 用来让 MinimalAppDelegate 触发 `dispatchSignature(.refuse)`)。
     private let onErrorSignal: ((Error) -> Void)?
+    /// 反应路由 B#2 — 主动建议/碎碎念气泡冒出时通知 callback,让 MinimalAppDelegate
+    /// 触发 `dispatchSignature(.greet)`(pet 对自己主动开口 perk-up 反应)。`internal` 供
+    /// 跨文件扩展 `BondedSession+Proactive` 访问。
+    let onProactiveBubbleShown: (() -> Void)?
     /// 单调递增的 send 编号。每次 `appendUserInputAndSend` 都 +1，stream
     /// 循环里比对当前值即可判定是否已被新一轮覆盖。`clear()` 也会 +1，
     /// 让所有 in-flight stream 在下一次 yield 时丢弃自己。
