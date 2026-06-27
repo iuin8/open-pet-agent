@@ -522,6 +522,7 @@ extension MinimalAppDelegate {
         // 应用持久化的调试调参（设置 → 调试）。
         fallingSandTuning = Self.loadFallingSandTuning(from: userDefaults)
         controller.setFallingSandTuning(fallingSandTuning)
+        petMotionController.tuning = Self.loadBallisticTuning(from: userDefaults)   // 弹力球抛射调参(设置→调试)
         SnowDiagnostics.log("didFinishLaunching shellShown windows=\(controller.windowSet.allWindows.count)")
         frameLoopHandle = startFrameLoop { [weak self] in
             SnowDiagnostics.log("timerTick")

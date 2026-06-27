@@ -224,6 +224,15 @@ public final class DesktopShellController {
         recordInteractionEvent(.petRelease(positionX: position.x, positionY: position.y))
     }
 
+    /// 松手截获的甩出初速(px/s,bottom-origin y-up),供帧循环松手边沿取走发起 `.ballistic` 抛射;取后清空。
+    private var pendingThrowVelocity: CGVector?
+
+    /// 帧循环松手边沿一次性取走甩出初速(取后清空)。`nil` = 无待发抛射。
+    public func consumeThrowVelocity() -> CGVector? {
+        defer { pendingThrowVelocity = nil }
+        return pendingThrowVelocity
+    }
+
     public func handlePetDragDidMove(to position: NSPoint) {
         syncWindowsForPetPosition(position)
         recordPetDrag(to: position)
@@ -233,6 +242,11 @@ public final class DesktopShellController {
     public func handlePetDragDidEnd(at position: NSPoint) {
         syncWindowsForPetPosition(position)
         recordPetRelease(at: position)
+        // 弹力球甩出:松手前先截获拖拽末速度作抛射初速(`dragDidEnd` 会清零)。帧循环松手边沿
+        // 经 `consumeThrowVelocity()` 取走 → `PetMotionController.beginThrow`。
+        // **仅 supportsThrowPhysics 形象才存**:非抛射形象(Slime/sprite/Live2D)留 nil —— 否则其残留速度
+        // 永不被消费,换装成抛射形象时被下一帧误消费 → 凭空起飞。
+        pendingThrowVelocity = (petRenderer?.supportsThrowPhysics == true) ? petVisualDriver.lastDragVelocity : nil
         // Release: clear velocity so the orb eases back to its chat-state
         // base + reset tracking so a new drag starts from a clean origin.
         petVisualDriver.dragDidEnd()

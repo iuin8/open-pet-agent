@@ -253,6 +253,8 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
 
     /// 设置 → 调试 falling-sand 可调参数（JSON 编码的 FallingSandTuning）持久化 key。
     static let fallingSandTuningKey = "fallingSandTuning"
+    /// 弹力球抛射调参 UD key（JSON 编码 `BallisticTuning`）。
+    static let ballisticTuningKey = "ballisticTuning"
 
     /// 设置 → 主动协助 设置（JSON 编码的 ProactiveSettings）持久化 key。
     static let proactiveSettingsKey = "proactiveSettings"

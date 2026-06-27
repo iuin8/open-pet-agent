@@ -54,6 +54,20 @@ struct SettingsDebugSection: View {
                 floatRow("环境温度覆盖（<0 = 关，用天气）", $viewModel.fallingSandTuning.ambientOverride, -0.05...1, "%.2f")
             }
 
+            group("弹力球抛射（甩动回弹）", icon: "circle.dashed") {
+                doubleRow("重力 gravity", $viewModel.ballisticTuning.gravity, 500...6000, "%.0f")
+                doubleRow("弹性系数 restitution", $viewModel.ballisticTuning.restitution, 0...0.95, "%.2f")
+                doubleRow("空气阻力 airDrag/s", $viewModel.ballisticTuning.airDrag, 0...2, "%.2f")
+                doubleRow("切向摩擦 tangentFriction", $viewModel.ballisticTuning.tangentFriction, 0.5...1, "%.2f")
+                doubleRow("落定速度阈值 settleSpeed", $viewModel.ballisticTuning.settleSpeed, 10...300, "%.0f")
+                doubleRow("甩出速度上限 maxLaunch", $viewModel.ballisticTuning.maxLaunchSpeed, 1000...8000, "%.0f")
+                HStack {
+                    Button("重置弹力球默认") { viewModel.resetBallisticTuning() }
+                    Spacer()
+                    Text("拖滑块即时生效。甩起弹力球看回弹手感。").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             GroupBox {
                 HStack(spacing: 10) {
                     Button("重置默认") { viewModel.resetFallingSandTuning() }
@@ -70,6 +84,9 @@ struct SettingsDebugSection: View {
         // 任一字段变化 → 实时 preview（不写 UD）。
         .onChange(of: viewModel.fallingSandTuning) { newValue in
             viewModel.onFallingSandTuningPreview(newValue)
+        }
+        .onChange(of: viewModel.ballisticTuning) { newValue in
+            viewModel.onBallisticTuningPreview(newValue)
         }
     }
 
@@ -101,6 +118,16 @@ struct SettingsDebugSection: View {
             Slider(value: Binding(get: { Double(value.wrappedValue) },
                                   set: { value.wrappedValue = Float($0) }),
                    in: Double(range.lowerBound)...Double(range.upperBound))
+            Text(String(format: fmt, value.wrappedValue))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary).frame(width: 56, alignment: .trailing)
+        }
+    }
+
+    private func doubleRow(_ label: String, _ value: Binding<Double>, _ range: ClosedRange<Double>, _ fmt: String) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.system(size: 12)).frame(width: 200, alignment: .leading)
+            Slider(value: value, in: range)
             Text(String(format: fmt, value.wrappedValue))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary).frame(width: 56, alignment: .trailing)

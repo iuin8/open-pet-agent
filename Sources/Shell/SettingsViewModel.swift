@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Orchestrator
 import Rendering
+import RuntimeBridge
 import ShimejiImport
 import Weather
 
@@ -219,6 +220,9 @@ final class SettingsViewModel: ObservableObject {
     /// falling-sand 可调物理参数。调试面板滑块绑定其字段，改动即时 preview。
     @Published var fallingSandTuning: FallingSandTuning
 
+    /// 弹力球抛射回弹可调参数(重力/弹性/阻力/落定…)。调试面板滑块绑定其字段，改动即时 preview。
+    @Published var ballisticTuning: BallisticTuning
+
     /// 温度模式覆盖档 raw — "auto" / "winter" / "spring" / "sauna"（迁移自状态栏菜单）。
     /// "auto" = 跟随天气；具体档 = 覆盖物理沙盒 ambient 温度、无视天气。
     @Published var thermalOverrideRaw: String
@@ -393,6 +397,7 @@ final class SettingsViewModel: ObservableObject {
         forcedConditionRaw: String = "auto",
         thermalOverrideRaw: String = "auto",
         fallingSandTuning: FallingSandTuning = FallingSandTuning(),
+        ballisticTuning: BallisticTuning = BallisticTuning(),
         proactiveSettings: ProactiveSettings = .default,
         currentWeatherDescription: String = "⏳ 等待首次刷新…",
         aboutVersion: String
@@ -402,6 +407,7 @@ final class SettingsViewModel: ObservableObject {
         self.forcedConditionRaw = forcedConditionRaw
         self.thermalOverrideRaw = thermalOverrideRaw
         self.fallingSandTuning = fallingSandTuning
+        self.ballisticTuning = ballisticTuning
         self.proactiveSettings = proactiveSettings
         self.currentWeatherDescription = currentWeatherDescription
         self.selectedProviderIndex = selectedProviderIndex
@@ -687,6 +693,8 @@ final class SettingsViewModel: ObservableObject {
     var onThermalOverridePreview: (String) -> Void = { _ in }
     /// 调试调参 preview — 拖滑块立刻应用到 driver 看效果，不写 UD。
     var onFallingSandTuningPreview: (FallingSandTuning) -> Void = { _ in }
+    /// 弹力球抛射调参 preview — 拖滑块立刻应用到 PetMotionController.tuning 看效果。
+    var onBallisticTuningPreview: (BallisticTuning) -> Void = { _ in }
     /// 主动协助 preview — 改设置立刻热更新引擎看效果，不写 UD。
     var onProactiveSettingsPreview: (ProactiveSettings) -> Void = { _ in }
     /// PF6 桌宠大小 preview — 拖滑杆立刻缩放桌宠看效果，不写 UD。
@@ -715,6 +723,12 @@ final class SettingsViewModel: ObservableObject {
     func resetFallingSandTuning() {
         fallingSandTuning = FallingSandTuning()
         onFallingSandTuningPreview(fallingSandTuning)
+    }
+
+    /// 重置弹力球抛射调参为工厂默认。即时 preview。
+    func resetBallisticTuning() {
+        ballisticTuning = BallisticTuning()
+        onBallisticTuningPreview(ballisticTuning)
     }
 
     /// 重置主动协助设置为工厂默认（「重置默认」按钮）。即时 preview(modeless,无回滚)。

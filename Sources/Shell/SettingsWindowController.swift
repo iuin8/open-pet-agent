@@ -1,6 +1,7 @@
 import AppKit
 import Orchestrator
 import Rendering
+import RuntimeBridge
 import SwiftUI
 
 /// Manages the OpenPetAgent Settings window, which lets the user configure the
@@ -106,6 +107,8 @@ public final class SettingsWindowController {
     public var onFallingSandTuningPreview: @MainActor (FallingSandTuning) -> Void = { _ in }
     /// 调试调参 save（写 UD + 即时生效）。
     public var onSaveFallingSandTuning: @MainActor (FallingSandTuning) -> Void = { _ in }
+    /// 弹力球抛射调参 preview（拖滑块即时生效 + 持久化）。
+    public var onBallisticTuningPreview: @MainActor (BallisticTuning) -> Void = { _ in }
 
     /// 主动协助 preview（改设置立刻热更新引擎，**不写 UD**）。
     public var onProactiveSettingsPreview: @MainActor (ProactiveSettings) -> Void = { _ in }
@@ -326,6 +329,7 @@ public final class SettingsWindowController {
         forcedConditionRaw: String = "auto",
         thermalOverrideRaw: String = "auto",
         fallingSandTuning: FallingSandTuning = FallingSandTuning(),
+        ballisticTuning: BallisticTuning = BallisticTuning(),
         proactiveSettings: ProactiveSettings = .default,
         currentWeatherDescription: String = "⏳ 等待首次刷新…",
         aboutVersion: String = "OpenPetAgent (dev)"
@@ -363,6 +367,7 @@ public final class SettingsWindowController {
             forcedConditionRaw: forcedConditionRaw,
             thermalOverrideRaw: thermalOverrideRaw,
             fallingSandTuning: fallingSandTuning,
+            ballisticTuning: ballisticTuning,
             proactiveSettings: proactiveSettings,
             currentWeatherDescription: currentWeatherDescription,
             aboutVersion: aboutVersion
@@ -400,6 +405,9 @@ public final class SettingsWindowController {
         }
         self.viewModel.onFallingSandTuningPreview = { [weak self] tuning in
             self?.onFallingSandTuningPreview(tuning)
+        }
+        self.viewModel.onBallisticTuningPreview = { [weak self] tuning in
+            self?.onBallisticTuningPreview(tuning)
         }
         self.viewModel.onProactiveSettingsPreview = { [weak self] settings in
             self?.onProactiveSettingsPreview(settings)

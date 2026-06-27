@@ -25,6 +25,11 @@ final class PetVisualDriver {
     private var lastDragPosition: NSPoint?
     private var lastDragTime: CFTimeInterval?
 
+    /// 最近一次拖拽帧算出的屏幕空间速度(px/s,bottom-origin y-up,与 window frame origin 同系)。
+    /// 供「松手甩出」取初速:`DesktopShellController.handlePetDragDidEnd` 在 `dragDidEnd()` 前读走。
+    /// `dragDidEnd` 清零,新一轮拖拽从 0 起。
+    private(set) var lastDragVelocity: CGVector = .zero
+
     /// 上一帧从 runtime 观测到的 pet 世界位置（非用户拖拽）。`applyRuntimeVelocity`
     /// 据此从相邻 pose 推物理速度矢量（px/s），让 orb 在弹跳/自由落体/撞墙时也
     /// squash，而不只在用户拖拽时。首帧前为 nil；拖拽期间也清 nil（拖拽速度链路
@@ -60,6 +65,7 @@ final class PetVisualDriver {
             dx: (position.x - prevPos.x) / dt,
             dy: (position.y - prevPos.y) / dt
         )
+        lastDragVelocity = velocity
         petRenderer?.updateForVelocity(velocity)
     }
 
@@ -69,6 +75,7 @@ final class PetVisualDriver {
         petRenderer?.updateForVelocity(.zero)
         lastDragPosition = nil
         lastDragTime = nil
+        lastDragVelocity = .zero
     }
 
     /// 从 runtime 相邻 pose 估速度并驱动 squash（控制器 `applyRuntimePetVelocity`

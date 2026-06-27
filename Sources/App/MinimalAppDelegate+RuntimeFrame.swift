@@ -16,17 +16,26 @@ extension MinimalAppDelegate {
     /// 鼠标悬停在 pet 上。on 时帧循环把自主运动(漫步+跟随)当本帧关闭 → pet 停原地。
     /// **原则:只冻结「会跟着 pet 走的东西」开着的情况**(免 pet 漫步把它拖走);大设置窗口居中、
     /// 不跟随 pet,故**不**冻结。
-    func shouldFreezePetMotion() -> Bool {
+    /// **黏附面冻结**:贴着 pet 且随 pet 移动的 UI(对话卡片 / 列容器 / 右键菜单)开着 →
+    /// 冻结 pet 免它跑动把这些 UI 拖走。**不含**鼠标悬停。抛射回弹只受此约束(甩出的球该飞,
+    /// 哪怕光标恰好在它身上),而漫步/跟随受完整 `shouldFreezePetMotion`(含悬停)约束。
+    func shouldFreezeForStickySurface() -> Bool {
         guard isFreezeWhenInteractingEnabled else { return false }
         // 对话卡片可见(侧贴 pet,随 pet 移动重定位)。
         if chatCardWindowController?.window?.isVisible == true { return true }
         // 列容器可见(贴主卡、随主卡移动)→ 冻结 pet 防漫步把主卡/容器拖走。
         if columnContainerWindowController.isVisible { return true }
-        let petWindow = shellController?.windowSet.petWindow
         // 右键上下文菜单开着(原生 NSMenu 不跟随窗口,但帧循环照 tick → pet 会漫步把菜单甩身后)。
-        if (petWindow as? PetShellWindow)?.isContextMenuOpen == true { return true }
-        // 鼠标悬停在 pet 窗口上(想点/拖 pet 时它别躲)。
-        if let petWindow, petWindow.frame.contains(NSEvent.mouseLocation) { return true }
+        if (shellController?.windowSet.petWindow as? PetShellWindow)?.isContextMenuOpen == true { return true }
+        return false
+    }
+
+    func shouldFreezePetMotion() -> Bool {
+        if shouldFreezeForStickySurface() { return true }
+        // 鼠标悬停在 pet 窗口上(想点/拖 pet 时它别躲)。仅约束漫步/跟随,不约束抛射回弹。
+        if isFreezeWhenInteractingEnabled,
+           let petWindow = shellController?.windowSet.petWindow,
+           petWindow.frame.contains(NSEvent.mouseLocation) { return true }
         return false
     }
 
@@ -147,12 +156,30 @@ extension MinimalAppDelegate {
                     isSnowEnabled: currentRenderState.isSnowEnabled
                 )
             case .proceduralMotion:
-            if spatialBehaviorEnabled && !isDragging {
+            // 松手边沿:弹力球(supportsThrowPhysics)带甩出初速 → 进入 .ballistic 抛射回弹(重力+窗口/屏幕边回弹)。
+            // 只受黏附面冻结约束(卡片/菜单开着才不抛),**不受悬停冻结**:刚松手时光标常在球上,该飞还得飞。
+            let stickyFreeze = shouldFreezeForStickySurface()
+            // 松手边沿:取走甩出初速。**每帧都 consume**(免滞留):黏附面冻结期间(卡片开)直接丢弃,
+            // 不延后 → 免卡片关后触发几秒前那次甩;否则 beginThrow 进入抛射。
+            if !isDragging,
+               shellController.petRenderer?.supportsThrowPhysics == true,
+               let throwV = shellController.consumeThrowVelocity() {
+                if !stickyFreeze {
+                    petMotionController.beginThrow(velocity: Point(x: Double(throwV.dx), y: Double(throwV.dy)))
+                }
+            }
+            // 抛射中即使跟随/漫游都关、光标悬停也要驱动位置 + 移窗(飞行/回弹只受黏附面冻结约束,落定才交回);
+            // 漫步/跟随仍受完整 shouldFreeze(含悬停)约束。
+            let runController = !isDragging && (petMotionController.isBallistic
+                ? !stickyFreeze
+                : (!shouldFreeze && spatialBehaviorEnabled))
+            if runController {
                 // screenBounds = 当前屏 visibleFrame(排除 Dock/菜单栏),与 pet 位置
                 // /光标同系(NSScreen 全局底原点)。漫步地面 = bounds.minY → pet 走在
                 // 可见地面上,不沉到 Dock 下。TODO(多屏): currentScreenFrame 默认取主屏,
                 // pet 漫游到副屏的边界跟随留待 multi-monitor 阶段。
                 let visible = currentScreenFrame()
+                let petFrame = shellController.windowSet.petWindow.frame
                 let motionInput = PetMotionInput(
                     deltaTime: deltaTime,
                     cursorPosition: tickResult.snapshot.cursorPosition,
@@ -165,7 +192,9 @@ extension MinimalAppDelegate {
                     idleSeconds: idleSecondsProvider(),
                     followingEnabled: isFollowingEnabled,
                     roamingEnabled: roamingActive,
-                    liveliness: shellController.roamLiveliness   // item2:情绪态 → 漫步活跃度
+                    liveliness: shellController.roamLiveliness,   // item2:情绪态 → 漫步活跃度
+                    petWidth: Double(petFrame.width),
+                    petHeight: Double(petFrame.height)
                 )
                 let resolution = petMotionController.resolved(
                     previousPosition: previousPosition,
@@ -179,7 +208,11 @@ extension MinimalAppDelegate {
             } else if isDragging || shouldFreeze {
                 // 拖拽中 或 交互冻结:停在原地。清掉漫步/爬墙过渡态(否则松手/解冻 snap 回拖前所站窗口 perch),
                 // 并保留当前落点(拖拽=currentRenderState 由 .petDrag 写入 / 冻结=上帧权威位置),不让 candidate/漫游覆盖。
-                petMotionController.clearForExternalControl()
+                // **例外:抛射飞行中遇黏附面冻结(卡片开)→ 不销毁飞行态**,保留 .ballistic + 速度,
+                // 冻结解除后从原地续飞/续落(免冻死半空);用户抓起(isDragging)仍打断接管。
+                if isDragging || !petMotionController.isBallistic {
+                    petMotionController.clearForExternalControl()
+                }
                 resolvedX = previousPosition.x
                 resolvedY = previousPosition.y
             }
@@ -193,7 +226,7 @@ extension MinimalAppDelegate {
                 contactCount: nextRenderState.contactCount,
                 isSnowEnabled: currentRenderState.isSnowEnabled
             )
-            if spatialBehaviorEnabled && !isDragging {
+            if runController {
                 shellController.syncPetPosition(x: resolvedX, y: resolvedY)
                 // A.5.1 step 4 (runtime side): derive a physics velocity from
                 // the frame-to-frame pose delta and feed it to the orb so it

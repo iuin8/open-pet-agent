@@ -5,6 +5,7 @@ import Foundation
 import Orchestrator
 import Weather
 import Rendering
+import RuntimeBridge
 import Shell
 import ToolMode
 
@@ -102,6 +103,7 @@ extension MinimalAppDelegate {
             forcedConditionRaw: currentWeatherModeRaw,   // 含 "off"(关效果)统一天气模式
             thermalOverrideRaw: userDefaults.string(forKey: Self.thermalOverrideKey) ?? "auto",
             fallingSandTuning: fallingSandTuning,
+            ballisticTuning: petMotionController.tuning,
             proactiveSettings: proactiveSettings,
             currentWeatherDescription: currentWeatherDescription,
             aboutVersion: aboutVersion
@@ -438,6 +440,10 @@ extension MinimalAppDelegate {
         controller.onSaveFallingSandTuning = { [weak self] tuning in
             self?.saveFallingSandTuning(tuning)
         }
+        // 弹力球抛射调参 — modeless:拖滑块即时生效(写 petMotionController.tuning)+ 持久化 UD。
+        controller.onBallisticTuningPreview = { [weak self] tuning in
+            self?.saveBallisticTuning(tuning)
+        }
 
         // 主动协助 — modeless:改设置即时热更新引擎 + 持久化 UD。
         controller.onProactiveSettingsPreview = { [weak self] settings in
@@ -585,6 +591,27 @@ extension MinimalAppDelegate {
         guard let data = ud.data(forKey: fallingSandTuningKey),
               let tuning = try? JSONDecoder().decode(FallingSandTuning.self, from: data)
         else { return FallingSandTuning() }
+        return tuning
+    }
+
+    /// 应用弹力球抛射调参（设置 → 调试）：即时写入运动控制器,下一帧抛射用新参数。
+    func applyBallisticTuning(_ tuning: BallisticTuning) {
+        petMotionController.tuning = tuning
+    }
+
+    /// 保存弹力球抛射调参：即时生效 + JSON 持久化到 UD。
+    func saveBallisticTuning(_ tuning: BallisticTuning) {
+        applyBallisticTuning(tuning)
+        if let data = try? JSONEncoder().encode(tuning) {
+            userDefaults.set(data, forKey: Self.ballisticTuningKey)
+        }
+    }
+
+    /// 从 UD 读弹力球抛射调参（缺失/解码失败回落工厂默认）。
+    static func loadBallisticTuning(from ud: UserDefaults) -> BallisticTuning {
+        guard let data = ud.data(forKey: ballisticTuningKey),
+              let tuning = try? JSONDecoder().decode(BallisticTuning.self, from: data)
+        else { return BallisticTuning() }
         return tuning
     }
 
