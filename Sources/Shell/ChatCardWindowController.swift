@@ -67,6 +67,14 @@ public final class ChatCardWindowController {
         if let panel, panel.isVisible { state.draft = text } else { show(prefill: text) }
     }
 
+    /// 清空对话：重置 Pet Chat 卡片视图态（`ConversationStore` 已由 caller 清空）。
+    /// 取消在途流式 + 清消息/草稿；下次开卡从已清空的 store 恢复（即空历史）。
+    public func clearMessages() {
+        state.cancelStreaming()
+        state.messages = []
+        state.draft = ""
+    }
+
     /// 程序化弹卡到指定 tab（权限/问题来了自动弹 + 切到 Claude Code tab）。
     /// 已可见 → 只切 tab（不重播进场）；未可见 → 切 tab 后弹出。
     public func presentOnTab(_ tab: CompanionTab) {

@@ -26,7 +26,7 @@ struct PetActionMenuTests {
     func structure() throws {
         let menu = makeMenu().menu
         #expect(menu.items.map(\.title) == [
-            "显示聊天", "截图分享", "", "设置...", "", "跟随光标", "桌面漫游", "", "天气", "", "退出 OpenPetAgent"
+            "显示聊天", "清空对话", "截图分享", "", "设置...", "", "跟随光标", "桌面漫游", "", "天气", "", "退出 OpenPetAgent"
         ])
         let weather = try #require(item(menu, "天气")?.submenu)
         let titles = weather.items.map(\.title)
@@ -34,6 +34,14 @@ struct PetActionMenuTests {
         #expect(titles.contains("关闭天气效果"))
         #expect(titles.contains("强制下雪"))
         #expect(titles.contains("立即清除积雪"))
+    }
+
+    @Test("点击清空对话 → 调 clearConversation 回调")
+    func clearConversationCallback() throws {
+        var fired = false
+        let menu = makeMenu { $0.clearConversation = { fired = true } }
+        invoke(item(menu.menu, "清空对话"))
+        #expect(fired)
     }
 
     @Test("点击跟随 toggle:翻转 state + check + 回调新值")

@@ -330,6 +330,7 @@ public final class DesktopShellController {
         onShareScreenshot: @escaping @MainActor () -> Void,
         onForceConditionSelected: @escaping @MainActor (String) -> Void = { _ in },
         onClearWeather: @escaping @MainActor () -> Void = {},
+        onClearConversation: @escaping @MainActor () -> Void = {},
         initialForcedConditionRaw: String = "auto",
         onToggleFollowing: @escaping @MainActor (Bool) -> Void = { _ in },
         onToggleRoaming: @escaping @MainActor (Bool) -> Void = { _ in },
@@ -342,6 +343,7 @@ public final class DesktopShellController {
             onShareScreenshot: onShareScreenshot,
             onForceConditionSelected: onForceConditionSelected,
             onClearWeather: onClearWeather,
+            onClearConversation: onClearConversation,
             onToggleFollowing: onToggleFollowing,
             onToggleRoaming: onToggleRoaming
         )

@@ -17,6 +17,24 @@ extension MinimalAppDelegate {
         shellController?.dispatchSignature(.acknowledge)
     }
 
+    /// 「清空对话」(pet 右键 / 菜单栏统一入口):确认弹窗 → 清 `ConversationStore`(pet chat
+    /// 历史持久化)+ 重置卡片视图。destructive + 不可撤销,故必经确认;隐私控制基本盘
+    /// (clear API 早有,本入口补 UI,companion-features-roadmap S2 之外)。
+    func confirmAndClearConversation() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "清空与桌宠的对话记录？"
+        alert.informativeText = "将删除全部聊天历史，此操作不可撤销。"
+        let clearButton = alert.addButton(withTitle: "清空")
+        clearButton.hasDestructiveAction = true
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { @MainActor in
+            await self.rootSystem.conversationStore?.clear()
+            self.chatCardWindowController?.clearMessages()
+        }
+    }
+
     /// C2 — ⌘⇧Space 触发:读取系统当前选中文本 → 召唤对话卡片 →
     /// (若有选中) 预填到 composer,**不自动发送** — 跟 ChoiceCard 同款决策
     /// (HermesPet 决策 #17 防误触),由用户追加上下文后手动 Return。

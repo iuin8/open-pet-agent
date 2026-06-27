@@ -9,6 +9,8 @@ public final class MenuBarController: NSObject {
     /// 「桌面漫游」开关切换(自主漫步 + 爬墙)。
     public var onToggleRoaming: @MainActor (Bool) -> Void = { _ in }
     public var onChat: @MainActor () -> Void = {}
+    /// 清空与桌宠的对话记录(走确认弹窗)。
+    public var onClearConversation: @MainActor () -> Void = {}
     public var onSettings: @MainActor () -> Void = {}
     public var onShareScreenshot: @MainActor () -> Void = {}
 
@@ -44,6 +46,7 @@ public final class MenuBarController: NSObject {
         super.init()
         var cb = PetActionMenu.Callbacks()
         cb.chat = { [weak self] in self?.onChat() }
+        cb.clearConversation = { [weak self] in self?.onClearConversation() }
         cb.screenshot = { [weak self] in self?.onShareScreenshot() }
         cb.settings = { [weak self] in self?.onSettings() }
         cb.toggleFollowing = { [weak self] on in self?.isFollowingEnabled = on; self?.onToggleFollowing(on) }

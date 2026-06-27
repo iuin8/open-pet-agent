@@ -26,6 +26,7 @@ public final class PetShellWindow: NSWindow {
     private var onForceConditionSelected: @MainActor (String) -> Void = { _ in }
     /// 「立即清除积雪」—— 清当前积雪,不改天气模式。
     private var onClearWeather: @MainActor () -> Void = {}
+    private var onClearConversation: @MainActor () -> Void = {}
     private var onQuit: @MainActor () -> Void = {}
     /// 装饰宠右键「设为主宠」—— 把本宠升为主宠(host 处理交换)。仅装饰宠菜单含此项。
     private var onSetAsPrimary: @MainActor () -> Void = {}
@@ -145,6 +146,7 @@ public final class PetShellWindow: NSWindow {
         onShareScreenshot: @escaping @MainActor () -> Void,
         onForceConditionSelected: @escaping @MainActor (String) -> Void = { _ in },
         onClearWeather: @escaping @MainActor () -> Void = {},
+        onClearConversation: @escaping @MainActor () -> Void = {},
         onToggleFollowing: @escaping @MainActor (Bool) -> Void = { _ in },
         onToggleRoaming: @escaping @MainActor (Bool) -> Void = { _ in }
     ) {
@@ -152,6 +154,7 @@ public final class PetShellWindow: NSWindow {
         self.onShareScreenshot = onShareScreenshot
         self.onForceConditionSelected = onForceConditionSelected
         self.onClearWeather = onClearWeather
+        self.onClearConversation = onClearConversation
         self.onToggleFollowing = onToggleFollowing
         self.onToggleRoaming = onToggleRoaming
     }
@@ -228,6 +231,7 @@ public final class PetShellWindow: NSWindow {
         // 主宠右键菜单走共享 PetActionMenu(与状态栏菜单同一份定义,加项只改 PetActionMenu 一处)。
         var cb = PetActionMenu.Callbacks()
         cb.chat = { [weak self] in self?.onShowChat() }
+        cb.clearConversation = { [weak self] in self?.onClearConversation() }
         cb.screenshot = { [weak self] in self?.onShareScreenshot() }
         cb.settings = { [weak self] in self?.onSettings() }
         cb.toggleFollowing = { [weak self] on in self?.isFollowingEnabled = on; self?.onToggleFollowing(on) }

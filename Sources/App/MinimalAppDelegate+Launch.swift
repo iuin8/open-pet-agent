@@ -189,6 +189,7 @@ extension MinimalAppDelegate {
             onShareScreenshot: { [weak self] in self?.shareOverlayScreenshot() },
             onForceConditionSelected: { [weak self] raw in self?.selectWeatherMode(raw) },
             onClearWeather: { [weak self] in self?.shellController?.clearFallingSand() },
+            onClearConversation: { [weak self] in self?.confirmAndClearConversation() },
             initialForcedConditionRaw: currentWeatherModeRaw,
             onToggleFollowing: { [weak self] enabled in
                 guard let self else { return }
