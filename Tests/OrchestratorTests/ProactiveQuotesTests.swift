@@ -91,21 +91,42 @@ struct ProactiveQuotesTests {
         #expect(q == ProactiveQuotes.codingQuotes[0])  // count % count == 0
     }
 
-    @Test("每桶 6-8 句、≤20 字、无空句")
+    @Test("每桶句数充足、≤20 字、无空句、桶内无重复")
     func bucketsWellFormed() {
-        let buckets = [
-            ProactiveQuotes.codingQuotes,
-            ProactiveQuotes.browsingQuotes,
-            ProactiveQuotes.chattingQuotes,
-            ProactiveQuotes.lateNightQuotes,
-            ProactiveQuotes.genericQuotes,
+        let buckets: [(String, [String])] = [
+            ("coding", ProactiveQuotes.codingQuotes),
+            ("browsing", ProactiveQuotes.browsingQuotes),
+            ("chatting", ProactiveQuotes.chattingQuotes),
+            ("design", ProactiveQuotes.designQuotes),
+            ("writing", ProactiveQuotes.writingQuotes),
+            ("media", ProactiveQuotes.mediaQuotes),
+            ("meeting", ProactiveQuotes.meetingQuotes),
+            ("lateNight", ProactiveQuotes.lateNightQuotes),
+            ("generic", ProactiveQuotes.genericQuotes),
         ]
-        for bucket in buckets {
-            #expect(bucket.count >= 6 && bucket.count <= 8)
+        for (name, bucket) in buckets {
+            #expect(bucket.count >= 6, "\(name) 桶句数应 ≥6")
+            #expect(Set(bucket).count == bucket.count, "\(name) 桶内不应有重复句")
             for line in bucket {
                 #expect(!line.isEmpty)
                 #expect(line.count <= 20, "短句应 ≤20 字：\(line)")
             }
+        }
+    }
+
+    @Test("新增桶：design/writing/media/meeting app → 各自桶")
+    func newBucketsRoute() {
+        let cases: [(String, [String])] = [
+            ("Figma", ProactiveQuotes.designQuotes),
+            ("Notion", ProactiveQuotes.writingQuotes),
+            ("Spotify", ProactiveQuotes.mediaQuotes),
+            ("zoom.us", ProactiveQuotes.meetingQuotes),
+            ("腾讯会议", ProactiveQuotes.meetingQuotes),
+        ]
+        for (app, bucket) in cases {
+            let snap = DesktopSnapshot(visibleApplicationName: app)
+            let q = ProactiveQuotes.pick(snapshot: snap, hour: 14, avoiding: nil, randomIndex: zero)
+            #expect(bucket.contains(q!), "\(app) 应进对应新桶")
         }
     }
 }

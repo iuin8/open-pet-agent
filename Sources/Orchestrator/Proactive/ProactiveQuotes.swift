@@ -19,6 +19,11 @@ public enum ProactiveQuotes {
         "调试辛苦了，我陪着你",
         "思路打结的话，要不要说给我听",
         "敲得正起劲，我先不打扰",
+        "这 bug 早晚被你拿下",
+        "编译跑着，趁机眨眨眼睛",
+        "写到一半别忘了刚才的思路",
+        "要不要起来接杯水再战",
+        "代码越写越顺，状态不错呀",
     ]
 
     /// browsing：在浏览器里看东西。
@@ -29,6 +34,11 @@ public enum ProactiveQuotes {
         "别一不小心刷太久啦",
         "慢慢看，我在旁边待着",
         "这页内容挺多的，慢慢消化",
+        "找资料像寻宝，加油呀",
+        "标签页开太多啦，关几个轻松点",
+        "看累了就闭眼歇十秒",
+        "有想查的也可以问我哦",
+        "别被推荐流带跑啦",
     ]
 
     /// chatting：在聊天软件里。
@@ -39,6 +49,54 @@ public enum ProactiveQuotes {
         "聊得开心点哦",
         "我在这儿待着，不打扰你们",
         "热闹归热闹，也记得歇眼睛",
+        "消息攒一波再回也没关系",
+        "聊到尽兴别忘了正事呀",
+        "需要我帮你想措辞就说",
+    ]
+
+    /// design：设计 / 画图工具。
+    public static let designQuotes: [String] = [
+        "在画画呀，配色看着真舒服",
+        "调细节辛苦啦，退远看一眼整体",
+        "灵感来了就赶紧记下来",
+        "对齐像素的样子好专注",
+        "卡住的话先存个版本再试",
+        "审美在线，这版挺好看",
+        "眼睛盯久了，看看远处歇歇",
+        "要不要换个参考找找灵感",
+    ]
+
+    /// writing：写作 / 笔记工具。
+    public static let writingQuotes: [String] = [
+        "码字辛苦啦，思路别断",
+        "写不出就先列个提纲呀",
+        "这段表达挺顺的",
+        "记得随手存一下",
+        "卡壳了就起来走两步再写",
+        "灵感稍纵即逝，先记关键词",
+        "写累了喝口水润润嗓",
+        "一字一句都在变好呢",
+    ]
+
+    /// media：音乐 / 视频 / 影音。
+    public static let mediaQuotes: [String] = [
+        "在听歌呀，跟着放松一下",
+        "看片愉快，别熬太晚哦",
+        "歇会儿挺好的，我陪你看",
+        "音量别开太大伤耳朵",
+        "放松归放松，坐久了起来动动",
+        "这首挺好听，难怪你循环",
+        "看完这集记得歇歇眼",
+    ]
+
+    /// meeting：视频会议。
+    public static let meetingQuotes: [String] = [
+        "开会中呀，我先安静待着",
+        "会议加油，结束叫我",
+        "久坐开会，记得动动肩颈",
+        "喝口水再继续讲呀",
+        "认真听会的样子很可靠",
+        "会开久了，眼睛也歇一歇",
     ]
 
     /// lateNight：23:00–04:59 深夜关怀，优先级最高。
@@ -49,6 +107,10 @@ public enum ProactiveQuotes {
         "这个点了，眼睛该休息啦",
         "再忙也记得喝口热水",
         "我陪你到这儿，也别太晚",
+        "夜里效率低，不如睡足再战",
+        "肩颈僵了吧，伸个懒腰",
+        "这个点的安静，也别耗太狠",
+        "答应我，这件事完就去睡",
     ]
 
     /// generic：兜底，无识别 app / 无 snapshot。
@@ -59,13 +121,22 @@ public enum ProactiveQuotes {
         "喝口水，歇会儿眼睛",
         "我一直在旁边陪着你",
         "今天也辛苦啦",
+        "坐久了，起来伸个懒腰呀",
+        "深呼吸一下，放松点",
+        "有需要随时喊我帮忙",
+        "节奏自己掌握，别太赶",
+        "你做得挺好的，别太苛求自己",
     ]
 
     // MARK: - app 关键词识别（小写匹配）
 
-    private static let codingKeywords = ["xcode", "code", "vim", "idea", "cursor", "sublime", "emacs", "fleet", "android studio", "pycharm", "webstorm", "goland", "rustrover", "terminal", "iterm"]
-    private static let browsingKeywords = ["safari", "chrome", "edge", "firefox", "arc", "brave", "opera"]
-    private static let chattingKeywords = ["wechat", "微信", "slack", "telegram", "qq", "飞书", "lark", "discord", "钉钉", "dingtalk"]
+    private static let codingKeywords = ["xcode", "code", "vim", "idea", "cursor", "sublime", "emacs", "fleet", "android studio", "pycharm", "webstorm", "goland", "rustrover", "terminal", "iterm", "nova", "zed", "clion", "datagrip", "rider"]
+    private static let browsingKeywords = ["safari", "chrome", "edge", "firefox", "arc", "brave", "opera", "vivaldi", "zen"]
+    private static let chattingKeywords = ["wechat", "微信", "slack", "telegram", "qq", "飞书", "lark", "discord", "钉钉", "dingtalk", "messages", "信息", "imessage", "whatsapp"]
+    private static let designKeywords = ["figma", "sketch", "photoshop", "illustrator", "affinity", "zeplin", "framer", "principle", "pixelmator", "blender", "lightroom", "premiere", "after effects"]
+    private static let writingKeywords = ["notion", "typora", "obsidian", "ulysses", "bear", "语雀", "word", "pages", "wps", "craft", "logseq", "scrivener", "ia writer", "marginnote", "goodnotes"]
+    private static let mediaKeywords = ["music", "网易云", "spotify", "qqmusic", "qq音乐", "iina", "quicktime", "vlc", "infuse", "bilibili", "哔哩", "youtube", "netflix", "podcast", "播客", "apple tv"]
+    private static let meetingKeywords = ["zoom", "腾讯会议", "tencent meeting", "teams", "webex", "飞书会议", "google meet", "voov", "腾讯视频会议"]
 
     // MARK: - 选桶 + 抽句
 
@@ -73,11 +144,17 @@ public enum ProactiveQuotes {
     private static func isLateNight(_ hour: Int) -> Bool { hour >= 23 || hour < 5 }
 
     /// 按 app 名匹配关键词选 app 桶；不命中返回 nil。
+    /// 顺序：先具体（coding/design/writing/meeting/chatting/media）后宽泛（browsing），
+    /// 避免广义浏览器关键词盖过专用 app。
     private static func appBucket(for appName: String?) -> [String]? {
         guard let name = appName?.lowercased(), !name.isEmpty else { return nil }
         if codingKeywords.contains(where: name.contains) { return codingQuotes }
-        if browsingKeywords.contains(where: name.contains) { return browsingQuotes }
+        if designKeywords.contains(where: name.contains) { return designQuotes }
+        if writingKeywords.contains(where: name.contains) { return writingQuotes }
+        if meetingKeywords.contains(where: name.contains) { return meetingQuotes }
         if chattingKeywords.contains(where: name.contains) { return chattingQuotes }
+        if mediaKeywords.contains(where: name.contains) { return mediaQuotes }
+        if browsingKeywords.contains(where: name.contains) { return browsingQuotes }
         return nil
     }
 
