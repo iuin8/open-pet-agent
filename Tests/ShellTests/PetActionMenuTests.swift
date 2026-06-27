@@ -84,18 +84,23 @@ struct PetActionMenuTests {
         #expect(weather.items.first?.title == "☀️ 25°C")
     }
 
-    @Test("validateMenuItem:跟随/漫游随 isMotionApplicable 灰显,其余恒 true")
+    @Test("validateMenuItem:跟随随 isMotionApplicable、漫游随 isRoamingApplicable 各自独立灰显,其余恒 true")
     func motionGate() throws {
         let pm = makeMenu()
-        pm.isMotionApplicable = { false }
         let following = try #require(item(pm.menu, "跟随光标"))
         let roaming = try #require(item(pm.menu, "桌面漫游"))
         let chat = try #require(item(pm.menu, "显示聊天"))
+        // 跟随闸关、漫游闸开 —— 两闸解耦,互不影响。
+        pm.isMotionApplicable = { false }
+        pm.isRoamingApplicable = { true }
         #expect(pm.validateMenuItem(following) == false)
-        #expect(pm.validateMenuItem(roaming) == false)
+        #expect(pm.validateMenuItem(roaming) == true)
         #expect(pm.validateMenuItem(chat) == true)
+        // 弹力球场景:跟随可用、漫游灰(纯物理形象 supportsAutonomousRoaming=false)。
         pm.isMotionApplicable = { true }
+        pm.isRoamingApplicable = { false }
         #expect(pm.validateMenuItem(following) == true)
+        #expect(pm.validateMenuItem(roaming) == false)
     }
 
     @Test("chat/screenshot/settings/清雪/quit 动作各自转发回调")

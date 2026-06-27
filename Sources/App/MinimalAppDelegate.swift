@@ -528,10 +528,13 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         self.isRoamingEnabled = self.menuBarController.isRoamingEnabled
         self.isFreezeWhenInteractingEnabled = freezeOn
         super.init()
-        // 跟随/漫游开关仅对程序化形象(Orb/Slime)生效;换上 petdex/Live2D/Shimeji 时菜单灰掉。
-        // pull 式闭包,菜单每次打开读当前 renderer 的 driveModel,换形象后自动反映、不会 stale。
+        // 「跟随」对程序化形象(Orb/Slime)生效;「漫游」更严:仅会走会爬的形象(Slime ✅ / Orb ❌ 纯物理)。
+        // pull 式闭包,菜单每次打开读当前 renderer,换形象后自动反映、不会 stale。
         self.menuBarController.isMotionApplicable = { [weak self] in
             self?.shellController?.petRenderer?.driveModel.supportsHostDrivenMotion ?? true
+        }
+        self.menuBarController.isRoamingApplicable = { [weak self] in
+            self?.shellController?.petRenderer?.supportsAutonomousRoaming ?? false
         }
         self.menuBarController.onToggleFollowing = { [weak self] enabled in
             guard let self else { return }

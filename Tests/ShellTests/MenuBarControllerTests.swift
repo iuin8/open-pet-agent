@@ -285,11 +285,12 @@ func petDriveModelHostMotionApplicability() {
     #expect(PetDriveModel.selfAnimating.supportsHostDrivenMotion == false)
 }
 
-@Test("isMotionApplicable=false → 跟随/漫游灰掉,其余项不受影响")
+@Test("两闸都关 → 跟随/漫游灰掉,其余项不受影响")
 @MainActor
 func menuBarMotionTogglesGreyedWhenInapplicable() throws {
     let controller = MenuBarController()
     controller.isMotionApplicable = { false }
+    controller.isRoamingApplicable = { false }
     let items = controller.menuForTesting.items
     let following = try #require(items.first(where: { $0.title == "跟随光标" }))
     let roaming = try #require(items.first(where: { $0.title == "桌面漫游" }))
@@ -300,15 +301,30 @@ func menuBarMotionTogglesGreyedWhenInapplicable() throws {
     #expect(controller.validateMenuItem(settings))   // 非运动项恒可用
 }
 
-@Test("isMotionApplicable=true(默认/程序化形象)→ 跟随/漫游可用")
+@Test("两闸都开(默认/会走会爬形象)→ 跟随/漫游都可用")
 @MainActor
 func menuBarMotionTogglesEnabledWhenApplicable() throws {
     let controller = MenuBarController()
     controller.isMotionApplicable = { true }
+    controller.isRoamingApplicable = { true }
     let items = controller.menuForTesting.items
     let following = try #require(items.first(where: { $0.title == "跟随光标" }))
     let roaming = try #require(items.first(where: { $0.title == "桌面漫游" }))
 
     #expect(controller.validateMenuItem(following))
     #expect(controller.validateMenuItem(roaming))
+}
+
+@Test("弹力球场景:跟随闸开、漫游闸关 → 跟随可用、漫游独立灰掉")
+@MainActor
+func menuBarRoamingGreyedIndependentlyOfFollowing() throws {
+    let controller = MenuBarController()
+    controller.isMotionApplicable = { true }    // Orb 是 proceduralMotion → 跟随可用
+    controller.isRoamingApplicable = { false }  // Orb supportsAutonomousRoaming=false → 漫游灰
+    let items = controller.menuForTesting.items
+    let following = try #require(items.first(where: { $0.title == "跟随光标" }))
+    let roaming = try #require(items.first(where: { $0.title == "桌面漫游" }))
+
+    #expect(controller.validateMenuItem(following))          // 跟随仍可点
+    #expect(controller.validateMenuItem(roaming) == false)   // 漫游灰
 }

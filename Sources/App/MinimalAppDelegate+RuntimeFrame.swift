@@ -116,7 +116,12 @@ extension MinimalAppDelegate {
             // 交互冻结:卡片可见 / 设置面板打开 / 鼠标悬停 pet 上 → 本帧把自主运动当关闭,pet 停原地
             //（免「拿着卡片的 pet 乱跑」/ 想点 pet 时它躲）。复用「跟随漫游都关 → 窗口不动」路径。
             let shouldFreeze = shouldFreezePetMotion()
-            let spatialBehaviorEnabled = (isFollowingEnabled || isRoamingEnabled) && !shouldFreeze
+            // 漫游按形象原生能力闸:弹力球(Orb)等纯物理形象 supportsAutonomousRoaming=false →
+            // roamingActive 恒 false → 控制器只走 .physics(透传 cursor-follow),不漫步不爬墙。
+            // 会走会爬的形象(Slime)opt-in true → 漫游开关照常生效。
+            let petCanRoam = shellController.petRenderer?.supportsAutonomousRoaming ?? false
+            let roamingActive = isRoamingEnabled && petCanRoam
+            let spatialBehaviorEnabled = (isFollowingEnabled || roamingActive) && !shouldFreeze
             // Task 6:按形象 PetDriveModel 分发运动 —— 取代 `as? ShimejiPetRenderer` 二元 cast。
             // autonomousEngine(Shimeji)引擎自驱 / activityStateIndicator(petdex)·selfAnimating(Live2D)
             // 位置固定 / proceduralMotion(Orb·Slime)PetMotionController 仲裁。
@@ -159,7 +164,7 @@ extension MinimalAppDelegate {
                     ),
                     idleSeconds: idleSecondsProvider(),
                     followingEnabled: isFollowingEnabled,
-                    roamingEnabled: isRoamingEnabled,
+                    roamingEnabled: roamingActive,
                     liveliness: shellController.roamLiveliness   // item2:情绪态 → 漫步活跃度
                 )
                 let resolution = petMotionController.resolved(

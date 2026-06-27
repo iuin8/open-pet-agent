@@ -45,9 +45,12 @@ public final class PetActionMenu: NSObject, NSMenuItemValidation {
     ]
 
     public let menu = NSMenu()
-    /// 跟随 / 漫游随当前形象灰显的 gate —— pull 式,`validateMenuItem` 每次菜单打开实时求值
-    /// (换形象后无需推送、不 stale)。surface 注入。
+    /// **「跟随光标」**随当前形象灰显的 gate —— pull 式,`validateMenuItem` 每次菜单打开实时求值
+    /// (换形象后无需推送、不 stale)。surface 注入。仅程序化形象(Orb/Slime,`supportsHostDrivenMotion`)为真。
     public var isMotionApplicable: () -> Bool = { true }
+    /// **「桌面漫游」**独立灰显 gate —— 漫步+爬墙是行走生物能力,弹力球(Orb)等纯物理形象灰掉。
+    /// 由 surface 注入 `petRenderer.supportsAutonomousRoaming`。与「跟随」解耦:Orb 跟随可用、漫游灰。
+    public var isRoamingApplicable: () -> Bool = { true }
 
     /// 动作回调 —— surface 在 init 后注入(闭包需捕获 surface self)。
     public var callbacks: Callbacks
@@ -176,9 +179,11 @@ public final class PetActionMenu: NSObject, NSMenuItemValidation {
         callbacks.selectForcedCondition(raw)
     }
 
-    /// 跟随 / 漫游随当前形象 `motionApplicable` 灰显;其余恒可用。
+    /// 「跟随光标」随 `isMotionApplicable` 灰显、「桌面漫游」随 `isRoamingApplicable` 独立灰显;
+    /// 两闸解耦(弹力球:跟随可用、漫游灰)。其余项恒可用。
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem === followingItem || menuItem === roamingItem { return isMotionApplicable() }
+        if menuItem === followingItem { return isMotionApplicable() }
+        if menuItem === roamingItem { return isRoamingApplicable() }
         return true
     }
 }

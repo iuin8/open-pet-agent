@@ -21,9 +21,13 @@ public final class MenuBarController: NSObject {
     public private(set) var isFollowingEnabled: Bool
     public private(set) var isRoamingEnabled: Bool
 
-    /// 当前形象是否响应跟随/漫游开关(灰显 gate),App 注入;转发给共享菜单。
+    /// 当前形象是否响应**「跟随光标」**开关(灰显 gate),App 注入;转发给共享菜单。
     public var isMotionApplicable: () -> Bool = { true } {
         didSet { actionMenu.isMotionApplicable = isMotionApplicable }
+    }
+    /// 当前形象是否响应**「桌面漫游」**开关(独立灰显 gate,Orb 等纯物理形象灰掉),App 注入;转发给共享菜单。
+    public var isRoamingApplicable: () -> Bool = { true } {
+        didSet { actionMenu.isRoamingApplicable = isRoamingApplicable }
     }
 
     /// 7 个天气模式选项(转发共享定义,兼容旧引用)。
@@ -56,6 +60,7 @@ public final class MenuBarController: NSObject {
         cb.quit = { [weak self] in self?.onQuit() }
         actionMenu.callbacks = cb
         actionMenu.isMotionApplicable = { [weak self] in self?.isMotionApplicable() ?? true }
+        actionMenu.isRoamingApplicable = { [weak self] in self?.isRoamingApplicable() ?? true }
     }
 
     public var menuForTesting: NSMenu { actionMenu.menu }

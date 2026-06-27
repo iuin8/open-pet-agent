@@ -88,10 +88,14 @@ public final class DesktopShellController {
             initialState: initialState,
             chatReplyHandler: chatReplyHandler
         )
-        // 右键菜单的跟随/漫游项仅对程序化形象(Orb/Slime)生效;pull 式闭包读当前 petRenderer 的
-        // driveModel,换形象后右键菜单打开时自动灰掉、不会 stale(petRenderer 此刻可能尚未注入,闭包延迟求值)。
+        // 右键菜单的「跟随」仅对程序化形象(Orb/Slime)生效;「漫游」更严:仅 supportsAutonomousRoaming
+        // 的形象(Slime ✅ / Orb ❌ 纯物理)。pull 式闭包读当前 petRenderer,换形象后右键菜单打开时自动灰掉、
+        // 不会 stale(petRenderer 此刻可能尚未注入,闭包延迟求值)。
         (windowSet.petWindow as? PetShellWindow)?.isMotionApplicable = { [weak self] in
             self?.petRenderer?.driveModel.supportsHostDrivenMotion ?? true
+        }
+        (windowSet.petWindow as? PetShellWindow)?.isRoamingApplicable = { [weak self] in
+            self?.petRenderer?.supportsAutonomousRoaming ?? false
         }
         petWindowDragAdapter.install(
             onWindowDidMove: { [weak self] position in

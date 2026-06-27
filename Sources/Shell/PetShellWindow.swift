@@ -41,10 +41,13 @@ public final class PetShellWindow: NSWindow {
     /// 「当前天气」展示行文案(weather 更新时刷新;applyState 不清)。
     private var currentWeatherText = "⏳ 等待首次刷新…"
 
-    /// 当前形象是否响应「跟随光标 / 桌面漫游」开关 —— 由 caller(DesktopShellController)注入,读当前
+    /// 当前形象是否响应**「跟随光标」**开关 —— 由 caller(DesktopShellController)注入,读当前
     /// renderer 的 `driveModel.supportsHostDrivenMotion`。pull 式:右键菜单每次打开经 `validateMenuItem`
     /// 实时求值,换形象后无需推送、不会 stale。默认 `{ true }`(未注入时维持旧行为=恒可点)。
     public var isMotionApplicable: () -> Bool = { true }
+    /// 当前形象是否响应**「桌面漫游」**开关 —— 独立闸,读 renderer 的 `supportsAutonomousRoaming`。
+    /// 弹力球(Orb)等纯物理形象 → 漫游灰、跟随仍可用。默认 `{ true }`(未注入维持旧行为)。
+    public var isRoamingApplicable: () -> Bool = { true }
 
     /// 右键上下文菜单是否正开着 —— 开着时 App「交互时冻结 pet」让 pet 停住,免漫步把菜单甩在身后
     /// (NSMenu 是原生菜单不跟随窗口,但帧循环 DispatchSourceTimer 队列驱动、不受菜单 tracking 暂停 →
@@ -243,6 +246,7 @@ public final class PetShellWindow: NSWindow {
         state.weatherCurrentText = currentWeatherText
         let action = PetActionMenu(callbacks: cb, state: state)
         action.isMotionApplicable = { [weak self] in self?.isMotionApplicable() ?? true }
+        action.isRoamingApplicable = { [weak self] in self?.isRoamingApplicable() ?? true }
         action.menu.delegate = self   // 追踪右键菜单开关 → 开着时冻结 pet
         actionMenu = action
         self.menu = action.menu

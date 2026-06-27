@@ -6,12 +6,23 @@ import Context
 import Orchestrator
 import Rendering
 import RuntimeBridge
-import Shell
+@testable import Shell
 
 private struct SimulatedBootstrapError: LocalizedError {
     var errorDescription: String? {
         "simulated bootstrap failure"
     }
+}
+
+/// 会漫游的 PetRenderer 替身 —— `supportsAutonomousRoaming = true`(史莱姆类会走会爬的形象)。
+/// 默认 Orb 是纯物理形象(false 不漫游),漫游帧循环接入测试需换成此替身才能驱动漫步。
+@MainActor
+private final class RoamingPetRendererDouble: PetRenderer {
+    let contentLayer = CALayer()
+    var supportedSignatures: Set<SignatureAction> = []
+    func updateForState(_ state: PetEmotionState) {}
+    func trigger(_ signature: SignatureAction) {}
+    var supportsAutonomousRoaming: Bool { true }
 }
 
 private final class DelegateProxy: NSObject, NSApplicationDelegate {}
@@ -993,6 +1004,9 @@ func minimalAppDelegateRoamsToGroundWhenIdle() async throws {
     delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
     let tick = try #require(capturedTick)
     let shellController = try #require(delegate.launchedShellController)
+    // 默认 Orb 是纯物理形象(supportsAutonomousRoaming=false)不漫游;本测试验证「漫游帧循环接入」,
+    // 故换成会漫游的形象替身(史莱姆类),证明 screenBounds/idleSeconds/roamingEnabled 真喂进控制器。
+    shellController.petRenderer = RoamingPetRendererDouble()
     for _ in 0..<180 { await tick() } // ~3s:漫步把 pet 降到地面贴地溜达
     // 读运动仲裁每帧**同步**写入的逻辑位置(currentRenderState),而非 petWindow.frame.origin.y ——
     // 后者是 NSWindow frame、异步落位,紧跟 tick 循环后立刻读会滞后到中途值(曾误读 ~204,实际逻辑已贴地 0),
@@ -1000,6 +1014,47 @@ func minimalAppDelegateRoamsToGroundWhenIdle() async throws {
     let endY = delegate.currentRenderState.petPositionY
     // physics 会拽到光标 y≈560;roaming 降到地面 ≈0。贴地 → 漫步在帧循环里生效。
     #expect(endY < 50)
+    shellController.windowSet.allWindows.forEach { $0.orderOut(nil) }
+}
+
+@Test("Minimal app delegate keeps the physics-only pet (Orb) high near the cursor when idle — 不漫游不爬墙")
+@MainActor
+func minimalAppDelegatePhysicsOnlyPetDoesNotRoamWhenIdle() async throws {
+    // 回归守卫(用户诉求:弹力球只保留物理弹力):Orb supportsAutonomousRoaming=false → 即使空闲,
+    // 漫游闸 roamingActive 恒 false,控制器只走 .physics,跟随把它拽向高处光标 y≈560,绝不降到地面漫步。
+    let rootSystem = try await AppBootstrap(
+        snapshotSampler: DesktopSnapshotSampler(
+            currentDisplays: { [] },
+            activeSpaceIdentifier: { "unknown" },
+            currentCursorPosition: { Point(x: 400, y: 560) },
+            frontmostApplicationName: { nil },
+            currentVisibleWindows: { [] }
+        )
+    ).makeRootSystem()
+    final class StepClock: @unchecked Sendable {
+        private var t = 0.0
+        func next() -> TimeInterval { t += 1.0 / 60.0; return t }
+    }
+    let clock = StepClock()
+    var capturedTick: (@MainActor () async -> Void)?
+    let delegate = MinimalAppDelegate(
+        rootSystem: rootSystem,
+        currentScreenFrame: { NSRect(x: 0, y: 0, width: 800, height: 600) },
+        currentTime: { clock.next() },
+        menuBarController: MenuBarController(initialFollowingEnabled: true),
+        startFrameLoop: { tick in capturedTick = tick; return nil },
+        showShellWindows: { controller in
+            controller.windowSet.allWindows.forEach { $0.orderOut(nil) }
+        },
+        idleSecondsProvider: { 100 } // 空闲 → 旧行为会漫步;Orb 物理-only 不漫步
+    )
+    delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+    let tick = try #require(capturedTick)
+    let shellController = try #require(delegate.launchedShellController)
+    // 不替换 petRenderer:用默认装上的 Orb(纯物理)。无 GPU 时 petRenderer 为 nil → petCanRoam 同样 false。
+    for _ in 0..<180 { await tick() }
+    let endY = delegate.currentRenderState.petPositionY
+    #expect(endY > 500)   // 停在高处光标附近,未降到地面 → 证明不漫游
     shellController.windowSet.allWindows.forEach { $0.orderOut(nil) }
 }
 
