@@ -72,4 +72,20 @@ struct ProactiveReplyTrimmerTests {
         #expect(!ProactiveReplyTrimmer.isLikelyMetaEcho("看你在用 Chrome 摸鱼呢"))
         #expect(!ProactiveReplyTrimmer.isLikelyMetaEcho("Xcode 又报错啦？别急"))
     }
+
+    @Test("中文复述 prompt 指令 → 判为 meta-echo")
+    func detectsChineseInstructionEcho() {
+        // 模型用中文把 prompt 要求吐出来（英文 marker 抓不到、又有中文故 cjk!=0 也漏）。
+        #expect(ProactiveReplyTrimmer.isLikelyMetaEcho("这个提示要求我用一句不超过60个字的中文口语随口说"))
+        #expect(ProactiveReplyTrimmer.isLikelyMetaEcho("好的，我直接说那句话"))
+        #expect(ProactiveReplyTrimmer.isLikelyMetaEcho("作为一只桌面小宠物，我想对你说"))
+    }
+
+    @Test("含相近孤词的正常中文句 → 不误杀（保守词表守卫）")
+    func chineseLookalikesNotMetaEcho() {
+        // 这些含「提示/最多/作为」等孤词但非复述指令 —— 词表刻意不收孤词,应全部放行。
+        #expect(!ProactiveReplyTrimmer.isLikelyMetaEcho("这个报错提示挺烦的吧，喝口水再战"))
+        #expect(!ProactiveReplyTrimmer.isLikelyMetaEcho("最多再忍十分钟就能下班啦"))
+        #expect(!ProactiveReplyTrimmer.isLikelyMetaEcho("就当作为自己放个小假吧"))
+    }
 }

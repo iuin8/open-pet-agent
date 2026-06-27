@@ -16,6 +16,16 @@ public enum ProactiveReplyTrimmer {
         "requirement", "no more than", "single line", "less than", "as an ai", "i should",
     ]
 
+    /// 「模型用**中文**把 prompt 指令 / 死规矩复述出来」的标志片段。
+    /// 这些片段都直接来自本 prompt 的指令文本（如「用一句不超过 N 个字的中文口语…直接说那句话」）
+    /// 或系统死规矩用词（「死规矩」「作为…开头」），自然口语 quip 里几乎不可能出现 → 命中即弃。
+    /// **刻意保守**：只收高置信片段，不收「提示」「最多」「作为」这类可能出现在正常句里的孤词，
+    /// 避免误杀（false-positive 直接吞掉一条好建议）。
+    private static let chineseMetaMarkers = [
+        "提示要求", "中文口语", "用一句不超过", "字的中文", "直接说那句话",
+        "作为一只桌", "作为一个桌", "作为桌面", "死规矩", "不要分点", "不要分行",
+    ]
+
     /// 判定回复是否像「模型复述要求」的废话（英文 meta / 几乎无中文）。命中 → 引擎静默跳过这条
     /// （宁可不出，也不给用户弹一句英文要求复述；见 Image #9 反馈）。这是 prompt 重设计之外的
     /// 第二道兜底——few-shot 已大幅降低概率，此处只兜极端情况。
@@ -29,6 +39,8 @@ public enum ProactiveReplyTrimmer {
         // 2) 含明显的英文「要求复述」标志词（兜中英混杂的复述）。
         let lowered = flat.lowercased()
         if metaMarkers.contains(where: { lowered.contains($0) }) { return true }
+        // 3) 含中文「复述指令/死规矩」标志片段（兜模型用中文吐出 prompt 要求的情况）。
+        if chineseMetaMarkers.contains(where: { flat.contains($0) }) { return true }
         return false
     }
 
