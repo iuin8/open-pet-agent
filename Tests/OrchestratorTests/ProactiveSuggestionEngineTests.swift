@@ -148,6 +148,69 @@ struct ProactiveSuggestionEngineTests {
         #expect(await sink.calls.isEmpty)
     }
 
+    /// 第 1 次调用挂 5s（会被超时打断），第 2 次快返回 —— 验超时不卡死 isGenerating。
+    final class HangThenOkGenerator: ProactiveSuggestionGenerating, @unchecked Sendable {
+        // 测试顺序 await(call#1 完成/被超时取消后才发 call#2),无并发,无需锁。
+        private var calls = 0
+        func generate(systemPrompt: String, prompt: String, snapshot: DesktopSnapshot?) async throws -> String {
+            calls += 1
+            let c = calls
+            if c == 1 { try await Task.sleep(nanoseconds: 5_000_000_000) }   // 5s → 被 0.1s 超时打断
+            return "建议\(c)"
+        }
+    }
+
+    @Test("生成超时 → isGenerating 复位，下次能恢复（不永久卡死）")
+    func generationTimeoutRecovers() async {
+        let sink = SinkSpy()
+        let gen = HangThenOkGenerator()
+        var t = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let engine = ProactiveSuggestionEngine(
+            settings: .default,
+            snapshotProvider: { DesktopSnapshot(visibleApplicationName: "Xcode") },
+            generator: gen,
+            sink: { l, r in await sink.record(l, r) },
+            isStreamingProvider: { false },
+            now: { t },
+            calendar: Calendar(identifier: .gregorian),
+            generationTimeout: 0.1
+        )
+        await engine.feedAppSwitch(appName: "Xcode")   // call#1 挂起 → 0.1s 超时 → 不冒
+        #expect(await sink.calls.isEmpty)
+        t = t.addingTimeInterval(700)                   // 过 minInterval
+        await engine.feedAppSwitch(appName: "Safari")   // call#2 快返回 → 应冒（证明 isGenerating 已复位，未卡死）
+        #expect(await sink.calls.count == 1)
+        #expect(await sink.calls.first?.reply == "建议2")
+    }
+
+    /// 永不 yield/finish 的 provider（模拟挂死网关流）。
+    actor HangingStreamProvider: LLMProvider {
+        func chat(_ m: [LLMMessage]) async throws -> String { "" }
+        nonisolated func streamChat(_ m: [LLMMessage]) -> AsyncThrowingStream<String, Error> {
+            AsyncThrowingStream { _ in }   // 永不结束 → 模拟网关无响应
+        }
+    }
+
+    @Test("超时穿透真实 streamChat 消费路径 — 挂死流也能在超时后返回（不卡死引擎）")
+    func generationTimeoutThroughRealStream() async {
+        // 经真实 CompanionOrchestrator.proactiveSuggestion 消费挂死流（非 Task.sleep mock）。
+        // 若超时不生效,本测试会一直挂(被外层 timeout 抓);通过即证明 attempt 在 ~timeout 返回。
+        let orchestrator = CompanionOrchestrator(llmProvider: HangingStreamProvider(), modelName: nil)
+        let sink = SinkSpy()
+        let engine = ProactiveSuggestionEngine(
+            settings: .default,
+            snapshotProvider: { DesktopSnapshot(visibleApplicationName: "Xcode") },
+            generator: orchestrator,
+            sink: { l, r in await sink.record(l, r) },
+            isStreamingProvider: { false },
+            now: { Date(timeIntervalSinceReferenceDate: 1_000_000) },
+            calendar: Calendar(identifier: .gregorian),
+            generationTimeout: 0.2
+        )
+        await engine.feedAppSwitch(appName: "Xcode")   // 挂死流 → 0.2s 超时 → attempt 返回(不卡),不冒
+        #expect(await sink.calls.isEmpty)
+    }
+
     @Test("updateSettings(off) 后不再触发")
     func updateToOff() async {
         let sink = SinkSpy()

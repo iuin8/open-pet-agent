@@ -45,6 +45,9 @@ public actor ProactiveSuggestionEngine {
     private static let recentAppsInScene = 3
     /// tick 周期（秒），dwell 每 tick +此值。
     public static let tickIntervalSeconds: TimeInterval = 30
+    /// LLM 生成硬超时（秒）。独立于 URLSession 请求超时，兜底 streamChat 挂起 → 防 isGenerating 永卡。
+    /// 测试可注极小值 + 慢 mock 验复位。`<= 0` = 不超时。
+    private let generationTimeout: TimeInterval
 
     public init(
         settings: ProactiveSettings,
@@ -56,7 +59,8 @@ public actor ProactiveSuggestionEngine {
         now: @escaping @Sendable () -> Date = { Date() },
         calendar: Calendar = .current,
         quoteProvider: @escaping @Sendable (DesktopSnapshot?, Int, String?) -> String? = { _, _, _ in nil },
-        random: @escaping @Sendable (ClosedRange<TimeInterval>) -> TimeInterval = { Double.random(in: $0) }
+        random: @escaping @Sendable (ClosedRange<TimeInterval>) -> TimeInterval = { Double.random(in: $0) },
+        generationTimeout: TimeInterval = 12
     ) {
         self.settings = settings
         self.throttleState = throttleState
@@ -68,6 +72,7 @@ public actor ProactiveSuggestionEngine {
         self.calendar = calendar
         self.quoteProvider = quoteProvider
         self.random = random
+        self.generationTimeout = generationTimeout
     }
 
     // MARK: - 设置 / 反馈
@@ -204,14 +209,26 @@ public actor ProactiveSuggestionEngine {
         let n = now()
         let hour = calendar.component(.hour, from: n)
         let sleeping = wentSleepAt != nil
-        guard ProactiveTriggerEvaluator.evaluate(signal: signal, settings: settings, hour: hour, isSleeping: sleeping) != nil else { return false }
-        guard !isGenerating else { return false }
-        guard throttleState.decide(settings: settings, now: n) else { return false }
+        guard ProactiveTriggerEvaluator.evaluate(signal: signal, settings: settings, hour: hour, isSleeping: sleeping) != nil else {
+            ProactiveDiag.decision("skip evaluate kind=\(signal.kind.rawValue)")
+            return false
+        }
+        guard !isGenerating else {
+            ProactiveDiag.decision("skip busy kind=\(signal.kind.rawValue)")
+            return false
+        }
+        guard throttleState.decide(settings: settings, now: n) else {
+            ProactiveDiag.decision("skip throttle kind=\(signal.kind.rawValue)")
+            return false
+        }
         // 在第一个 await 之前 claim isGenerating —— 防止 await isStreamingProvider() 挂起期间
         // 第二个 attempt 穿过所有闸门导致双发/双计配额（actor 在 await 处可重入）。
         isGenerating = true
         defer { isGenerating = false }
-        if await isStreamingProvider() { return false }   // 用户正在对话 → 跳过；此时尚未 recordFired，不计配额
+        if await isStreamingProvider() {   // 用户正在对话 → 跳过；此时尚未 recordFired，不计配额
+            ProactiveDiag.decision("skip streaming kind=\(signal.kind.rawValue)")
+            return false
+        }
         throttleState = throttleState.recordFired(now: n)
         // 注：`??` 的 RHS 是 autoclosure，不支持 await（Swift 并发限制），改用显式分支保持等价语义。
         let snap: DesktopSnapshot?
@@ -228,19 +245,35 @@ public actor ProactiveSuggestionEngine {
         let prompt = ProactivePromptComposer.build(signal: enriched, level: settings.level)
         // system prompt 含 pet persona + 可选用户 persona（按当前 settings.personaText 组）。
         let systemPrompt = ProactivePromptComposer.systemPrompt(personaText: settings.personaText)
+        let startNanos = DispatchTime.now().uptimeNanoseconds
         do {
-            let reply = try await generator.generate(systemPrompt: systemPrompt, prompt: prompt, snapshot: snap)
+            // 硬超时兜底：streamChat 挂起不会让 isGenerating 永卡（超时抛错 → defer 复位）。
+            let reply = try await withProactiveTimeout(generationTimeout) { [generator] in
+                try await generator.generate(systemPrompt: systemPrompt, prompt: prompt, snapshot: snap)
+            }
+            let durMs = Int((DispatchTime.now().uptimeNanoseconds &- startNanos) / 1_000_000)
             // 兜底①：模型把要求当正文复述（英文 meta / 几乎无中文）→ 静默跳过这条，不弹废话气泡。
-            guard !ProactiveReplyTrimmer.isLikelyMetaEcho(reply) else { return false }
+            guard !ProactiveReplyTrimmer.isLikelyMetaEcho(reply) else {
+                ProactiveDiag.decision("drop meta-echo kind=\(signal.kind.rawValue) durMs=\(durMs)")
+                return false
+            }
             // 兜底②：长度——模型偶尔不守字数约束 → 按级别 charLimit 句界截断（折成一行）。
             let limit = ProactivePromptComposer.charLimit(for: settings.level)
             let trimmed = ProactiveReplyTrimmer.trim(reply, toCharLimit: limit)
-            guard !trimmed.isEmpty else { return false }
+            guard !trimmed.isEmpty else {
+                ProactiveDiag.decision("drop empty kind=\(signal.kind.rawValue) durMs=\(durMs)")
+                return false
+            }
             await sink(signal.kind.displayName, trimmed)
+            ProactiveDiag.event("fired kind=\(signal.kind.rawValue) durMs=\(durMs) len=\(trimmed.count)")
             return true
+        } catch let e as ProactiveTimeoutError {
+            // 这是「突然不再主动说话」的头号根因线索 —— 但 isGenerating 已由 defer 复位，下次能恢复。
+            ProactiveDiag.failure("generate TIMEOUT kind=\(signal.kind.rawValue) after=\(e.seconds)s（isGenerating 已复位，引擎不会卡死）")
+            return false
         } catch {
             // 主动建议失败 → 静默跳过（不给用户没要的东西弹错误气泡），不计 ignored。
-            print("[ProactiveEngine] 生成失败，跳过：\(error)")
+            ProactiveDiag.failure("generate failed kind=\(signal.kind.rawValue): \(error)")
             return false
         }
     }

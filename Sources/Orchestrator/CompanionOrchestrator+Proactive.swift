@@ -42,9 +42,12 @@ extension CompanionOrchestrator {
             messages.append(LLMMessage(role: .assistant, content: example.line))
         }
         messages.append(LLMMessage(role: .user, content: prompt))
+        // 主动建议本应 ≤ 80 字；硬上限防模型异常时疯狂输出拖垮内存/带宽（后续 trimmer 仍按 charLimit 收）。
+        let maxChars = 2000
         var accumulated = ""
         for try await delta in provider.streamChat(messages) {
             accumulated += delta
+            if accumulated.count >= maxChars { break }
         }
         guard !accumulated.isEmpty else { throw LLMProviderError.emptyResponse }
         return accumulated

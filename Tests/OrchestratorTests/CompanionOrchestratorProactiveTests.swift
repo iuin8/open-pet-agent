@@ -95,6 +95,23 @@ struct CompanionOrchestratorProactiveTests {
         }
     }
 
+    @Test("流式累积硬上限 2000 字 — 防模型疯狂输出")
+    func streamingCapsRunaway() async throws {
+        actor RunawayProvider: LLMProvider {
+            func chat(_ m: [LLMMessage]) async throws -> String { "" }
+            nonisolated func streamChat(_ m: [LLMMessage]) -> AsyncThrowingStream<String, Error> {
+                AsyncThrowingStream { c in
+                    for _ in 0..<5000 { c.yield("字") }   // 5000 字 → 应被截到 2000
+                    c.finish()
+                }
+            }
+        }
+        let orchestrator = CompanionOrchestrator(llmProvider: RunawayProvider(), modelName: nil)
+        let reply = try await orchestrator.proactiveSuggestion(
+            systemPrompt: ProactivePromptComposer.systemPrompt(personaText: ""), for: "x", snapshot: nil)
+        #expect(reply.count == 2000)   // 每 delta 1 字,break 在 count>=2000 → 恰好 2000
+    }
+
     @Test("无 provider → 抛 missingAPIKey")
     func noProviderThrows() async {
         let orchestrator = CompanionOrchestrator()  // 无 provider
