@@ -51,8 +51,10 @@ extension MinimalAppDelegate {
 
         // Task E: 收集 settings 面板需要的额外参数 —— tool engine kind /
         // OpenClaw 状态 / OpenClaw toggles / 关于版本号。
-        let currentToolEngineKindRaw =
-            userDefaults.string(forKey: ToolEngineKind.userDefaultsKey) ?? "claudeCode"
+        // picker 当前选中值走 `ToolEngineRegistry.resolve`(单一事实源):UD 缺失/
+        // 存了未知值 → 归一到 claudeCode,与 `applySelectedToolEngine` 的 engine
+        // 解析一致,避免 picker 回显一个 registry 里不存在的 stale id。
+        let currentToolEngineKindRaw = ToolEngineRegistry.resolve(from: userDefaults).id
         let openClawAutoStart =
             (userDefaults.object(forKey: OpenClawGatewayManager.autoStartKey) as? Bool) ?? true
         let openClawAllowEndpointEnable =
