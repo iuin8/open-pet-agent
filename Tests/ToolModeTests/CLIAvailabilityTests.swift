@@ -30,12 +30,9 @@ func cliAvailabilitySkipsEmptySearchPaths() async {
     #expect(result == "/bin/ls")
 }
 
-@Test("CLIAvailability.binaryName 映射所有 engine kind")
-func cliAvailabilityBinaryNameMapsAllKinds() {
-    #expect(CLIAvailability.binaryName(for: .claudeCode) == "claude")
-    #expect(CLIAvailability.binaryName(for: .codex) == "codex")
-    #expect(CLIAvailability.binaryName(for: .openCode) == "opencode")
-}
+// 注:engine→CLI binary 名映射已迁到 `ToolEngineEntry.binaryName`(单一事实源),
+// 断言见 `ToolEngineRegistryTests.entryDisplayAndBinaryNames`。原
+// `CLIAvailability.binaryName(for:)` 便捷方法重构后无生产调用方,已删(不留死代码)。
 
 @Test("CLIAvailability 默认走 PATH 环境变量")
 func cliAvailabilityUsesEnvPathByDefault() async {

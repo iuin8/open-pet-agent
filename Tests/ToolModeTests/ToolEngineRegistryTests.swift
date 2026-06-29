@@ -37,6 +37,14 @@ struct ToolEngineRegistryTests {
         #expect(ToolEngineRegistry.openCode.id == ToolEngineKind.openCode.rawValue)
     }
 
+    @Test("all 穷尽 ToolEngineKind.allCases —— 加 case 忘加 entry 会被这条挡住")
+    func allCoversEveryToolEngineKind() {
+        // 防 P2 同类失败模式「加了 enum case 却没往 registry 加 entry → resolve
+        // 静默 fallback claudeCode、吞掉新 engine」。registry.all 的 id 集合必须
+        // 与 ToolEngineKind.allCases 的 rawValue 集合完全一致(双向:不缺不多)。
+        #expect(Set(ToolEngineRegistry.all.map(\.id)) == Set(ToolEngineKind.allCases.map(\.rawValue)))
+    }
+
     @Test("entry displayName / binaryName 是预期字面值")
     func entryDisplayAndBinaryNames() {
         #expect(ToolEngineRegistry.claudeCode.displayName == "Claude Code")
