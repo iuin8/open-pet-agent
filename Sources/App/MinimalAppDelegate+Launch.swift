@@ -101,13 +101,16 @@ extension MinimalAppDelegate {
         toolModeRouterHolder?.set(router)
     }
 
-    /// Task B — OpenClaw 本地 gateway 探测 + 自动启动。装了 `openclaw` 的
-    /// 用户**零配置**就能用 OpenPetAgent: probe → 拉 daemon → 读 token/port →
-    /// 写入 UserDefaults(仅当用户**没自己填** baseURL/apiKey 时)→ 触发
-    /// `reloadLLMProvider` 让 `OpenAIProvider` 走 localhost。
+    /// Task B / P2 — OpenClaw 本地 gateway 探测 + 自动启动,作为**一等灵魂层
+    /// 后端**接入(不再「伪装混进 OpenAI 槽」)。装了 `openclaw` 的用户**零配置**
+    /// 就能用 OpenPetAgent: probe → 拉 daemon → 读 token/port → 写 **openclaw
+    /// 专属槽** + 设 `UserDefaults["LLMProvider"] = "openclaw"` → 触发
+    /// `reloadLLMProvider`,`SoulBackendRegistry` 选中 openclaw entry →
+    /// `resolveOpenClawProvider` 从专属槽构造 provider 走 localhost。
     ///
     /// `UserDefaults[autoStartKey] == false` → 整段 no-op。
-    /// 用户填了自己的 baseURL → 尊重用户选择,不覆盖。
+    /// 用户已自配云 provider(OpenAI 槽 baseURL/key 任一非空,或 Anthropic key
+    /// 非空)→ 尊重用户选择,不抢占。
     /// 失败(没装 / 配置缺失 / endpoint 改写失败)→ 静默回退,设置 UI 仍可
     /// 让用户手填 OpenAI / Anthropic key。
     func setupOpenClawBootstrap() {
@@ -117,27 +120,29 @@ extension MinimalAppDelegate {
             let status = await OpenClawGatewayManager.shared.bootstrapIfPossible()
             guard case .ready(let baseURL, let token) = status else { return }
 
-            // 仅在用户两个槽都空时注入,避免覆盖用户手填的 OpenAI / 代理 baseURL。
-            let userBaseURL = (userDefaults.string(forKey: LLMSettingsKeys.openAIBaseURL) ?? "")
+            // 仅在用户没自配任何云 provider 时自动选 openclaw:OpenAI 槽
+            // (baseURL + key)空 **且** Anthropic key 空。任一非空 → 用户已有
+            // 选择,不覆盖。
+            let userOpenAIBaseURL = (userDefaults.string(forKey: LLMSettingsKeys.openAIBaseURL) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            let userKey = (userDefaults.string(forKey: LLMSettingsKeys.openAIApiKey) ?? "")
+            let userOpenAIKey = (userDefaults.string(forKey: LLMSettingsKeys.openAIApiKey) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard userBaseURL.isEmpty, userKey.isEmpty else { return }
+            let userAnthropicKey = (userDefaults.string(forKey: LLMSettingsKeys.anthropicApiKey) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard userOpenAIBaseURL.isEmpty, userOpenAIKey.isEmpty, userAnthropicKey.isEmpty else { return }
 
-            userDefaults.set(baseURL, forKey: LLMSettingsKeys.openAIBaseURL)
+            // 🔑 写 openclaw **专属槽** + 把灵魂层选中后端设为 `openclaw`,让
+            // `SoulBackendRegistry.resolve` 选中 openclaw entry →
+            // `resolveOpenClawProvider` 从专属槽构造 provider。model 固定
+            // `openclaw`(在 resolveOpenClawProvider 内写死),这里不存 model。
+            userDefaults.set(baseURL, forKey: LLMSettingsKeys.openClawBaseURL)
             if let token, !token.isEmpty {
-                userDefaults.set(token, forKey: LLMSettingsKeys.openAIApiKey)
+                userDefaults.set(token, forKey: LLMSettingsKeys.openClawToken)
             }
-            // OpenClaw chatCompletions 只认 model id `openclaw` / `openclaw/<agentId>`;
-            // 默认 `gpt-4o-mini` 会被网关拒("Invalid model")。用户没自填 model 时
-            // 注入 `openclaw`(路由到默认 agent → 带 SOUL.md/MEMORY 管道)。
-            let userModel = (userDefaults.string(forKey: LLMSettingsKeys.openAIModel) ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if userModel.isEmpty {
-                userDefaults.set("openclaw", forKey: LLMSettingsKeys.openAIModel)
-            }
-            // Hot-reload: 让新写入的 baseURL/key 立刻被 OpenAIProvider 选中,
-            // 用户不用重启 App 就能开始聊。
+            userDefaults.set("openclaw", forKey: LLMProviderKind.userDefaultsKey)
+
+            // Hot-reload: 让 registry 立刻选中 openclaw entry,用户不用重启 App
+            // 就能开始聊(带 SOUL.md / MEMORY 灵魂)。
             await AppBootstrap.reloadLLMProvider(into: box, userDefaults: userDefaults)
         }
     }

@@ -21,4 +21,13 @@ public enum LLMSettingsKeys {
     public static let anthropicApiKey = "AnthropicAPIKey"
     public static let anthropicBaseURL = "AnthropicBaseURL"
     public static let anthropicModel = "AnthropicModel"
+
+    // MARK: - OpenClaw 本地网关(灵魂层一等后端)
+    //
+    // openclaw 不再「伪装混进 OpenAI 槽」,而是用独立槽存自动 bootstrap 出来的
+    // localhost baseURL(已带 `/v1`)+ Bearer token。model 固定 `openclaw`
+    // (chatCompletions 只认这个 id,见 OpenClawGatewayManager),不需单独 key。
+    // 与 OpenAI/Anthropic 槽隔离 → 用户自配云 provider 与 openclaw 自动注入互不覆盖。
+    public static let openClawBaseURL = "OpenClawBaseURL"
+    public static let openClawToken = "OpenClawToken"
 }

@@ -107,9 +107,11 @@ public actor OpenClawGatewayManager {
     /// `openclaw.json` → 自动 enable chatCompletions(若用户允许)→ 返回 status。
     ///
     /// 调用方:`MinimalAppDelegate.applicationDidFinishLaunching` 起一个 Task 跑一次,
-    /// 拿到 `.ready(baseURL:token:)` 后(若用户没在 Settings 自填 baseURL)
-    /// 写入 `UserDefaults["OpenAIBaseURL"]` 让 `AppBootstrap.resolveLLMProvider`
-    /// 自然走 openclaw 路径。详见 §"LLMProviderBox 注入策略"。
+    /// 拿到 `.ready(baseURL:token:)` 后(若用户没自配云 provider)写入 openclaw
+    /// **专属槽** `UserDefaults["OpenClawBaseURL"]`/`["OpenClawToken"]` + 设
+    /// `["LLMProvider"]="openclaw"`,让 `SoulBackendRegistry` 选中 openclaw entry
+    /// → `AppBootstrap.resolveOpenClawProvider` 构造 provider 走 localhost。
+    /// 详见 `MinimalAppDelegate.setupOpenClawBootstrap`。
     @discardableResult
     public func bootstrapIfPossible() async -> Status {
         // 1. autoStart 开关

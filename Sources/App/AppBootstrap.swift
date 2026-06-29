@@ -296,30 +296,25 @@ public struct AppBootstrap: Sendable {
         return LLMConfig(baseURL: baseURL, model: model, apiKey: apiKey)
     }
 
-    /// Resolve the LLM provider using the full priority chain for
-    /// base URL, model, and API key. Returns nil only when no API
-    /// key is configured **and** the resolved endpoint requires one.
+    /// Resolve the LLM provider for the backend selected in
+    /// `UserDefaults["LLMProvider"]`.
     ///
-    /// Routes to `AnthropicProvider` when `UserDefaults["LLMProvider"] == "anthropic"`;
-    /// otherwise falls through to `OpenAIProvider` (default, backward-compatible).
-    ///
-    /// Resolution order mirrors `resolveLLMConfig(userDefaults:)`.
+    /// 路由经**灵魂层注册表** `SoulBackendRegistry`(id 取代写死 `switch kind`):
+    /// 按 key 选中 entry,再调其 `makeProvider`。返回 nil 表示该后端配置缺失
+    /// (无 key / 专属槽空)→ 上层走 echo fallback。新增后端 = 往 registry 加
+    /// entry,这里零改动。各后端的解析细节见 `resolveOpenAICompatibleProvider`
+    /// / `resolveAnthropicProvider` / `resolveOpenClawProvider`。
     public static func resolveLLMProvider(
         userDefaults: UserDefaults = .standard
     ) -> (any LLMProvider)? {
-        let kind = LLMProviderKind.resolve(from: userDefaults)
-
-        switch kind {
-        case .anthropic:
-            return resolveAnthropicProvider(userDefaults: userDefaults)
-        case .openAICompatible:
-            return resolveOpenAICompatibleProvider(userDefaults: userDefaults)
-        }
+        SoulBackendRegistry.resolve(from: userDefaults).makeProvider(userDefaults)
     }
 
     // MARK: - Provider-specific resolution helpers
+    //
+    // internal(非 private):`SoulBackendRegistry` 的 entry 闭包要在同模块调它们。
 
-    private static func resolveAnthropicProvider(
+    static func resolveAnthropicProvider(
         userDefaults: UserDefaults
     ) -> (any LLMProvider)? {
         let env = ProcessInfo.processInfo.environment
@@ -378,7 +373,7 @@ public struct AppBootstrap: Sendable {
         return AnthropicProvider(apiKey: effectiveKey, model: model, endpoint: endpoint)
     }
 
-    private static func resolveOpenAICompatibleProvider(
+    static func resolveOpenAICompatibleProvider(
         userDefaults: UserDefaults
     ) -> (any LLMProvider)? {
         let config = resolveLLMConfig(userDefaults: userDefaults)
@@ -396,6 +391,32 @@ public struct AppBootstrap: Sendable {
             model: config.model,
             endpoint: config.endpoint
         )
+    }
+
+    /// 从 openclaw 专属槽(`OpenClawBaseURL` / `OpenClawToken`)构造 provider。
+    ///
+    /// baseURL 由 `MinimalAppDelegate.setupOpenClawBootstrap` 自动 bootstrap 写入
+    /// (已带 `/v1`;endpoint 再拼 `/chat/completions` → `…/v1/chat/completions`,
+    /// openclaw 实测路径);model 固定 `openclaw`(chatCompletions 只认此 id,
+    /// 路由到默认 agent → 带 SOUL.md / MEMORY 管道);token 作 Bearer(可空)。
+    ///
+    /// baseURL 槽空 → nil(openclaw 没 bootstrap 成功 / 用户没装)→ 上层 echo fallback。
+    static func resolveOpenClawProvider(
+        userDefaults: UserDefaults
+    ) -> (any LLMProvider)? {
+        let rawBaseURL = (userDefaults.string(forKey: LLMSettingsKeys.openClawBaseURL) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rawBaseURL.isEmpty == false else { return nil }
+        let normalizedBase = rawBaseURL.hasSuffix("/")
+            ? String(rawBaseURL.dropLast())
+            : rawBaseURL
+        guard let baseURL = URL(string: normalizedBase) else { return nil }
+
+        let token = (userDefaults.string(forKey: LLMSettingsKeys.openClawToken) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let endpoint = baseURL.appendingPathComponent("chat/completions")
+
+        return OpenAIProvider(apiKey: token, model: "openclaw", endpoint: endpoint)
     }
 
     public init(
