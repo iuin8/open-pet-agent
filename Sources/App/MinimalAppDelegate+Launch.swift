@@ -128,6 +128,14 @@ extension MinimalAppDelegate {
             if let token, !token.isEmpty {
                 userDefaults.set(token, forKey: LLMSettingsKeys.openAIApiKey)
             }
+            // OpenClaw chatCompletions 只认 model id `openclaw` / `openclaw/<agentId>`;
+            // 默认 `gpt-4o-mini` 会被网关拒("Invalid model")。用户没自填 model 时
+            // 注入 `openclaw`(路由到默认 agent → 带 SOUL.md/MEMORY 管道)。
+            let userModel = (userDefaults.string(forKey: LLMSettingsKeys.openAIModel) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if userModel.isEmpty {
+                userDefaults.set("openclaw", forKey: LLMSettingsKeys.openAIModel)
+            }
             // Hot-reload: 让新写入的 baseURL/key 立刻被 OpenAIProvider 选中,
             // 用户不用重启 App 就能开始聊。
             await AppBootstrap.reloadLLMProvider(into: box, userDefaults: userDefaults)

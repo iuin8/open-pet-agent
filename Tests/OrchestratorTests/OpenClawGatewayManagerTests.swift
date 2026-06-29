@@ -43,10 +43,13 @@ struct OpenClawGatewayManagerTests {
 
     // MARK: - extractToken
 
+    // 注:token 在 `gateway.auth.token`(OpenClaw 2026.5.28 实机实测结构),
+    // 不是 root `auth` —— 后者是旧版假设,已修正(见 regression 用例)。
+
     @Test("extractToken mode==token 返回 token 字符串")
     func extractTokenHappyPath() {
         let json: [String: Any] = [
-            "auth": ["mode": "token", "token": "abc-123-secret"]
+            "gateway": ["auth": ["mode": "token", "token": "abc-123-secret"]]
         ]
         #expect(OpenClawGatewayManager.extractToken(from: json) == "abc-123-secret")
     }
@@ -54,26 +57,33 @@ struct OpenClawGatewayManagerTests {
     @Test("extractToken mode==password 不返回 token (避免误把 password 当 bearer)")
     func extractTokenPasswordModeReturnsNil() {
         let json: [String: Any] = [
-            "auth": ["mode": "password", "token": "looks-like-token-but-isnt"]
+            "gateway": ["auth": ["mode": "password", "token": "looks-like-token-but-isnt"]]
         ]
         #expect(OpenClawGatewayManager.extractToken(from: json) == nil)
     }
 
-    @Test("extractToken 缺 auth → nil")
+    @Test("extractToken 缺 gateway/auth → nil")
     func extractTokenMissingAuth() {
-        let json: [String: Any] = [:]
-        #expect(OpenClawGatewayManager.extractToken(from: json) == nil)
+        #expect(OpenClawGatewayManager.extractToken(from: [:]) == nil)
+        #expect(OpenClawGatewayManager.extractToken(from: ["gateway": [:]]) == nil)
     }
 
     @Test("extractToken mode 缺失 → nil")
     func extractTokenMissingMode() {
-        let json: [String: Any] = ["auth": ["token": "x"]]
+        let json: [String: Any] = ["gateway": ["auth": ["token": "x"]]]
         #expect(OpenClawGatewayManager.extractToken(from: json) == nil)
     }
 
     @Test("extractToken mode==token 但 token 字段缺失 → nil")
     func extractTokenMissingTokenField() {
-        let json: [String: Any] = ["auth": ["mode": "token"]]
+        let json: [String: Any] = ["gateway": ["auth": ["mode": "token"]]]
+        #expect(OpenClawGatewayManager.extractToken(from: json) == nil)
+    }
+
+    @Test("extractToken regression:旧版 root-level auth(无 gateway 包裹)→ nil")
+    func extractTokenLegacyRootAuthReturnsNil() {
+        // 修复前 extractToken 读的就是这个 root 结构 → 真机 token 拿不到 → 401。
+        let json: [String: Any] = ["auth": ["mode": "token", "token": "abc"]]
         #expect(OpenClawGatewayManager.extractToken(from: json) == nil)
     }
 
@@ -178,8 +188,8 @@ struct OpenClawGatewayManagerTests {
 
         let configURL = tmpDir.appendingPathComponent("openclaw.json")
         let goodJSON: [String: Any] = [
-            "auth": ["mode": "token", "token": "test-token-xyz"],
             "gateway": [
+                "auth": ["mode": "token", "token": "test-token-xyz"],
                 "http": [
                     "port": 19999,
                     "endpoints": ["chatCompletions": ["enabled": true]]
@@ -197,7 +207,7 @@ struct OpenClawGatewayManagerTests {
             skipDaemonSpawn: true
         )
         let status = await manager.bootstrapIfPossible()
-        #expect(status == .ready(baseURL: "http://localhost:19999", token: "test-token-xyz"))
+        #expect(status == .ready(baseURL: "http://localhost:19999/v1", token: "test-token-xyz"))
     }
 
     @Test("config 缺 port → 用默认端口 18789")
@@ -210,8 +220,8 @@ struct OpenClawGatewayManagerTests {
 
         let configURL = tmpDir.appendingPathComponent("openclaw.json")
         let json: [String: Any] = [
-            "auth": ["mode": "token", "token": "tok"],
             "gateway": [
+                "auth": ["mode": "token", "token": "tok"],
                 "http": [
                     "endpoints": ["chatCompletions": ["enabled": true]]
                 ]
@@ -227,7 +237,7 @@ struct OpenClawGatewayManagerTests {
             skipDaemonSpawn: true
         )
         let status = await manager.bootstrapIfPossible()
-        #expect(status == .ready(baseURL: "http://localhost:18789", token: "tok"))
+        #expect(status == .ready(baseURL: "http://localhost:18789/v1", token: "tok"))
     }
 
     @Test("endpoint disabled + allowEnable=false → .error 不动 json")
@@ -242,8 +252,8 @@ struct OpenClawGatewayManagerTests {
 
         let configURL = tmpDir.appendingPathComponent("openclaw.json")
         let json: [String: Any] = [
-            "auth": ["mode": "token", "token": "tok"],
             "gateway": [
+                "auth": ["mode": "token", "token": "tok"],
                 "http": [
                     "port": 18789,
                     "endpoints": ["chatCompletions": ["enabled": false]]
@@ -284,8 +294,8 @@ struct OpenClawGatewayManagerTests {
 
         let configURL = tmpDir.appendingPathComponent("openclaw.json")
         let json: [String: Any] = [
-            "auth": ["mode": "token", "token": "tok"],
             "gateway": [
+                "auth": ["mode": "token", "token": "tok"],
                 "http": [
                     "port": 18789,
                     "endpoints": ["chatCompletions": ["enabled": false]]
@@ -302,7 +312,7 @@ struct OpenClawGatewayManagerTests {
             skipDaemonSpawn: true  // skip daemon restart spawn
         )
         let status = await manager.bootstrapIfPossible()
-        #expect(status == .ready(baseURL: "http://localhost:18789", token: "tok"))
+        #expect(status == .ready(baseURL: "http://localhost:18789/v1", token: "tok"))
 
         // 验证 json 被改成 enabled=true
         let after = try Data(contentsOf: configURL)

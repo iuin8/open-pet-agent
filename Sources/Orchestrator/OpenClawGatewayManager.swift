@@ -173,7 +173,10 @@ public actor OpenClawGatewayManager {
             return _status
         }
 
-        let baseURL = "http://localhost:\(port)"
+        // OpenClaw 的 OpenAI 兼容 endpoint 实测在 `/v1/chat/completions`(非
+        // `/chat/completions` —— 后者 404)。baseURL 带 `/v1`,让上层
+        // `LLMConfig.endpoint`(baseURL + "/chat/completions")正好拼出 `/v1/...`。
+        let baseURL = "http://localhost:\(port)/v1"
         _status = .ready(baseURL: baseURL, token: token)
         return _status
     }
@@ -274,15 +277,17 @@ public actor OpenClawGatewayManager {
             .flatMap { $0["port"] as? Int }
     }
 
-    /// 从 openclaw.json root dict 中提取 Bearer token。
+    /// 从 openclaw.json 提取 Bearer token。
     ///
-    /// OpenClaw 配置示例:
+    /// OpenClaw 2026.5.28 实际结构(实机实测,非旧版假设):token 在
+    /// **`gateway.auth.token`**,不是 root `auth`。
     /// ```json
-    /// { "auth": { "mode": "token", "token": "xxx" } }
+    /// { "gateway": { "auth": { "mode": "token", "token": "xxx" } } }
     /// ```
     /// 仅在 `mode == "token"` 时返回 token(避免 password mode 误把 hash 当 bearer)。
     public static func extractToken(from json: [String: Any]) -> String? {
-        guard let auth = json["auth"] as? [String: Any] else { return nil }
+        guard let gateway = json["gateway"] as? [String: Any],
+              let auth = gateway["auth"] as? [String: Any] else { return nil }
         let mode = auth["mode"] as? String
         guard mode == "token" else { return nil }
         return auth["token"] as? String
