@@ -93,6 +93,80 @@ public actor OpenAIProvider: LLMProvider {
         return first.message.content
     }
 
+    // MARK: - Tool-calling chat (non-streaming)
+
+    /// 工具回合(非流式):带 `tools` 发请求,解析 `choices[0].message.tool_calls`
+    /// (OpenAI 的 arguments 是 JSON 字符串,二次 parse 成 `JSONValue`)+ `finish_reason`。
+    public func chatWithTools(_ messages: [LLMMessage], tools: [LLMToolDef]) async throws -> LLMTurn {
+        let requestBody = ToolsRequestBody(
+            model: model,
+            messages: messages.map { MessageDTO(role: $0.role.rawValue, content: $0.content) },
+            stream: false,
+            tools: tools.map {
+                ToolDTO(type: "function",
+                        function: FunctionDTO(name: $0.name, description: $0.description, parameters: $0.parameters))
+            },
+            toolChoice: tools.isEmpty ? nil : "auto"
+        )
+        let bodyData: Data
+        do {
+            bodyData = try JSONEncoder().encode(requestBody)
+        } catch {
+            throw LLMProviderError.transportError(error.localizedDescription)
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = bodyData
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await httpClient(request)
+        } catch let error as LLMProviderError {
+            throw error
+        } catch {
+            throw LLMProviderError.transportError(error.localizedDescription)
+        }
+
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let body = String(decoding: data, as: UTF8.self)
+            throw LLMProviderError.httpError(status: http.statusCode, body: body)
+        }
+
+        let completion: ToolsCompletionResponse
+        do {
+            completion = try JSONDecoder().decode(ToolsCompletionResponse.self, from: data)
+        } catch {
+            throw LLMProviderError.decodingFailed(error.localizedDescription)
+        }
+
+        guard let choice = completion.choices.first else {
+            throw LLMProviderError.emptyResponse
+        }
+
+        let toolCalls: [LLMToolCall] = (choice.message.toolCalls ?? []).map { tc in
+            // arguments 是 JSON 串;parse 失败(空串 / 残缺)兜底成空对象,不丢整轮。
+            LLMToolCall(id: tc.id, name: tc.function.name,
+                        arguments: JSONValue.parse(tc.function.arguments) ?? .object([:]))
+        }
+        // content 可能为 null(纯工具调用回合)→ 归一成 nil。
+        let text = (choice.message.content?.isEmpty == false) ? choice.message.content : nil
+        let stopReason = Self.mapFinishReason(choice.finishReason, hasToolCalls: !toolCalls.isEmpty)
+        return LLMTurn(text: text, toolCalls: toolCalls, stopReason: stopReason)
+    }
+
+    /// 归一 OpenAI `finish_reason` → `LLMStopReason`。
+    internal static func mapFinishReason(_ raw: String?, hasToolCalls: Bool) -> LLMStopReason {
+        switch raw {
+        case "tool_calls": return .toolUse
+        case "stop": return .stop
+        case "length": return .maxTokens
+        default: return hasToolCalls ? .toolUse : .stop
+        }
+    }
+
     // MARK: - Streaming chat (SSE)
 
     // nonisolated: all captured properties are `let` constants (immutable) and
@@ -277,5 +351,65 @@ private struct CompletionResponse: Codable {
     struct MessageContent: Codable {
         let role: String
         let content: String
+    }
+}
+
+// MARK: - Tool-calling DTOs
+
+private struct ToolsRequestBody: Encodable {
+    let model: String
+    let messages: [MessageDTO]
+    let stream: Bool
+    let tools: [ToolDTO]
+    let toolChoice: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case model, messages, stream, tools
+        case toolChoice = "tool_choice"
+    }
+}
+
+private struct ToolDTO: Encodable {
+    let type: String   // 恒 "function"
+    let function: FunctionDTO
+}
+
+private struct FunctionDTO: Encodable {
+    let name: String
+    let description: String
+    let parameters: JSONValue
+}
+
+private struct ToolsCompletionResponse: Decodable {
+    let choices: [Choice]
+
+    struct Choice: Decodable {
+        let message: Message
+        let finishReason: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case message
+            case finishReason = "finish_reason"
+        }
+    }
+
+    struct Message: Decodable {
+        let content: String?
+        let toolCalls: [ToolCallDTO]?
+
+        private enum CodingKeys: String, CodingKey {
+            case content
+            case toolCalls = "tool_calls"
+        }
+    }
+
+    struct ToolCallDTO: Decodable {
+        let id: String
+        let function: FunctionCallDTO
+    }
+
+    struct FunctionCallDTO: Decodable {
+        let name: String
+        let arguments: String   // JSON 字符串
     }
 }

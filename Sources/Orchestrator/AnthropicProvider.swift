@@ -107,6 +107,84 @@ public actor AnthropicProvider: LLMProvider {
         return firstContent.text
     }
 
+    // MARK: - Tool-calling chat (non-streaming)
+
+    /// 工具回合(非流式):顶层 `tools`(`input_schema` = schema)发请求,解析
+    /// `content[]` 里的 `tool_use` 块(Anthropic 的 input 本就是对象)+ `stop_reason`。
+    public func chatWithTools(_ messages: [LLMMessage], tools: [LLMToolDef]) async throws -> LLMTurn {
+        let (systemPrompt, userAssistantMessages) = Self.splitMessages(messages)
+
+        let requestBody = AnthropicToolsRequestBody(
+            model: model,
+            maxTokens: maxTokens,
+            system: systemPrompt.isEmpty ? nil : systemPrompt,
+            messages: userAssistantMessages.map { AnthropicMessageDTO(role: $0.role.rawValue, content: $0.content) },
+            stream: false,
+            tools: tools.map {
+                AnthropicToolDTO(name: $0.name, description: $0.description, inputSchema: $0.parameters)
+            }
+        )
+
+        let bodyData: Data
+        do {
+            bodyData = try JSONEncoder().encode(requestBody)
+        } catch {
+            throw LLMProviderError.transportError(error.localizedDescription)
+        }
+
+        let request = Self.buildRequest(apiKey: apiKey, endpoint: endpoint, bodyData: bodyData)
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await httpClient(request)
+        } catch let error as LLMProviderError {
+            throw error
+        } catch {
+            throw LLMProviderError.transportError(error.localizedDescription)
+        }
+
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let body = String(decoding: data, as: UTF8.self)
+            throw LLMProviderError.httpError(status: http.statusCode, body: body)
+        }
+
+        let completion: AnthropicToolsResponse
+        do {
+            completion = try JSONDecoder().decode(AnthropicToolsResponse.self, from: data)
+        } catch {
+            throw LLMProviderError.decodingFailed(error.localizedDescription)
+        }
+
+        // content 可同时含 text 块与 tool_use 块 → 文本拼接、工具调用各收集。
+        var textParts: [String] = []
+        var toolCalls: [LLMToolCall] = []
+        for block in completion.content {
+            switch block.type {
+            case "text":
+                if let t = block.text { textParts.append(t) }
+            case "tool_use":
+                if let id = block.id, let name = block.name {
+                    toolCalls.append(LLMToolCall(id: id, name: name, arguments: block.input ?? .object([:])))
+                }
+            default:
+                break
+            }
+        }
+        let text = textParts.isEmpty ? nil : textParts.joined()
+        let stopReason = Self.mapStopReason(completion.stopReason, hasToolCalls: !toolCalls.isEmpty)
+        return LLMTurn(text: text, toolCalls: toolCalls, stopReason: stopReason)
+    }
+
+    /// 归一 Anthropic `stop_reason` → `LLMStopReason`。
+    internal static func mapStopReason(_ raw: String?, hasToolCalls: Bool) -> LLMStopReason {
+        switch raw {
+        case "tool_use": return .toolUse
+        case "end_turn": return .stop
+        case "max_tokens": return .maxTokens
+        default: return hasToolCalls ? .toolUse : .stop
+        }
+    }
+
     // MARK: - Streaming chat (SSE)
 
     // nonisolated: all captured properties are `let` constants (immutable) and
@@ -309,5 +387,55 @@ private struct AnthropicResponse: Codable {
     struct ContentBlock: Codable {
         let type: String
         let text: String
+    }
+}
+
+// MARK: - Tool-calling DTOs
+
+private struct AnthropicToolsRequestBody: Encodable {
+    let model: String
+    let maxTokens: Int
+    let system: String?
+    let messages: [AnthropicMessageDTO]
+    let stream: Bool
+    let tools: [AnthropicToolDTO]
+
+    private enum CodingKeys: String, CodingKey {
+        case model
+        case maxTokens = "max_tokens"
+        case system
+        case messages
+        case stream
+        case tools
+    }
+}
+
+private struct AnthropicToolDTO: Encodable {
+    let name: String
+    let description: String
+    let inputSchema: JSONValue
+
+    private enum CodingKeys: String, CodingKey {
+        case name, description
+        case inputSchema = "input_schema"
+    }
+}
+
+private struct AnthropicToolsResponse: Decodable {
+    let content: [ContentBlock]
+    let stopReason: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case content
+        case stopReason = "stop_reason"
+    }
+
+    /// text 块只有 `text`;tool_use 块有 `id`/`name`/`input`(对象)。各字段按块类型可空。
+    struct ContentBlock: Decodable {
+        let type: String
+        let text: String?
+        let id: String?
+        let name: String?
+        let input: JSONValue?
     }
 }
