@@ -17,23 +17,20 @@ public final class ToolModeRouter {
     public private(set) var currentEngine: (any ToolEngine)?
 
     /// 当前 engine kind(便于 UI 反查 / UserDefaults 持久化)。
-    /// 通过 `setEngine` 时显式记录,避免运行时 Mirror 反射。
+    /// 通过 `setEngine` 时由实例的 static `kind` 反推记录,避免运行时 Mirror 反射。
     public private(set) var currentKind: ToolEngineKind?
 
     public init() {}
 
     /// 显式切换工具 engine。传 `nil` = 关闭工具层。
     ///
-    /// `kind` 由 engine 的 static `kind` 属性自动推导 —— 这里写成
-    /// 泛型而不是 `any ToolEngine` 是为了拿到具体类型的 `Self.kind`。
-    public func setEngine<E: ToolEngine>(_ engine: E?) {
-        if let engine {
-            currentEngine = engine
-            currentKind = E.kind
-        } else {
-            currentEngine = nil
-            currentKind = nil
-        }
+    /// 接受 `any ToolEngine`(而非旧的泛型 `E`),好让 `ToolEngineRegistry
+    /// .makeEngine` 这种返回存在类型的注册表能直接喂进来;`kind` 由实例的
+    /// 静态需求 `type(of:).kind` 反推(协议带 `static var kind`,存在类型的
+    /// 元类型 `any ToolEngine.Type` 可访问静态成员),不再依赖编译期具体类型。
+    public func setEngine(_ engine: (any ToolEngine)?) {
+        currentEngine = engine
+        currentKind = engine.map { type(of: $0).kind }
     }
 
     /// 用 prompt 跑一次工具任务。无 engine 时返回的 stream 立即

@@ -6,11 +6,12 @@ import ToolMode
 extension MinimalAppDelegate {
     /// N2.4 — 按 UserDefaults `tool.engine.kind` 把对应 engine 装到 router。
     ///
-    /// 决策:UserDefaults 里没设、或值不识别 → fallback 到 `.claudeCode`
-    /// (5417612 commit 起的默认行为,不破坏老用户体验)。
-    /// `.openCode` 暂时也 fallback 到 ClaudeCodeEngine —— bundled opencode
-    /// runtime N3.x 接入后再实现,提前在 enum 里留 case 是为了避免后续 schema
-    /// 漂移。
+    /// 不再写死 `switch kind`:经 `ToolEngineRegistry.resolve(from:)` 选中 entry
+    /// (UD 没设 / 值不识别 → fallback `all[0]` = claudeCode,5417612 起的默认行为),
+    /// 再调 `entry.makeEngine()` 构造 engine。新增 engine = 注册表加一条 entry,
+    /// 这里零改动(镜像「形象插件化」,与灵魂层 `SoulBackendRegistry` 同构)。
+    /// 注:opencode entry 的 `makeEngine` 当前兜底到 ClaudeCodeEngine(bundled
+    /// opencode runtime N3.x 接入前),细节见 `ToolEngineRegistry.openCode`。
     ///
     /// 两个调用方:
     /// - `didFinishLaunching` 启动时初始化 router
@@ -21,16 +22,6 @@ extension MinimalAppDelegate {
         defaults: UserDefaults
     ) {
         guard let router else { return }
-        let raw = defaults.string(forKey: ToolEngineKind.userDefaultsKey)
-        let kind = raw.flatMap(ToolEngineKind.init(rawValue:)) ?? .claudeCode
-        switch kind {
-        case .codex:
-            router.setEngine(CodexEngine())
-        case .openCode, .claudeCode:
-            // openCode 暂时 fallback 到 ClaudeCodeEngine,N3.x bundled opencode
-            // runtime 接入后再补真实 engine。这样 UI 即便提前暴露 .openCode
-            // 选项也不会让 router 进入无 engine 的废态。
-            router.setEngine(ClaudeCodeEngine())
-        }
+        router.setEngine(ToolEngineRegistry.resolve(from: defaults).makeEngine())
     }
 }

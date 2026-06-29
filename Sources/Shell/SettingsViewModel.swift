@@ -315,12 +315,10 @@ final class SettingsViewModel: ObservableObject {
     /// Codex 宠在线装时同时写一份到兼容目录(跨 Codex 工具共享)。改 → 写 PetLibrary(下次安装生效)。
     @Published var dualWriteCompat: Bool = PetLibrary.dualWriteCompatEnabled
 
-    /// Tool engine kind 列表。raw string 与 ToolEngineKind enum 对齐。
-    let toolEngineKinds: [(id: String, displayName: String)] = [
-        ("claudeCode", "Claude Code"),
-        ("codex", "Codex"),
-        ("openCode", "opencode")
-    ]
+    /// Tool engine kind 列表 —— 由 App 层从 `ToolEngineRegistry.all` 注入
+    /// (Shell 不依赖 ToolMode,故走注入而非直接读注册表)。picker 下拉渲染 +
+    /// `selectToolEngineKind` 校验用;id 与 `ToolEngineKind` rawValue 对齐。
+    let toolEngineKinds: [(id: String, displayName: String)]
 
     // MARK: - 计算属性 — placeholder 跟 provider 联动
 
@@ -380,6 +378,13 @@ final class SettingsViewModel: ObservableObject {
         islandHidePetOnSwitch: Bool,
         toolModeEnabled: Bool,
         toolEngineKind: String,
+        // 默认 = 当前内置三 engine(preview / 测试用,不经 App 注入时);生产由
+        // App 从 `ToolEngineRegistry.all` 注入,见 SettingsWindowController。
+        availableToolEngines: [(id: String, displayName: String)] = [
+            (id: "claudeCode", displayName: "Claude Code"),
+            (id: "codex", displayName: "Codex"),
+            (id: "openCode", displayName: "opencode")
+        ],
         toolEngineCLIPath: String?,
         openClawStatusDescription: String,
         openClawAutoStart: Bool,
@@ -431,6 +436,7 @@ final class SettingsViewModel: ObservableObject {
         self.islandHidePetOnSwitch = islandHidePetOnSwitch
         self.toolModeEnabled = toolModeEnabled
         self.toolEngineKind = toolEngineKind
+        self.toolEngineKinds = availableToolEngines
         self.toolEngineCLIPath = toolEngineCLIPath
         self.openClawStatusDescription = openClawStatusDescription
         self.openClawAutoStart = openClawAutoStart

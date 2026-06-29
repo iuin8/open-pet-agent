@@ -311,6 +311,13 @@ public final class SettingsWindowController {
         notchAvailable: Bool = false,
         toolModeEnabled: Bool = false,
         currentToolEngineKind: String = "claudeCode",
+        // 默认 = 当前内置三 engine,供 SwiftUI preview / 测试用(它们不经 App 注入);
+        // 生产路径由 App 从 `ToolEngineRegistry.all` 注入,picker 不写死。
+        availableToolEngines: [(id: String, displayName: String)] = [
+            (id: "claudeCode", displayName: "Claude Code"),
+            (id: "codex", displayName: "Codex"),
+            (id: "openCode", displayName: "opencode")
+        ],
         toolEngineCLIPath: String? = nil,
         openClawStatusDescription: String = "⚪ 未启动",
         openClawAutoStart: Bool = true,
@@ -350,6 +357,7 @@ public final class SettingsWindowController {
             islandHidePetOnSwitch: islandHidePetOnSwitch,
             toolModeEnabled: toolModeEnabled,
             toolEngineKind: currentToolEngineKind,
+            availableToolEngines: availableToolEngines,
             toolEngineCLIPath: toolEngineCLIPath,
             openClawStatusDescription: openClawStatusDescription,
             openClawAutoStart: openClawAutoStart,

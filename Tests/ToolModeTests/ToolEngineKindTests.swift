@@ -9,12 +9,8 @@ func toolEngineKindListsThreeEngines() {
     #expect(ToolEngineKind.allCases.contains(.openCode))
 }
 
-@Test("ToolEngineKind displayName 是人类可读字面值")
-func toolEngineKindDisplayNameIsHumanReadable() {
-    #expect(ToolEngineKind.claudeCode.displayName == "Claude Code")
-    #expect(ToolEngineKind.codex.displayName == "Codex")
-    #expect(ToolEngineKind.openCode.displayName == "opencode")
-}
+// 注:展示名已迁到 `ToolEngineRegistry`(id 取代写死 enum,镜像「形象插件化」),
+// 见 `ToolEngineRegistryTests`。enum 只保留 rawValue + userDefaultsKey 身份。
 
 @Test("ToolEngineKind userDefaultsKey 是 tool.engine.kind")
 func toolEngineKindUserDefaultsKeyIsExpected() {

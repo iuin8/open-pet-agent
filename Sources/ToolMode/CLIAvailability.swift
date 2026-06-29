@@ -36,11 +36,10 @@ public actor CLIAvailability {
 
     /// engine kind → CLI binary name 映射。
     /// N2.1+ 接入真 subprocess 时,locate 这个 binary 来决定 engine 是否可用。
+    ///
+    /// 不再写死 `switch`:委托 `ToolEngineRegistry`(单一事实源,id 取代 enum
+    /// 分支);未注册的 kind 兜底用 rawValue 当 binary 名。
     public static func binaryName(for kind: ToolEngineKind) -> String {
-        switch kind {
-        case .claudeCode: return "claude"
-        case .codex:      return "codex"
-        case .openCode:   return "opencode"
-        }
+        ToolEngineRegistry.lookup(id: kind.rawValue)?.binaryName ?? kind.rawValue
     }
 }

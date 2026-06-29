@@ -85,6 +85,9 @@ extension MinimalAppDelegate {
             notchAvailable: notchAvailable,
             toolModeEnabled: toolModeEnabled,
             currentToolEngineKind: currentToolEngineKindRaw,
+            // engine picker 列表从 `ToolEngineRegistry.all` 动态派生(不写死;
+            // Shell 不依赖 ToolMode,故由 App 注入,镜像 availablePetPlugins)。
+            availableToolEngines: ToolEngineRegistry.all.map { (id: $0.id, displayName: $0.displayName) },
             toolEngineCLIPath: nil,  // 异步在 controller.show() 后探测注入
             openClawStatusDescription: "⏳ 正在检测…",
             openClawAutoStart: openClawAutoStart,
@@ -119,13 +122,13 @@ extension MinimalAppDelegate {
             }
             // CLI 路径探测 —— 跟 router 启动时同款 CLIAvailability 流程,
             // 让用户能在 UI 上看到当前 engine binary 是否真的能解析到。
-            let kindRaw = userDefaults.string(forKey: ToolEngineKind.userDefaultsKey) ?? "claudeCode"
-            let kind = ToolEngineKind(rawValue: kindRaw) ?? .claudeCode
+            // 选 engine + binary 名都走 `ToolEngineRegistry`(单一事实源,不再
+            // 写死 enum 分支);UD 没设 / 值不识别 → fallback claudeCode。
+            let entry = ToolEngineRegistry.resolve(from: userDefaults)
             let cli = CLIAvailability()
             let augmentedPath = CLIProcessEnvironment.augmented()["PATH"] ?? ""
             let paths = augmentedPath.split(separator: ":").map(String.init)
-            let binaryName = CLIAvailability.binaryName(for: kind)
-            let resolved = await cli.locate(binary: binaryName, searchPaths: paths)
+            let resolved = await cli.locate(binary: entry.binaryName, searchPaths: paths)
             await MainActor.run {
                 controller?.updateToolEngineCLIPath(resolved)
             }

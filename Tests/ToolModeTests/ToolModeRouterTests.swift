@@ -22,6 +22,19 @@ func toolModeRouterTracksKindAfterSetEngine() async {
 }
 
 @MainActor
+@Test("ToolModeRouter setEngine 吃 any ToolEngine 存在类型(注册表 makeEngine)→ 反推 kind")
+func toolModeRouterAcceptsExistentialFromRegistry() async {
+    // 重构核心:setEngine 改非泛型后能直接喂 `ToolEngineRegistry.makeEngine()`
+    // 返回的存在类型,kind 由 `type(of:).kind` 反推(不再靠编译期具体类型)。
+    let router = ToolModeRouter()
+    let engine: any ToolEngine = ToolEngineRegistry.codex.makeEngine()
+    router.setEngine(engine)
+
+    #expect(router.currentEngine != nil)
+    #expect(router.currentKind == .codex)
+}
+
+@MainActor
 @Test("ToolModeRouter setEngine(nil) 清空 engine")
 func toolModeRouterClearsEngineWhenSetNil() async {
     let router = ToolModeRouter()
