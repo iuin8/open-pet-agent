@@ -6,6 +6,9 @@ import RuntimeBridge
 import ShimejiImport
 import Weather
 
+// `SoulBackendOption`(provider picker 一项,App 从 `SoulBackendRegistry` 注入)已抽到
+// 独立文件 `SoulBackendOption.swift`(一个类型一个文件)。
+
 /// SwiftUI 设置面板共享的状态对象。所有表单字段都集中在此,SettingsRootView
 /// + 各 Section 通过 `@ObservedObject` 双向绑定。
 ///
@@ -52,7 +55,7 @@ struct PetPickerItem: Identifiable {
 final class SettingsViewModel: ObservableObject {
     // MARK: - LLM 后端
 
-    /// 0=OpenAI 兼容 / 1=Anthropic。
+    /// 当前选中后端在 `soulBackends` 里的下标(picker 绑定;不再写死「1=Anthropic」)。
     @Published var selectedProviderIndex: Int
     @Published var apiKey: String
     @Published var baseURL: String
@@ -236,11 +239,10 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - 静态数据(picker option 列表)
 
-    /// LLM provider 名称(index → display)。
-    let providerNames: [String] = [
-        "OpenAI 兼容 (OpenAI / DeepSeek / Ollama…)",
-        "Anthropic Claude"
-    ]
+    /// LLM provider picker 列表 —— 由 App 层从 `SoulBackendRegistry.all` 映射注入
+    /// (Shell 不依赖 App,走注入而非直接读注册表;preview/测试用 `.defaults` 兜底)。
+    /// picker 渲染 + 字段标签/占位/managed 判定 + save 分发都从这派生,不写死二元。
+    let soulBackends: [SoulBackendOption]
 
     /// 桌宠 plugin 列表。**@Published**(非 let):Shimeji 导入 / 一键安装后调
     /// `refreshPetPlugins` 热刷新,picker 立即出现新宠(填补「装后列表不更新」缺口)。
@@ -320,26 +322,27 @@ final class SettingsViewModel: ObservableObject {
     /// `selectToolEngineKind` 校验用;id 与 `ToolEngineKind` rawValue 对齐。
     let toolEngineKinds: [(id: String, displayName: String)]
 
-    // MARK: - 计算属性 — placeholder 跟 provider 联动
+    // MARK: - 计算属性 — picker / placeholder 跟选中后端联动(不写死类型分支)
 
-    var isAnthropic: Bool { selectedProviderIndex == 1 }
-
-    var apiKeyLabel: String { isAnthropic ? "Anthropic Key" : "OpenAI Key" }
-    var apiKeyPlaceholder: String { isAnthropic ? "sk-ant-..." : "sk-..." }
-
-    var baseURLPlaceholder: String {
-        isAnthropic ? "https://api.anthropic.com" : "https://api.openai.com/v1"
+    /// 当前选中的后端(下标越界 → 兜底首项;`soulBackends` 保证非空)。
+    var selectedBackend: SoulBackendOption {
+        soulBackends.indices.contains(selectedProviderIndex)
+            ? soulBackends[selectedProviderIndex]
+            : (soulBackends.first ?? SoulBackendOption.defaults[0])
     }
 
-    var baseURLHint: String {
-        isAnthropic
-            ? "留空使用默认 Anthropic endpoint"
-            : "留空使用默认 OpenAI endpoint"
-    }
+    /// 选中后端是否自动管理配置(openclaw)→ 隐藏手填字段,显示 `managedNote`。
+    var selectedBackendManaged: Bool { selectedBackend.managed }
+    var selectedBackendManagedNote: String { selectedBackend.managedNote }
 
-    var modelPlaceholder: String {
-        isAnthropic ? "claude-sonnet-4-5" : "gpt-4o-mini"
-    }
+    var apiKeyLabel: String { selectedBackend.keyLabel }
+    var apiKeyPlaceholder: String { selectedBackend.keyPlaceholder }
+
+    var baseURLPlaceholder: String { selectedBackend.baseURLPlaceholder }
+
+    var baseURLHint: String { selectedBackend.baseURLHint }
+
+    var modelPlaceholder: String { selectedBackend.modelPlaceholder }
 
     var modelHint: String {
         "留空使用所选 provider 的默认 model"
@@ -366,6 +369,9 @@ final class SettingsViewModel: ObservableObject {
 
     init(
         selectedProviderIndex: Int,
+        // 默认 = `SoulBackendOption.defaults`(preview / 测试用,不经 App 注入时);
+        // 生产由 App 从 `SoulBackendRegistry.all` 注入,见 SettingsWindowController。
+        soulBackends: [SoulBackendOption] = SoulBackendOption.defaults,
         apiKey: String,
         baseURL: String,
         model: String,
@@ -415,7 +421,10 @@ final class SettingsViewModel: ObservableObject {
         self.ballisticTuning = ballisticTuning
         self.proactiveSettings = proactiveSettings
         self.currentWeatherDescription = currentWeatherDescription
-        self.selectedProviderIndex = selectedProviderIndex
+        // 后端列表保证非空(空注入 → 兜底 defaults);下标越界 → 归 0,避免 picker 崩。
+        let backends = soulBackends.isEmpty ? SoulBackendOption.defaults : soulBackends
+        self.soulBackends = backends
+        self.selectedProviderIndex = backends.indices.contains(selectedProviderIndex) ? selectedProviderIndex : 0
         self.apiKey = apiKey
         self.baseURL = baseURL
         self.model = model

@@ -95,6 +95,36 @@ struct SoulBackendRegistryTests {
         #expect(SoulBackendRegistry.openclaw.capabilities.contains(.bundleable) == false)
     }
 
+    // MARK: - picker info(设置面板展示 / 槽位映射,Settings 层不写死类型分支)
+
+    @Test("picker:云后端声明三槽(读写用)+ 标签/占位,isManaged=false")
+    func cloudBackendsDeclarePickerSlots() {
+        let openAI = SoulBackendRegistry.openAICompatible.picker
+        #expect(openAI.apiKeySlot == LLMSettingsKeys.openAIApiKey)
+        #expect(openAI.baseURLSlot == LLMSettingsKeys.openAIBaseURL)
+        #expect(openAI.modelSlot == LLMSettingsKeys.openAIModel)
+        #expect(openAI.keyLabel == "OpenAI Key")
+        #expect(openAI.isManaged == false)
+
+        let anthropic = SoulBackendRegistry.anthropic.picker
+        #expect(anthropic.apiKeySlot == LLMSettingsKeys.anthropicApiKey)
+        #expect(anthropic.baseURLSlot == LLMSettingsKeys.anthropicBaseURL)
+        #expect(anthropic.modelSlot == LLMSettingsKeys.anthropicModel)
+        #expect(anthropic.keyLabel == "Anthropic Key")
+        #expect(anthropic.baseURLPlaceholder == "https://api.anthropic.com")
+        #expect(anthropic.isManaged == false)
+    }
+
+    @Test("picker:openclaw 三槽 nil → isManaged=true(自动管理,picker 隐藏字段)+ 有说明文案")
+    func openClawPickerIsManaged() {
+        let p = SoulBackendRegistry.openclaw.picker
+        #expect(p.apiKeySlot == nil)
+        #expect(p.baseURLSlot == nil)
+        #expect(p.modelSlot == nil)
+        #expect(p.isManaged == true)
+        #expect(p.managedNote.isEmpty == false)
+    }
+
     // MARK: - makeProvider:openAICompatible entry
 
     @Test("openAICompatible entry: 有 OpenAIAPIKey → OpenAIProvider;无 → nil")

@@ -193,8 +193,18 @@ public final class SettingsWindowController {
     /// Placeholder string shown in the Model field.
     public var modelFieldPlaceholder: String { viewModel.modelPlaceholder }
 
-    /// Index of the selected provider in the picker (0 = openAICompatible, 1 = Anthropic).
+    /// Index of the selected provider in the picker(由 `soulBackends` 顺序决定,
+    /// 默认 0=openAICompatible / 1=anthropic / 2=openclaw)。
     public var selectedProviderIndex: Int { viewModel.selectedProviderIndex }
+
+    /// 当前 picker 列出的后端数量(测试用:验证 3 个内置后端全列出)。
+    public var soulBackendCount: Int { viewModel.soulBackends.count }
+
+    /// 当前选中后端是否自动管理(openclaw)→ 隐藏手填字段。
+    public var isSelectedBackendManaged: Bool { viewModel.selectedBackendManaged }
+
+    /// 自动管理后端选中时显示的说明文案(测试用)。
+    public var selectedBackendManagedNote: String { viewModel.selectedBackendManagedNote }
 
     /// The id of the currently selected pet plugin.
     public var selectedPetPluginID: String { viewModel.selectedPetPluginID }
@@ -303,6 +313,9 @@ public final class SettingsWindowController {
         existingAPIKey: String = "",
         existingBaseURL: String = "",
         existingModel: String = "",
+        // 默认 = `SoulBackendOption.defaults`(preview / 测试用,不经 App 注入时);
+        // 生产由 App 从 `SoulBackendRegistry.all` 注入,picker 不写死二元。
+        availableSoulBackends: [SoulBackendOption] = SoulBackendOption.defaults,
         availablePetPlugins: [PetPluginEntry] = [],
         currentPetPluginID: String = "orb",
         petScale: Double = 1,
@@ -341,10 +354,14 @@ public final class SettingsWindowController {
         currentWeatherDescription: String = "⏳ 等待首次刷新…",
         aboutVersion: String = "OpenPetAgent (dev)"
     ) {
-        let providerIndex = selectedProvider == "anthropic" ? 1 : 0
+        // 按 id 在注入列表里定位当前后端(取代写死「anthropic→1 否则 0」)。
+        // 关键:openclaw 现在能正确定位到自己的下标 —— 修掉「openclaw 激活时 picker
+        // 错显 OpenAI 兼容选中」的视觉 bug。未知 id → 归 0(openAICompatible)。
+        let providerIndex = availableSoulBackends.firstIndex { $0.id == selectedProvider } ?? 0
 
         self.viewModel = SettingsViewModel(
             selectedProviderIndex: providerIndex,
+            soulBackends: availableSoulBackends,
             apiKey: existingAPIKey,
             baseURL: existingBaseURL,
             model: existingModel,
@@ -540,7 +557,7 @@ public final class SettingsWindowController {
 
     /// Programmatically save with provider selection.
     public func simulateSaveProvider(provider: String, apiKey: String, baseURL: String, model: String) {
-        viewModel.selectedProviderIndex = provider == "anthropic" ? 1 : 0
+        viewModel.selectedProviderIndex = viewModel.soulBackends.firstIndex { $0.id == provider } ?? 0
         viewModel.apiKey = apiKey
         viewModel.baseURL = baseURL
         viewModel.model = model
@@ -557,7 +574,7 @@ public final class SettingsWindowController {
 
     /// Programmatically select a provider by name (for tests that check UI state).
     public func simulateSelectProvider(_ provider: String) {
-        viewModel.selectedProviderIndex = provider == "anthropic" ? 1 : 0
+        viewModel.selectedProviderIndex = viewModel.soulBackends.firstIndex { $0.id == provider } ?? 0
     }
 
     /// N1.3: 直接设置灵动岛 toggle 状态(测试用)。
@@ -716,17 +733,24 @@ public final class SettingsWindowController {
         commitLLM()
     }
 
-    /// 提交 LLM(provider/key/baseURL/model)—— 文本框 onSubmit / 关窗 flush 时调。
-    /// key 与 baseURL 都空 → 不触发(避免空配置覆盖)。
+    /// 提交 LLM(provider/key/baseURL/model)—— 文本框 onSubmit / 关窗 flush / 切
+    /// provider 时调。provider 字符串按选中后端 `id` 分发(不写死二元)。
     func commitLLM() {
+        let backend = viewModel.selectedBackend
+        // 自动管理后端(openclaw):只持久化「选了它」这个身份,不要求手填、也不写
+        // 任何云槽(其专属槽由 App auto-bootstrap 管,这里碰了反会清掉)。
+        if backend.managed {
+            onSaveProvider(backend.id, "", "", "")
+            return
+        }
         let trimmedKey = viewModel.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBaseURL = viewModel.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedModel = viewModel.model.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasKey = !trimmedKey.isEmpty
         let hasBaseURL = !trimmedBaseURL.isEmpty
+        // 云后端字段都空 → 不触发(避免空配置覆盖已存的 key)。
         guard hasKey || hasBaseURL else { return }
-        let providerString = viewModel.selectedProviderIndex == 1 ? "anthropic" : "openAICompatible"
-        onSaveProvider(providerString, trimmedKey, trimmedBaseURL, trimmedModel)
+        onSaveProvider(backend.id, trimmedKey, trimmedBaseURL, trimmedModel)
         onSaveAll(trimmedKey, trimmedBaseURL, trimmedModel)
         if hasKey { onSave(trimmedKey) }
     }

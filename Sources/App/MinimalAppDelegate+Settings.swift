@@ -15,23 +15,14 @@ extension MinimalAppDelegate {
     /// 构建一个 SettingsWindowController(读当前 UD 状态 + 接好所有回调),**不赋值不显示**。
     /// `showSettingsWindow` 每次重建以刷新状态;`ensureSettingsWindowController` 仅在缺失时建。
     private func buildSettingsController() -> SettingsWindowController {
-        // Read the current provider kind and the matching key / settings.
-        let currentKind = LLMProviderKind.resolve(from: userDefaults)
-        let isAnthropic = currentKind == .anthropic
-
-        let existingKey: String
-        let existingBaseURL: String
-        let existingModel: String
-
-        if isAnthropic {
-            existingKey = userDefaults.string(forKey: LLMSettingsKeys.anthropicApiKey) ?? ""
-            existingBaseURL = userDefaults.string(forKey: LLMSettingsKeys.anthropicBaseURL) ?? ""
-            existingModel = userDefaults.string(forKey: LLMSettingsKeys.anthropicModel) ?? ""
-        } else {
-            existingKey = userDefaults.string(forKey: LLMSettingsKeys.openAIApiKey) ?? ""
-            existingBaseURL = userDefaults.string(forKey: LLMSettingsKeys.openAIBaseURL) ?? ""
-            existingModel = userDefaults.string(forKey: LLMSettingsKeys.openAIModel) ?? ""
-        }
+        // 当前后端经 `SoulBackendRegistry`(单一事实源,认得 openclaw)解析 —— 取代旧
+        // `LLMProviderKind.resolve` + isAnthropic 二元分支(它不认 openclaw,导致 openclaw
+        // 激活时 picker 错显「OpenAI 兼容」选中)。existingKey 从该后端声明的槽读;managed
+        // 后端(openclaw,三槽 nil)→ 字段空(picker 选中时本就隐藏字段,不读)。
+        let currentBackend = SoulBackendRegistry.resolve(from: userDefaults)
+        let existingKey = currentBackend.picker.apiKeySlot.flatMap { userDefaults.string(forKey: $0) } ?? ""
+        let existingBaseURL = currentBackend.picker.baseURLSlot.flatMap { userDefaults.string(forKey: $0) } ?? ""
+        let existingModel = currentBackend.picker.modelSlot.flatMap { userDefaults.string(forKey: $0) } ?? ""
 
         // N3.6: 收集已注册 pet plugin + 当前选中 id,传给设置面板渲染下拉框。
         // 顺序按 PetPluginRegistry 注册顺序(MinimalAppDelegate 在 launching
@@ -75,10 +66,13 @@ extension MinimalAppDelegate {
         let aboutVersion = Self.aboutVersionString()
 
         let controller = SettingsWindowController(
-            selectedProvider: currentKind.rawValue,
+            selectedProvider: currentBackend.id,
             existingAPIKey: existingKey,
             existingBaseURL: existingBaseURL,
             existingModel: existingModel,
+            // provider picker 列表从 `SoulBackendRegistry.all` 动态派生(不写死二元;
+            // Shell 不依赖 App,故由 App 注入,镜像 availableToolEngines / availablePetPlugins)。
+            availableSoulBackends: SoulBackendRegistry.all.map(\.settingsOption),
             availablePetPlugins: availablePlugins,
             currentPetPluginID: currentPluginID,
             petScale: petScaleSetting,
@@ -494,46 +488,24 @@ extension MinimalAppDelegate {
         controller.onSaveProvider = { [weak self] providerString, newKey, newBaseURL, newModel in
             guard let self else { return }
 
-            // Persist provider kind selection
+            // 持久化「选了哪个后端」(身份)。
             self.userDefaults.set(providerString, forKey: LLMProviderKind.userDefaultsKey)
 
-            let kind = LLMProviderKind(rawValue: providerString) ?? .openAICompatible
-
-            switch kind {
-            case .anthropic:
-                if newKey.isEmpty {
-                    self.userDefaults.removeObject(forKey: LLMSettingsKeys.anthropicApiKey)
+            // 槽位驱动写入(取代写死 `switch kind`):每个后端在 registry 里声明自己的三个
+            // 槽,这里按声明写/清。**managed 后端(openclaw)三槽为 nil → 一个都不写**,
+            // 只持久身份、不碰其专属槽(专属槽由 setupOpenClawBootstrap 管)。
+            let backend = SoulBackendRegistry.lookup(id: providerString) ?? SoulBackendRegistry.all[0]
+            func writeOrClear(_ value: String, into slot: String?) {
+                guard let slot else { return }
+                if value.isEmpty {
+                    self.userDefaults.removeObject(forKey: slot)
                 } else {
-                    self.userDefaults.set(newKey, forKey: LLMSettingsKeys.anthropicApiKey)
-                }
-                if newBaseURL.isEmpty {
-                    self.userDefaults.removeObject(forKey: LLMSettingsKeys.anthropicBaseURL)
-                } else {
-                    self.userDefaults.set(newBaseURL, forKey: LLMSettingsKeys.anthropicBaseURL)
-                }
-                if newModel.isEmpty {
-                    self.userDefaults.removeObject(forKey: LLMSettingsKeys.anthropicModel)
-                } else {
-                    self.userDefaults.set(newModel, forKey: LLMSettingsKeys.anthropicModel)
-                }
-
-            case .openAICompatible:
-                if newKey.isEmpty {
-                    self.userDefaults.removeObject(forKey: LLMSettingsKeys.openAIApiKey)
-                } else {
-                    self.userDefaults.set(newKey, forKey: LLMSettingsKeys.openAIApiKey)
-                }
-                if newBaseURL.isEmpty {
-                    self.userDefaults.removeObject(forKey: LLMSettingsKeys.openAIBaseURL)
-                } else {
-                    self.userDefaults.set(newBaseURL, forKey: LLMSettingsKeys.openAIBaseURL)
-                }
-                if newModel.isEmpty {
-                    self.userDefaults.removeObject(forKey: LLMSettingsKeys.openAIModel)
-                } else {
-                    self.userDefaults.set(newModel, forKey: LLMSettingsKeys.openAIModel)
+                    self.userDefaults.set(value, forKey: slot)
                 }
             }
+            writeOrClear(newKey, into: backend.picker.apiKeySlot)
+            writeOrClear(newBaseURL, into: backend.picker.baseURLSlot)
+            writeOrClear(newModel, into: backend.picker.modelSlot)
 
             // Hot-reload: re-resolve provider from the now-current UserDefaults
             // 并热替换共享 box,用户改完设置无需重启即生效。
@@ -784,5 +756,25 @@ extension MinimalAppDelegate {
             parts.append("(\(commit))")
         }
         return parts.joined(separator: " ")
+    }
+}
+
+// MARK: - SoulBackendEntry → 设置面板 picker option
+
+extension SoulBackendEntry {
+    /// 把注册表 entry 映射成 Shell 层 picker option(App 注入 Shell;字段一一搬运,
+    /// **零类型分支**,新增后端在 registry 填好 picker info 即自动跟上)。
+    var settingsOption: SoulBackendOption {
+        SoulBackendOption(
+            id: id,
+            displayName: displayName,
+            managed: picker.isManaged,
+            keyLabel: picker.keyLabel,
+            keyPlaceholder: picker.keyPlaceholder,
+            baseURLPlaceholder: picker.baseURLPlaceholder,
+            baseURLHint: picker.baseURLHint,
+            modelPlaceholder: picker.modelPlaceholder,
+            managedNote: picker.managedNote
+        )
     }
 }

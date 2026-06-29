@@ -273,6 +273,54 @@ func providerPickerSaveOpenAIFiresCorrectProviderString() {
     #expect(capturedProvider == "openAICompatible")
 }
 
+// MARK: - A.4b — Soul backend registry-driven picker (openclaw 一等后端)
+
+@Test("Provider picker: lists all 3 registry backends (不写死二元)")
+@MainActor
+func providerPickerListsThreeBackends() {
+    let controller = SettingsWindowController(selectedProvider: "openAICompatible")
+    #expect(controller.soulBackendCount == 3)
+}
+
+@Test("Provider picker: init with openclaw → 选中 openclaw 自己的下标(2),不再错显 OpenAI")
+@MainActor
+func providerPickerInitialisedWithOpenClawSelectsOpenClawIndex() {
+    // 回归:旧实现 `selectedProvider == "anthropic" ? 1 : 0` 把 openclaw 错归 0
+    // (picker 显示「OpenAI 兼容」选中 + 字段空)。registry 派生后定位到 index 2。
+    let controller = SettingsWindowController(selectedProvider: "openclaw")
+    #expect(controller.selectedProviderIndex == 2)
+}
+
+@Test("Provider picker: openclaw 是自动管理后端 → 隐藏手填字段 + 有说明文案")
+@MainActor
+func providerPickerOpenClawIsManaged() {
+    let controller = SettingsWindowController(selectedProvider: "openclaw")
+    #expect(controller.isSelectedBackendManaged == true)
+    #expect(controller.selectedBackendManagedNote.isEmpty == false)
+}
+
+@Test("Provider picker: 云后端(openAICompatible / anthropic)不是自动管理")
+@MainActor
+func providerPickerCloudBackendsNotManaged() {
+    let openAI = SettingsWindowController(selectedProvider: "openAICompatible")
+    #expect(openAI.isSelectedBackendManaged == false)
+    let anthropic = SettingsWindowController(selectedProvider: "anthropic")
+    #expect(anthropic.isSelectedBackendManaged == false)
+}
+
+@Test("Provider picker: 选 openclaw 保存 → onSaveProvider 触发 'openclaw'(managed 即使字段空也持久身份)")
+@MainActor
+func providerPickerSaveOpenClawFiresOpenClawProvider() {
+    var capturedProvider: String?
+    let controller = SettingsWindowController(selectedProvider: "openAICompatible")
+    controller.onSaveProvider = { provider, _, _, _ in capturedProvider = provider }
+
+    // 切到 openclaw 并保存,所有手填字段留空 —— managed 路径仍应触发(持久「选了 openclaw」)。
+    controller.simulateSaveProvider(provider: "openclaw", apiKey: "", baseURL: "", model: "")
+
+    #expect(capturedProvider == "openclaw")
+}
+
 // MARK: - N3.6 — Pet plugin picker tests
 
 /// 测试用桌宠 plugin —— renderer 可为 nil(纯 UI 测试不需要真渲染)。

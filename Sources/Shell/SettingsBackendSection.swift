@@ -16,8 +16,8 @@ struct SettingsBackendSection: View {
             GroupBox(label: sectionLabel("LLM 提供商")) {
                 VStack(alignment: .leading, spacing: 10) {
                     Picker(selection: $viewModel.selectedProviderIndex) {
-                        ForEach(viewModel.providerNames.indices, id: \.self) { idx in
-                            Text(viewModel.providerNames[idx]).tag(idx)
+                        ForEach(viewModel.soulBackends.indices, id: \.self) { idx in
+                            Text(viewModel.soulBackends[idx].displayName).tag(idx)
                         }
                     } label: {
                         EmptyView()
@@ -28,60 +28,70 @@ struct SettingsBackendSection: View {
                         viewModel.onCommitLLM()   // modeless:切 provider 即时提交(空配置不触发)
                     }
 
-                    // API Key 行: secure/text + 眼睛 toggle
-                    fieldRow(label: viewModel.apiKeyLabel) {
-                        HStack(spacing: 6) {
-                            Group {
-                                if showKey {
-                                    TextField(
-                                        viewModel.apiKeyPlaceholder,
-                                        text: $viewModel.apiKey
-                                    )
-                                } else {
-                                    SecureField(
-                                        viewModel.apiKeyPlaceholder,
-                                        text: $viewModel.apiKey
-                                    )
+                    if viewModel.selectedBackendManaged {
+                        // 自动管理后端(openclaw):不显示手填字段,只说明它由本地网关托管。
+                        Text(viewModel.selectedBackendManagedNote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        // 云后端:API Key / Base URL / Model 三行手填。
+                        // API Key 行: secure/text + 眼睛 toggle
+                        fieldRow(label: viewModel.apiKeyLabel) {
+                            HStack(spacing: 6) {
+                                Group {
+                                    if showKey {
+                                        TextField(
+                                            viewModel.apiKeyPlaceholder,
+                                            text: $viewModel.apiKey
+                                        )
+                                    } else {
+                                        SecureField(
+                                            viewModel.apiKeyPlaceholder,
+                                            text: $viewModel.apiKey
+                                        )
+                                    }
                                 }
-                            }
-                            .textFieldStyle(.roundedBorder)
+                                .textFieldStyle(.roundedBorder)
 
-                            Button {
-                                showKey.toggle()
-                            } label: {
-                                Image(systemName: showKey ? "eye.slash" : "eye")
+                                Button {
+                                    showKey.toggle()
+                                } label: {
+                                    Image(systemName: showKey ? "eye.slash" : "eye")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.borderless)
+                                .help(showKey ? "隐藏" : "显示")
+                            }
+                        }
+
+                        // Base URL 行
+                        fieldRow(label: "Base URL") {
+                            VStack(alignment: .leading, spacing: 3) {
+                                TextField(
+                                    viewModel.baseURLPlaceholder,
+                                    text: $viewModel.baseURL
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                Text(viewModel.baseURLHint)
+                                    .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.borderless)
-                            .help(showKey ? "隐藏" : "显示")
                         }
-                    }
 
-                    // Base URL 行
-                    fieldRow(label: "Base URL") {
-                        VStack(alignment: .leading, spacing: 3) {
-                            TextField(
-                                viewModel.baseURLPlaceholder,
-                                text: $viewModel.baseURL
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            Text(viewModel.baseURLHint)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    // Model 行
-                    fieldRow(label: "Model") {
-                        VStack(alignment: .leading, spacing: 3) {
-                            TextField(
-                                viewModel.modelPlaceholder,
-                                text: $viewModel.model
-                            )
-                            .textFieldStyle(.roundedBorder)
-                            Text(viewModel.modelHint)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                        // Model 行
+                        fieldRow(label: "Model") {
+                            VStack(alignment: .leading, spacing: 3) {
+                                TextField(
+                                    viewModel.modelPlaceholder,
+                                    text: $viewModel.model
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                Text(viewModel.modelHint)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
