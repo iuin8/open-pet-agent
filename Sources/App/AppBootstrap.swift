@@ -4,7 +4,7 @@ import Orchestrator
 import Rendering
 import RuntimeBridge
 import Shell
-import ToolMode
+import AgentMode
 
 public struct AppRootSystem: Sendable, Equatable {
     public let snapshot: DesktopSnapshot
@@ -425,7 +425,7 @@ public struct AppBootstrap: Sendable {
         windowGraph: WindowGraph = .bootstrap,
         snapshot: DesktopSnapshot? = nil,
         snapshotSampler: DesktopSnapshotSampler? = nil,
-        toolModeBox: ToolModeBox = ToolModeBox()
+        agentModeBox: AgentModeBox = AgentModeBox()
     ) {
         let box = LiveContextBox()
         // Re-create orchestrator with the box wired in so it can read
@@ -433,7 +433,7 @@ public struct AppBootstrap: Sendable {
         // Propagate modelName so the rolling-window budget uses the same model heuristic.
         let wiredOrchestrator = CompanionOrchestrator(
             llmProviderBox: orchestrator.llmProviderBox,
-            toolModeBox: toolModeBox,
+            agentModeBox: agentModeBox,
             conversationStore: conversationStore,
             liveContextBox: box,
             modelName: orchestrator.modelName
@@ -453,7 +453,7 @@ public struct AppBootstrap: Sendable {
         windowGraph: WindowGraph = .bootstrap,
         snapshot: DesktopSnapshot? = nil,
         snapshotSampler: DesktopSnapshotSampler? = nil,
-        toolModeBox: ToolModeBox = ToolModeBox()
+        agentModeBox: AgentModeBox = AgentModeBox()
     ) {
         let store = ConversationStore(storeURL: ConversationStore.defaultStoreURL())
         // Resolve config once so both provider and model name use the same values.
@@ -462,7 +462,7 @@ public struct AppBootstrap: Sendable {
         let box = LiveContextBox()
         self.orchestrator = CompanionOrchestrator(
             llmProvider: provider,
-            toolModeBox: toolModeBox,
+            agentModeBox: agentModeBox,
             conversationStore: store,
             liveContextBox: box,
             modelName: config.model

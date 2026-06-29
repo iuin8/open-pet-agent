@@ -12,7 +12,7 @@ let hasCubism = FileManager.default.fileExists(
 
 // App 依赖:有 Cubism 时加 Live2D(D-2.2b:App 启动注入 Live2DPetRenderer 工厂到 Rendering 的
 // Live2DModelPackLoader.rendererFactory)。无 Cubism 时不依赖 → `#if canImport(Live2D)` 自动跳过。
-var appDependencies: [Target.Dependency] = [.product(name: "Context", package: "Vivarium"), .product(name: "PetBehavior", package: "Vivarium"), "Shell", "Orchestrator", "ToolMode", "Weather", "Shimeji", "AgentSensing"]
+var appDependencies: [Target.Dependency] = [.product(name: "Context", package: "Vivarium"), .product(name: "PetBehavior", package: "Vivarium"), "Shell", "Orchestrator", "AgentMode", "Weather", "Shimeji", "AgentSensing"]
 if hasCubism { appDependencies.append("Live2D") }
 
 var targets: [Target] = [
@@ -32,9 +32,9 @@ var targets: [Target] = [
         ]
     ),
     .target(
-        name: "ToolMode",
+        name: "AgentMode",
         dependencies: [],  // 暂不依赖其他模块, 单纯抽象层
-        path: "Sources/ToolMode"
+        path: "Sources/AgentMode"
     ),
     // AgentSensing(P1):只读「感知外部 Claude Code / Codex 会话在干嘛」。
     // tail ~/.claude/projects/**/*.jsonl + ~/.codex/sessions/*.jsonl(transcript),
@@ -71,7 +71,7 @@ var targets: [Target] = [
     ),
     .target(
         name: "Orchestrator",
-        dependencies: [.product(name: "Context", package: "Vivarium"), .product(name: "RuntimeBridge", package: "Vivarium"), "ToolMode"],
+        dependencies: [.product(name: "Context", package: "Vivarium"), .product(name: "RuntimeBridge", package: "Vivarium"), "AgentMode"],
         path: "Sources/Orchestrator",
         linkerSettings: [
             .linkedFramework("Security")
@@ -97,13 +97,13 @@ var targets: [Target] = [
     ),
     .testTarget(
         name: "OrchestratorTests",
-        dependencies: ["Orchestrator", .product(name: "Context", package: "Vivarium"), "ToolMode"],
+        dependencies: ["Orchestrator", .product(name: "Context", package: "Vivarium"), "AgentMode"],
         path: "Tests/OrchestratorTests"
     ),
     .testTarget(
-        name: "ToolModeTests",
-        dependencies: ["ToolMode"],
-        path: "Tests/ToolModeTests"
+        name: "AgentModeTests",
+        dependencies: ["AgentMode"],
+        path: "Tests/AgentModeTests"
     ),
     .testTarget(
         name: "WeatherTests",

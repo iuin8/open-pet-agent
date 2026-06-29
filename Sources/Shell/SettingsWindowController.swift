@@ -57,10 +57,10 @@ public final class SettingsWindowController {
     public var onSaveIslandEnabled: @MainActor (Bool) -> Void = { _ in }
 
     /// N2.3: Called when the user taps Save with the chosen 工具模式 toggle state。
-    public var onSaveToolModeEnabled: @MainActor (Bool) -> Void = { _ in }
+    public var onSaveAgentModeEnabled: @MainActor (Bool) -> Void = { _ in }
 
     /// Task E: Called when the user taps Save with the chosen 工具 engine kind raw string。
-    public var onSaveToolEngineKind: @MainActor (String) -> Void = { _ in }
+    public var onSaveAgentEngineKind: @MainActor (String) -> Void = { _ in }
 
     /// 开机自启 toggle 改动时触发(modeless 即时提交)。
     public var onSaveLaunchAtLogin: @MainActor (Bool) -> Void = { _ in }
@@ -213,7 +213,7 @@ public final class SettingsWindowController {
     public var isIslandToggleOn: Bool { viewModel.effectiveIslandOn }
 
     /// N2.3: 当前 Tool Mode toggle 是否被勾选。
-    public var isToolModeToggleOn: Bool { viewModel.toolModeEnabled }
+    public var isAgentModeToggleOn: Bool { viewModel.agentModeEnabled }
 
     /// N1.3: 灵动岛 toggle 是否可点击。
     public var isIslandToggleEnabled: Bool { viewModel.notchAvailable }
@@ -225,7 +225,7 @@ public final class SettingsWindowController {
     public var openClawStatusText: String { viewModel.openClawStatusDescription }
 
     /// Task E: 当前选中的 tool engine kind raw string。
-    public var selectedToolEngineKind: String { viewModel.toolEngineKind }
+    public var selectedAgentEngineKind: String { viewModel.agentEngineKind }
 
     /// 当前 "开机自启" toggle 是否勾选。
     public var isLaunchAtLoginOn: Bool { viewModel.launchAtLogin }
@@ -282,12 +282,12 @@ public final class SettingsWindowController {
     /// 当前选中的温度档 raw ("auto" / "winter" / "spring" / "sauna")。测试用。
     public var selectedThermalOverrideRaw: String { viewModel.thermalOverrideRaw }
 
-    /// 暴露 toolEngineCLI label 的 stringValue 兼容旧测试。
+    /// 暴露 agentEngineCLI label 的 stringValue 兼容旧测试。
     /// SwiftUI 重写后 CLI 路径已并入 viewModel,这里返回 "CLI: <path>" 或
     /// "CLI: 未安装",与原 NSTextField 行为一致。
-    public var toolEngineCLIPathLabel: ToolEngineCLILabelProxy {
-        ToolEngineCLILabelProxy { [weak viewModel] in
-            viewModel?.toolEngineCLIDisplay ?? "CLI: 未安装"
+    public var agentEngineCLIPathLabel: AgentEngineCLILabelProxy {
+        AgentEngineCLILabelProxy { [weak viewModel] in
+            viewModel?.agentEngineCLIDisplay ?? "CLI: 未安装"
         }
     }
 
@@ -322,16 +322,16 @@ public final class SettingsWindowController {
         activeDecorativePetIDs: Set<String> = [],
         islandEnabled: Bool = true,
         notchAvailable: Bool = false,
-        toolModeEnabled: Bool = false,
-        currentToolEngineKind: String = "claudeCode",
+        agentModeEnabled: Bool = false,
+        currentAgentEngineKind: String = "claudeCode",
         // 默认 = 当前内置三 engine,供 SwiftUI preview / 测试用(它们不经 App 注入);
-        // 生产路径由 App 从 `ToolEngineRegistry.all` 注入,picker 不写死。
-        availableToolEngines: [(id: String, displayName: String)] = [
+        // 生产路径由 App 从 `AgentEngineRegistry.all` 注入,picker 不写死。
+        availableAgentEngines: [(id: String, displayName: String)] = [
             (id: "claudeCode", displayName: "Claude Code"),
             (id: "codex", displayName: "Codex"),
             (id: "openCode", displayName: "opencode")
         ],
-        toolEngineCLIPath: String? = nil,
+        agentEngineCLIPath: String? = nil,
         openClawStatusDescription: String = "⚪ 未启动",
         openClawAutoStart: Bool = true,
         openClawAllowEndpointEnable: Bool = true,
@@ -372,10 +372,10 @@ public final class SettingsWindowController {
             islandEnabled: islandEnabled,
             notchAvailable: notchAvailable,
             islandHidePetOnSwitch: islandHidePetOnSwitch,
-            toolModeEnabled: toolModeEnabled,
-            toolEngineKind: currentToolEngineKind,
-            availableToolEngines: availableToolEngines,
-            toolEngineCLIPath: toolEngineCLIPath,
+            agentModeEnabled: agentModeEnabled,
+            agentEngineKind: currentAgentEngineKind,
+            availableAgentEngines: availableAgentEngines,
+            agentEngineCLIPath: agentEngineCLIPath,
             openClawStatusDescription: openClawStatusDescription,
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
@@ -450,8 +450,8 @@ public final class SettingsWindowController {
         self.viewModel.onSelectPet = { [weak self] id in self?.onSavePlugin(id) }
         self.viewModel.onCommitIsland = { [weak self] on in self?.onSaveIslandEnabled(on) }
         self.viewModel.onCommitIslandHidePet = { [weak self] on in self?.onSaveIslandHidePetOnSwitch(on) }
-        self.viewModel.onCommitToolMode = { [weak self] on in self?.onSaveToolModeEnabled(on) }
-        self.viewModel.onCommitToolEngine = { [weak self] raw in self?.onSaveToolEngineKind(raw) }
+        self.viewModel.onCommitAgentMode = { [weak self] on in self?.onSaveAgentModeEnabled(on) }
+        self.viewModel.onCommitAgentEngine = { [weak self] raw in self?.onSaveAgentEngineKind(raw) }
         self.viewModel.onCommitLaunchAtLogin = { [weak self] on in self?.onSaveLaunchAtLogin(on) }
         self.viewModel.onCommitMenuBarIconVisible = { [weak self] on in self?.onSaveMenuBarIconVisible(on) }
         self.viewModel.onCommitAgentSensing = { [weak self] on in self?.onSaveAgentSensing(on) }
@@ -531,8 +531,8 @@ public final class SettingsWindowController {
     }
 
     /// caller 重新探测 CLI binary 后调本方法刷新当前 tool engine 路径行。
-    public func updateToolEngineCLIPath(_ path: String?) {
-        viewModel.toolEngineCLIPath = path
+    public func updateAgentEngineCLIPath(_ path: String?) {
+        viewModel.agentEngineCLIPath = path
     }
 
     /// WeatherStateManager 每次 refresh 后调本方法刷新设置面板"当前天气"卡片。
@@ -586,8 +586,8 @@ public final class SettingsWindowController {
     }
 
     /// N2.3: 直接设置 Tool Mode toggle 状态(测试用)。
-    public func simulateToggleToolMode(_ on: Bool) {
-        viewModel.toolModeEnabled = on
+    public func simulateToggleAgentMode(_ on: Bool) {
+        viewModel.agentModeEnabled = on
     }
 
     /// N3.6: Programmatically select a pet plugin by id(测试用)。
@@ -612,8 +612,8 @@ public final class SettingsWindowController {
     }
 
     /// Task E: 选择 tool engine kind by raw string(测试用)。
-    public func simulateSelectToolEngineKind(_ kindRaw: String) {
-        viewModel.selectToolEngineKind(kindRaw)
+    public func simulateSelectAgentEngineKind(_ kindRaw: String) {
+        viewModel.selectAgentEngineKind(kindRaw)
     }
 
     /// 直接设置 "开机自启" toggle(测试用)—— 触发 onCommit,跟真实 Toggle.onChange 一致。
@@ -711,8 +711,8 @@ public final class SettingsWindowController {
         let hasPlugin = !viewModel.petPlugins.isEmpty
         if hasPlugin { onSavePlugin(viewModel.selectedPetPluginID) }
         onSaveIslandEnabled(viewModel.effectiveIslandOn)
-        onSaveToolModeEnabled(viewModel.toolModeEnabled)
-        onSaveToolEngineKind(viewModel.toolEngineKind)
+        onSaveAgentModeEnabled(viewModel.agentModeEnabled)
+        onSaveAgentEngineKind(viewModel.agentEngineKind)
         onSaveLaunchAtLogin(viewModel.launchAtLogin)
         onSaveMenuBarIconVisible(viewModel.menuBarIconVisible)
         onSaveAgentSensing(viewModel.agentSensingEnabled)
@@ -763,9 +763,9 @@ final class SettingsCloseObserver: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) { onClose() }
 }
 
-/// 旧测试代码用 `controller.toolEngineCLIPathLabel.stringValue` 读 CLI 路径,
+/// 旧测试代码用 `controller.agentEngineCLIPathLabel.stringValue` 读 CLI 路径,
 /// 此结构体提供 `stringValue` 计算属性桥接到 viewModel,保持 API 兼容。
-public struct ToolEngineCLILabelProxy {
+public struct AgentEngineCLILabelProxy {
     private let read: () -> String
     init(_ read: @escaping () -> String) { self.read = read }
     public var stringValue: String { read() }

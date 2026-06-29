@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ToolMode
+@testable import AgentMode
 
 // MARK: - 测试辅助
 
@@ -169,11 +169,11 @@ func runFailedExitThrowsSubprocessFailed() async throws {
             // 即便意外 yield 也继续到 throw
         }
         Issue.record("expected subprocessFailed but stream ended cleanly")
-    } catch let ToolEngineError.subprocessFailed(code, stderr) {
+    } catch let AgentEngineError.subprocessFailed(code, stderr) {
         #expect(code == 42)
         #expect(stderr.contains("fatal stderr msg"))
     } catch {
-        Issue.record("expected ToolEngineError.subprocessFailed, got: \(error)")
+        Issue.record("expected AgentEngineError.subprocessFailed, got: \(error)")
     }
 }
 
@@ -192,11 +192,11 @@ func runResultErrorThrows() async throws {
             if delta.contains("partial") { sawPartial = true }
         }
         Issue.record("expected throw")
-    } catch let ToolEngineError.subprocessFailed(_, stderr) {
+    } catch let AgentEngineError.subprocessFailed(_, stderr) {
         #expect(stderr.contains("模型返回错误"))
         #expect(sawPartial)  // is_error 之前的 partial 文本仍应被 yield 出去
     } catch {
-        Issue.record("expected ToolEngineError.subprocessFailed, got: \(error)")
+        Issue.record("expected AgentEngineError.subprocessFailed, got: \(error)")
     }
 }
 
@@ -214,7 +214,7 @@ func runCliNotInstalled() async {
         Issue.record("expected throw, stream ended cleanly")
     } catch {
         // Process.run() 找不到 binary 时抛 NSCocoaErrorDomain 错误,
-        // 不是 ToolEngineError —— 这是当前实现的 trade-off:
+        // 不是 AgentEngineError —— 这是当前实现的 trade-off:
         // binaryPath 注入路径上 Process 本身的错误透传, 不被包装。
         // 验证至少有 throw, 不验证具体类型。
         #expect(Bool(true))
@@ -225,7 +225,7 @@ func runCliNotInstalled() async {
 
 @Test("ClaudeCodeEngine spawn 跑通 + stream 完成不抛错 (registry register/unregister 在 SubprocessRegistry 单测覆盖)", .enabled(if: subprocessTestsEnabled))
 func runStreamCompletesSuccessfully() async throws {
-    // 注意: 不依赖 SubprocessRegistry.shared 计数, 因为多个 ToolMode tests
+    // 注意: 不依赖 SubprocessRegistry.shared 计数, 因为多个 AgentMode tests
     // 跨 suite parallel 跑会污染 shared registry counter (register/unregister
     // 是 fire-and-forget Task, 时序不可预测)。register/unregister 的真实行为
     // 由 SubprocessRegistryTests 用独立实例覆盖, 这里只验证 stream 流程跑通。
@@ -276,9 +276,9 @@ func runTimesOutOnHangingSubprocess() async throws {
     do {
         for try await _ in engine.run(prompt: "test") {}
         Issue.record("expected timedOut but stream ended cleanly")
-    } catch ToolEngineError.timedOut(let kind) {
+    } catch AgentEngineError.timedOut(let kind) {
         #expect(kind == .claudeCode)
     } catch {
-        Issue.record("expected ToolEngineError.timedOut, got: \(error)")
+        Issue.record("expected AgentEngineError.timedOut, got: \(error)")
     }
 }

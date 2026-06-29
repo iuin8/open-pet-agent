@@ -1,5 +1,5 @@
 import Foundation
-import ToolMode
+import AgentMode
 
 /// OpenClaw 本地 AI gateway 探测 + daemon 自动拉起 + token/port 自动加载。
 ///

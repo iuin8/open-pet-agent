@@ -4,7 +4,7 @@ import Foundation
 //
 // 设计来源:[docs/skill-mcp-integration-roadmap.md] §自建 harness L1。与 `chat()`/
 // `streamChat()` 旧文本通道**并行**新增,绝不改旧签名;让 pet 的灵魂层(自带 key 直连
-// provider)也能调工具,而非只能走 `ToolMode` 子进程。两家 API(OpenAI tool_calls /
+// provider)也能调工具,而非只能走 `AgentMode` 子进程。两家 API(OpenAI tool_calls /
 // Anthropic tool_use)的差异关进各 Provider 内部映射,上层只见这套形象无关的统一类型。
 
 /// 任意 JSON 值的最小可编解码表示 —— 承载工具 schema(`LLMToolDef.parameters`)与

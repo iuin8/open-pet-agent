@@ -1,7 +1,7 @@
 import Foundation
 
 /// 设置面板 LLM provider picker 的一项 —— App 层从 `SoulBackendRegistry.all` 映射
-/// 注入(Shell 不依赖 App,故走注入,镜像 `availableToolEngines` / `availablePetPlugins`)。
+/// 注入(Shell 不依赖 App,故走注入,镜像 `availableAgentEngines` / `availablePetPlugins`)。
 /// 纯数据;`managed = true` 的后端(openclaw 本地网关)由 App 自动管理配置,picker
 /// 选中它时**隐藏**手填字段、改显示 `managedNote`。
 public struct SoulBackendOption: Identifiable, Sendable, Equatable {
@@ -28,7 +28,7 @@ public struct SoulBackendOption: Identifiable, Sendable, Equatable {
     }
 
     /// SwiftUI preview / 测试用兜底(不经 App 注入时);生产路径由 App 从
-    /// `SoulBackendRegistry.all` 注入,镜像 `availableToolEngines` 默认值的做法。
+    /// `SoulBackendRegistry.all` 注入,镜像 `availableAgentEngines` 默认值的做法。
     /// 三项与注册表 `all` 顺序一致(openAICompatible / anthropic / openclaw)。
     public static let defaults: [SoulBackendOption] = [
         SoulBackendOption(

@@ -8,7 +8,7 @@ import Rendering
 import RuntimeBridge
 import Shell
 import Shimeji
-import ToolMode
+import AgentMode
 import Weather
 
 final class FrameLoopHandle {
@@ -216,7 +216,8 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// N2.3: UserDefaults 控制 Claude Code 工具层开关。默认 `false` (实验
     /// 特性, 用户需显式打开)。开关 = true + CLI 已安装 时, prompt 走
     /// `ClaudeCodeEngine` 子进程而非 LLM HTTP。
-    public static let toolModeEnabledKey: String = "tool.mode.enabled"
+    /// **值保留 legacy `tool.mode.enabled`**(符号已改名 agentModeEnabledKey,key 串不改 → 零迁移)。
+    public static let agentModeEnabledKey: String = "tool.mode.enabled"
 
     /// Task E: 灵动岛切桌面 / overlay 显隐时是否要 fade 桌宠避免遮挡感
     /// 的闪烁。默认 true(开启)。当前由 settings 写入,实际"切桌面 fade"
@@ -225,14 +226,14 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
 
     /// N2.3: 工具层路由器。`applicationDidFinishLaunching` 按 UserDefaults
     /// 注册 / 不注册 engine —— UI 切换开关后调 `setEngine` 即时生效, 无需
-    /// 重启。Orchestrator 通过共享的 `ToolModeRouterHolder` 拿到引用,
+    /// 重启。Orchestrator 通过共享的 `AgentModeRouterHolder` 拿到引用,
     /// `replyStream` 优先路由到这里。
-    var toolModeRouter: ToolModeRouter?
+    var agentModeRouter: AgentModeRouter?
 
     /// N2.3: 由 `OpenPetAgentApp.launchReadyApp` 注入的 router holder。延迟到
     /// `applicationDidFinishLaunching` 才真正 `set(router)`, 因为那时才
     /// 知道 UserDefaults 里 toggle 的当前值 / engine kind。
-    let toolModeRouterHolder: ToolModeRouterHolder?
+    let agentModeRouterHolder: AgentModeRouterHolder?
 
     /// Phase 0: 天气数据层。`applicationDidFinishLaunching` 末段创建 +
     /// start Timer (15min refresh), onUpdate 闭包把 wind/temp 写进
@@ -485,7 +486,7 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         userDefaults: UserDefaults = .standard,
         llmProviderBox: LLMProviderBox = LLMProviderBox(),
         liveContextBox: LiveContextBox? = nil,
-        toolModeRouterHolder: ToolModeRouterHolder? = nil,
+        agentModeRouterHolder: AgentModeRouterHolder? = nil,
         startFrameLoop: @escaping StartFrameLoop = { tick in
             MinimalAppDelegate.makeDefaultFrameLoop(tick)
         },
@@ -527,7 +528,7 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         self.userDefaults = userDefaults
         self.llmProviderBox = llmProviderBox
         self.liveContextBox = liveContextBox
-        self.toolModeRouterHolder = toolModeRouterHolder
+        self.agentModeRouterHolder = agentModeRouterHolder
         self.showShellWindows = showShellWindows
         self.startFrameLoop = startFrameLoop
         self.waitForRuntimeFrame = waitForRuntimeFrame
@@ -717,7 +718,7 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         let screenFrame = setupOverlayRegistry()
 
         // N2.3 / N2.4 — Tool mode router (UserDefaults-driven engine).
-        setupToolModeRouter()
+        setupAgentModeRouter()
 
         // Task B — OpenClaw local gateway probe + auto-launch (best-effort).
         setupOpenClawBootstrap()

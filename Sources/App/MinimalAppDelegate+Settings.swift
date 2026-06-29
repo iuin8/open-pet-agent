@@ -7,7 +7,7 @@ import Weather
 import Rendering
 import RuntimeBridge
 import Shell
-import ToolMode
+import AgentMode
 
 // MARK: - Settings window
 
@@ -38,14 +38,14 @@ extension MinimalAppDelegate {
         let notchAvailable = DynamicIslandController.mainScreenHasNotch()
 
         // N2.3: 工具模式 toggle 当前值 (默认 false, 实验特性)。
-        let toolModeEnabled = userDefaults.bool(forKey: Self.toolModeEnabledKey)
+        let agentModeEnabled = userDefaults.bool(forKey: Self.agentModeEnabledKey)
 
         // Task E: 收集 settings 面板需要的额外参数 —— tool engine kind /
         // OpenClaw 状态 / OpenClaw toggles / 关于版本号。
-        // picker 当前选中值走 `ToolEngineRegistry.resolve`(单一事实源):UD 缺失/
-        // 存了未知值 → 归一到 claudeCode,与 `applySelectedToolEngine` 的 engine
+        // picker 当前选中值走 `AgentEngineRegistry.resolve`(单一事实源):UD 缺失/
+        // 存了未知值 → 归一到 claudeCode,与 `applySelectedAgentEngine` 的 engine
         // 解析一致,避免 picker 回显一个 registry 里不存在的 stale id。
-        let currentToolEngineKindRaw = ToolEngineRegistry.resolve(from: userDefaults).id
+        let currentAgentEngineKindRaw = AgentEngineRegistry.resolve(from: userDefaults).id
         let openClawAutoStart =
             (userDefaults.object(forKey: OpenClawGatewayManager.autoStartKey) as? Bool) ?? true
         let openClawAllowEndpointEnable =
@@ -71,7 +71,7 @@ extension MinimalAppDelegate {
             existingBaseURL: existingBaseURL,
             existingModel: existingModel,
             // provider picker 列表从 `SoulBackendRegistry.all` 动态派生(不写死二元;
-            // Shell 不依赖 App,故由 App 注入,镜像 availableToolEngines / availablePetPlugins)。
+            // Shell 不依赖 App,故由 App 注入,镜像 availableAgentEngines / availablePetPlugins)。
             availableSoulBackends: SoulBackendRegistry.all.map(\.settingsOption),
             availablePetPlugins: availablePlugins,
             currentPetPluginID: currentPluginID,
@@ -79,12 +79,12 @@ extension MinimalAppDelegate {
             activeDecorativePetIDs: Set(wantedDecorativePetIDs()),
             islandEnabled: islandEnabled,
             notchAvailable: notchAvailable,
-            toolModeEnabled: toolModeEnabled,
-            currentToolEngineKind: currentToolEngineKindRaw,
-            // engine picker 列表从 `ToolEngineRegistry.all` 动态派生(不写死;
-            // Shell 不依赖 ToolMode,故由 App 注入,镜像 availablePetPlugins)。
-            availableToolEngines: ToolEngineRegistry.all.map { (id: $0.id, displayName: $0.displayName) },
-            toolEngineCLIPath: nil,  // 异步在 controller.show() 后探测注入
+            agentModeEnabled: agentModeEnabled,
+            currentAgentEngineKind: currentAgentEngineKindRaw,
+            // engine picker 列表从 `AgentEngineRegistry.all` 动态派生(不写死;
+            // Shell 不依赖 AgentMode,故由 App 注入,镜像 availablePetPlugins)。
+            availableAgentEngines: AgentEngineRegistry.all.map { (id: $0.id, displayName: $0.displayName) },
+            agentEngineCLIPath: nil,  // 异步在 controller.show() 后探测注入
             openClawStatusDescription: "⏳ 正在检测…",
             openClawAutoStart: openClawAutoStart,
             openClawAllowEndpointEnable: openClawAllowEndpointEnable,
@@ -118,15 +118,15 @@ extension MinimalAppDelegate {
             }
             // CLI 路径探测 —— 跟 router 启动时同款 CLIAvailability 流程,
             // 让用户能在 UI 上看到当前 engine binary 是否真的能解析到。
-            // 选 engine + binary 名都走 `ToolEngineRegistry`(单一事实源,不再
+            // 选 engine + binary 名都走 `AgentEngineRegistry`(单一事实源,不再
             // 写死 enum 分支);UD 没设 / 值不识别 → fallback claudeCode。
-            let entry = ToolEngineRegistry.resolve(from: userDefaults)
+            let entry = AgentEngineRegistry.resolve(from: userDefaults)
             let cli = CLIAvailability()
             let augmentedPath = CLIProcessEnvironment.augmented()["PATH"] ?? ""
             let paths = augmentedPath.split(separator: ":").map(String.init)
             let resolved = await cli.locate(binary: entry.binaryName, searchPaths: paths)
             await MainActor.run {
-                controller?.updateToolEngineCLIPath(resolved)
+                controller?.updateAgentEngineCLIPath(resolved)
             }
         }
 
@@ -214,7 +214,7 @@ extension MinimalAppDelegate {
         }
 
         // N2.3 / N2.4: 切换工具模式 —— 写 UserDefaults + 即时调
-        // `ToolModeRouter.setEngine` 注册 / 注销 engine, 用户无需重启。
+        // `AgentModeRouter.setEngine` 注册 / 注销 engine, 用户无需重启。
         // - enabled=true → 按 `tool.engine.kind` 注册对应 engine
         // - enabled=false → setEngine(nil) 清空, prompt 回退 LLM 路径
         // router 始终存在 (`didFinishLaunching` 总会创建一个); 这里不需要
@@ -222,29 +222,29 @@ extension MinimalAppDelegate {
         //
         // N2.4 完整 GUI engine 选择 dropdown 留下一阶段做, 当前用户通过
         // 手动写 UserDefaults["tool.engine.kind"] = "codex" 切到 Codex。
-        controller.onSaveToolModeEnabled = { [weak self] enabled in
+        controller.onSaveAgentModeEnabled = { [weak self] enabled in
             guard let self else { return }
-            self.userDefaults.set(enabled, forKey: Self.toolModeEnabledKey)
+            self.userDefaults.set(enabled, forKey: Self.agentModeEnabledKey)
             if enabled {
-                Self.applySelectedToolEngine(
-                    to: self.toolModeRouter,
+                Self.applySelectedAgentEngine(
+                    to: self.agentModeRouter,
                     defaults: self.userDefaults
                 )
             } else {
                 let none: ClaudeCodeEngine? = nil
-                self.toolModeRouter?.setEngine(none)
+                self.agentModeRouter?.setEngine(none)
             }
         }
 
         // Task E: 工具 engine kind picker callback —— 写 UserDefaults。
         // 若当前 Tool Mode toggle 已开启, 立即让 router 切到新 engine
-        // (applySelectedToolEngine 会重新读 UserDefaults 选 engine)。
-        controller.onSaveToolEngineKind = { [weak self] kindRaw in
+        // (applySelectedAgentEngine 会重新读 UserDefaults 选 engine)。
+        controller.onSaveAgentEngineKind = { [weak self] kindRaw in
             guard let self else { return }
-            self.userDefaults.set(kindRaw, forKey: ToolEngineKind.userDefaultsKey)
-            if self.userDefaults.bool(forKey: Self.toolModeEnabledKey) {
-                Self.applySelectedToolEngine(
-                    to: self.toolModeRouter,
+            self.userDefaults.set(kindRaw, forKey: AgentEngineKind.userDefaultsKey)
+            if self.userDefaults.bool(forKey: Self.agentModeEnabledKey) {
+                Self.applySelectedAgentEngine(
+                    to: self.agentModeRouter,
                     defaults: self.userDefaults
                 )
             }

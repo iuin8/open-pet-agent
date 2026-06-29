@@ -1,12 +1,12 @@
 import Foundation
 import Testing
-import ToolMode
+import AgentMode
 @testable import Orchestrator
 
 // MARK: - CompanionOrchestrator + Tool Mode 集成测试
 //
 // 验证 `replyStream(for:)` 在 Tool Mode 开关切换时正确路由 ——
-// 工具层启用 → 走 `ToolModeBox.runTool` 子进程路径 (绕过 LLM)。
+// 工具层启用 → 走 `AgentModeBox.runAgent` 子进程路径 (绕过 LLM)。
 // 工具层禁用 → 走 LLM `provider.streamChat` 灵魂层路径。
 // 关键点: 工具层路径不能跑 SSE idle watchdog (子进程时长跟 SSE idle 无关)。
 
@@ -54,18 +54,18 @@ private final class TrackingStreamingProvider: LLMProvider, Sendable {
 }
 
 @Suite("CompanionOrchestrator Tool Mode 路由")
-struct CompanionOrchestratorToolModeTests {
+struct CompanionOrchestratorAgentModeTests {
 
-    @Test("工具层启用 + engine 注册 → replyStream 走 ToolEngine, 不调 LLM provider")
+    @Test("工具层启用 + engine 注册 → replyStream 走 AgentEngine, 不调 LLM provider")
     @MainActor
-    func toolModeEnabledRoutesToToolEngine() async throws {
-        let router = ToolModeRouter()
+    func agentModeEnabledRoutesToAgentEngine() async throws {
+        let router = AgentModeRouter()
         router.setEngine(StubClaudeCodeEngine())
-        let box = ToolModeBox { router }
+        let box = AgentModeBox { router }
         let llm = TrackingStreamingProvider()
         let orchestrator = CompanionOrchestrator(
             llmProvider: llm,
-            toolModeBox: box
+            agentModeBox: box
         )
 
         var collected = ""
@@ -82,14 +82,14 @@ struct CompanionOrchestratorToolModeTests {
 
     @Test("工具层禁用 → replyStream 走 LLM provider 灵魂层 (现有行为不破)")
     @MainActor
-    func toolModeDisabledRoutesToLLMProvider() async throws {
-        let router = ToolModeRouter()
+    func agentModeDisabledRoutesToLLMProvider() async throws {
+        let router = AgentModeRouter()
         // 故意不 setEngine, router 存在但 engine=nil
-        let box = ToolModeBox { router }
+        let box = AgentModeBox { router }
         let llm = TrackingStreamingProvider()
         let orchestrator = CompanionOrchestrator(
             llmProvider: llm,
-            toolModeBox: box
+            agentModeBox: box
         )
 
         var collected = ""
@@ -103,13 +103,13 @@ struct CompanionOrchestratorToolModeTests {
 
     @Test("工具层启用时 user + assistant 都入 conversation store")
     @MainActor
-    func toolModeRecordsUserAndAssistantInStore() async throws {
-        let router = ToolModeRouter()
+    func agentModeRecordsUserAndAssistantInStore() async throws {
+        let router = AgentModeRouter()
         router.setEngine(StubClaudeCodeEngine())
-        let box = ToolModeBox { router }
+        let box = AgentModeBox { router }
         let store = ConversationStore()
         let orchestrator = CompanionOrchestrator(
-            toolModeBox: box,
+            agentModeBox: box,
             conversationStore: store
         )
 
@@ -129,7 +129,7 @@ struct CompanionOrchestratorToolModeTests {
 
     @Test("默认 init (无 box / 无 provider) → 显示 providerNotConfigured 提示, 不 crash")
     func defaultInitFallsBackToProviderNotConfiguredMessage() async throws {
-        let orchestrator = CompanionOrchestrator()  // 默认空 toolModeBox + 无 provider
+        let orchestrator = CompanionOrchestrator()  // 默认空 agentModeBox + 无 provider
 
         var collected = ""
         for try await delta in orchestrator.replyStream(for: "anything") {

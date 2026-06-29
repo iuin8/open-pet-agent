@@ -4,7 +4,7 @@ import Foundation
 /// 收口,避免孤儿进程在后台继续烧 token。
 ///
 /// 设计:
-/// - actor 单例 `shared` — 全进程一份,跨 `ToolEngine` 实例共享
+/// - actor 单例 `shared` — 全进程一份,跨 `AgentEngine` 实例共享
 /// - `register(_:)` 在 `Process.run()` 成功后立即调,挂到 active set
 /// - `unregister(_:)` 在 `waitUntilExit` 之后(或子进程结束兜底处)调,从 set 移除
 /// - `terminateAll()` app 退出时调,遍历 active set 发 SIGTERM

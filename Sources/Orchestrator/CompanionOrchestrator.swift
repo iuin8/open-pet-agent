@@ -1,7 +1,7 @@
 import Context
 import Foundation
 import RuntimeBridge
-import ToolMode
+import AgentMode
 
 public struct CompanionBootstrap: Sendable, Equatable {
     public let capabilities: RuntimeCapabilities
@@ -18,10 +18,10 @@ public struct CompanionOrchestrator: Sendable {
     private let presentationMapper: PresentationMapper
     private let behaviorEngine: BehaviorEngine
     public let llmProviderBox: LLMProviderBox
-    /// N2.3 — Tool Mode 路由器桥。默认空 box (`isToolModeEnabled = false`)
+    /// N2.3 — Tool Mode 路由器桥。默认空 box (`isAgentModeEnabled = false`)
     /// 完全不影响现有 LLM 灵魂层路径; `MinimalAppDelegate` 启动期把真实
     /// box 注入进来后, `replyStream` 优先走工具层子进程。
-    public let toolModeBox: ToolModeBox
+    public let agentModeBox: AgentModeBox
     /// Conversation history store. Nil → stateless (echo) path; backward-compat.
     private let conversationStore: ConversationStore?
     /// Hot-injection box for desktop snapshot and pet context providers.
@@ -37,7 +37,7 @@ public struct CompanionOrchestrator: Sendable {
         presentationMapper: PresentationMapper = PresentationMapper(),
         behaviorEngine: BehaviorEngine = BehaviorEngine(),
         llmProvider: (any LLMProvider)? = nil,
-        toolModeBox: ToolModeBox = ToolModeBox(),
+        agentModeBox: AgentModeBox = AgentModeBox(),
         conversationStore: ConversationStore? = nil,
         liveContextBox: LiveContextBox? = nil,
         modelName: String? = nil
@@ -47,7 +47,7 @@ public struct CompanionOrchestrator: Sendable {
             presentationMapper: presentationMapper,
             behaviorEngine: behaviorEngine,
             llmProviderBox: LLMProviderBox(llmProvider),
-            toolModeBox: toolModeBox,
+            agentModeBox: agentModeBox,
             conversationStore: conversationStore,
             liveContextBox: liveContextBox,
             modelName: modelName
@@ -59,7 +59,7 @@ public struct CompanionOrchestrator: Sendable {
         presentationMapper: PresentationMapper = PresentationMapper(),
         behaviorEngine: BehaviorEngine = BehaviorEngine(),
         llmProviderBox: LLMProviderBox,
-        toolModeBox: ToolModeBox = ToolModeBox(),
+        agentModeBox: AgentModeBox = AgentModeBox(),
         conversationStore: ConversationStore? = nil,
         liveContextBox: LiveContextBox? = nil,
         modelName: String? = nil
@@ -68,7 +68,7 @@ public struct CompanionOrchestrator: Sendable {
         self.presentationMapper = presentationMapper
         self.behaviorEngine = behaviorEngine
         self.llmProviderBox = llmProviderBox
-        self.toolModeBox = toolModeBox
+        self.agentModeBox = agentModeBox
         self.conversationStore = conversationStore
         self.liveContextBox = liveContextBox
         self.modelName = modelName
@@ -157,9 +157,9 @@ public struct CompanionOrchestrator: Sendable {
         AsyncThrowingStream { continuation in
             // N2.3 + C1 修复:把"走工具层 vs 灵魂层"的判断放在最外层 Task,
             // **再决定是否启动 watchdog**。之前 watchdog 跟 streamTask 并发
-            // 启动 + 用 actor 协调 isToolModePath 旗标的方式有 race —
+            // 启动 + 用 actor 协调 isAgentModePath 旗标的方式有 race —
             // watchdog 醒来时(1s 后)streamTask 可能还卡在 MainActor hop 没
-            // 来得及 markToolMode → idleSeconds > timeout(测试用 1s)→
+            // 来得及 markAgentMode → idleSeconds > timeout(测试用 1s)→
             // 误抛 URLError(.timedOut)。重构为线性 if/else 两条路径各自独立
             // 启停 watchdog,彻底消除 race。
             let timeout = Self.streamIdleTimeoutSeconds
@@ -167,12 +167,12 @@ public struct CompanionOrchestrator: Sendable {
             let work = Task {
                 // 工具层启用 + engine 注册 → 整条 prompt 走子进程, 跳过 LLM,
                 // **完全不启动 watchdog**(子进程时长无关 SSE idle 语义)。
-                if await toolModeBox.isToolModeEnabled {
+                if await agentModeBox.isAgentModeEnabled {
                     let userMessage = ConversationMessage(role: .user, content: message)
                     await conversationStore?.append(userMessage)
                     var accumulated = ""
                     do {
-                        for try await delta in toolModeBox.runTool(prompt: message) {
+                        for try await delta in agentModeBox.runAgent(prompt: message) {
                             accumulated += delta
                             continuation.yield(delta)
                         }
@@ -252,7 +252,7 @@ public struct CompanionOrchestrator: Sendable {
     ///     pet 头顶 bonded session 历史
     ///   - **不发 ChatBehaviorStateMachine 事件** — pet 在用户阅读浮窗时
     ///     不应触发 thinking / talking 动画
-    ///   - **不走 toolMode 路径** — QuickAsk 定位是"快速问 LLM",不为工具
+    ///   - **不走 agentMode 路径** — QuickAsk 定位是"快速问 LLM",不为工具
     ///     调用场景设计
     ///   - 仍带 idle watchdog,SSE 卡死时及时 surface 错误
     ///   - 仍带 desktop context system prompt(让 AI 知道前台 app / 时间)

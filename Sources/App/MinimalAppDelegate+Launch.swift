@@ -7,7 +7,7 @@ import Rendering
 import RuntimeBridge
 import Shell
 import Shimeji
-import ToolMode
+import AgentMode
 import Weather
 import simd
 #if canImport(Live2D)
@@ -89,16 +89,16 @@ extension MinimalAppDelegate {
     /// 默认 false (实验特性); 开关打开 → 按 `tool.engine.kind` 注册对应
     /// engine (ClaudeCodeEngine / CodexEngine), 关闭 → router 存在但
     /// `currentEngine == nil` (此时 Orchestrator 的 `replyStream` 走
-    /// 灵魂层)。注入到共享 holder, Orchestrator 就能通过 `ToolModeBox`
+    /// 灵魂层)。注入到共享 holder, Orchestrator 就能通过 `AgentModeBox`
     /// 看到当前 engine 状态。
-    func setupToolModeRouter() {
-        let toolModeEnabled = userDefaults.bool(forKey: Self.toolModeEnabledKey)
-        let router = ToolModeRouter()
-        if toolModeEnabled {
-            Self.applySelectedToolEngine(to: router, defaults: userDefaults)
+    func setupAgentModeRouter() {
+        let agentModeEnabled = userDefaults.bool(forKey: Self.agentModeEnabledKey)
+        let router = AgentModeRouter()
+        if agentModeEnabled {
+            Self.applySelectedAgentEngine(to: router, defaults: userDefaults)
         }
-        self.toolModeRouter = router
-        toolModeRouterHolder?.set(router)
+        self.agentModeRouter = router
+        agentModeRouterHolder?.set(router)
     }
 
     /// Task B / P2 — OpenClaw 本地 gateway 探测 + 自动启动,作为**一等灵魂层

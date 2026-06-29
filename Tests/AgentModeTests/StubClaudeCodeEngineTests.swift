@@ -1,5 +1,5 @@
 import Testing
-@testable import ToolMode
+@testable import AgentMode
 
 @Test("StubClaudeCodeEngine.kind 是 claudeCode")
 func stubClaudeCodeEngineKindIsClaudeCode() {

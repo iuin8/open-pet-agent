@@ -2,7 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import Orchestrator
-import ToolMode
+import AgentMode
 
 private final class LaunchStateBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -56,29 +56,29 @@ private final class LiveContextBoxBox: @unchecked Sendable {
 }
 
 /// N2.3 — 工具层路由器的共享 holder。`MinimalAppDelegate` 在 `init` 时
-/// 创建 `ToolModeRouter` 并写入 holder; `ToolModeBox` 在 Orchestrator 那
+/// 创建 `AgentModeRouter` 并写入 holder; `AgentModeBox` 在 Orchestrator 那
 /// 边通过 `routerProvider` 闭包 (运行在 `@MainActor`) 把 router 拉出来读。
 /// 这样既解决"orchestrator 比 delegate 先创建"的鸡生蛋, 也保证 router
 /// 切 engine 后 (`router.setEngine(...)`) 下一次 `replyStream` 立刻看见
 /// 新状态, 无需重建 Orchestrator。
-public final class ToolModeRouterHolder: @unchecked Sendable {
+public final class AgentModeRouterHolder: @unchecked Sendable {
     private let lock = NSLock()
-    private var router: ToolModeRouter?
+    private var router: AgentModeRouter?
 
     public init() {}
 
     /// 由 `MinimalAppDelegate.init` 注入 router 引用。仅 `@MainActor` 调用
     /// (router 自身是 MainActor 隔离类型), 锁只是防止 read 越过 write barrier。
     @MainActor
-    public func set(_ value: ToolModeRouter?) {
+    public func set(_ value: AgentModeRouter?) {
         lock.lock()
         defer { lock.unlock() }
         router = value
     }
 
-    /// 由 `ToolModeBox.routerProvider` 在 `@MainActor` 闭包里调用。
+    /// 由 `AgentModeBox.routerProvider` 在 `@MainActor` 闭包里调用。
     @MainActor
-    public func get() -> ToolModeRouter? {
+    public func get() -> AgentModeRouter? {
         lock.lock()
         defer { lock.unlock() }
         return router
@@ -108,11 +108,11 @@ enum OpenPetAgentApp {
         let stateBox = LaunchStateBox()
         let llmBoxBox = LLMBoxBox()
         let liveContextBoxBox = LiveContextBoxBox()
-        // N2.3 — 工具层路由 holder。bootstrap 时构造空 ToolModeBox 闭包指
+        // N2.3 — 工具层路由 holder。bootstrap 时构造空 AgentModeBox 闭包指
         // 向它; `MinimalAppDelegate.init` 后续注入实际 router 引用,
         // Orchestrator 的 `replyStream` 通过 holder 拿到当前 engine。
-        let toolModeRouterHolder = ToolModeRouterHolder()
-        let toolModeBox = ToolModeBox { toolModeRouterHolder.get() }
+        let agentModeRouterHolder = AgentModeRouterHolder()
+        let agentModeBox = AgentModeBox { agentModeRouterHolder.get() }
         let semaphore = DispatchSemaphore(value: 0)
         Task.detached {
             let result: LaunchState
@@ -121,7 +121,7 @@ enum OpenPetAgentApp {
                     userDefaults: userDefaults,
                     snapshot: initialSnapshot,
                     snapshotSampler: sampler,
-                    toolModeBox: toolModeBox
+                    agentModeBox: agentModeBox
                 )
                 llmBoxBox.set(bootstrap.llmProviderBox)
                 liveContextBoxBox.set(bootstrap.liveContextBox)
@@ -145,7 +145,7 @@ enum OpenPetAgentApp {
                     userDefaults: userDefaults,
                     llmProviderBox: resolvedLLMBox,
                     liveContextBox: resolvedLiveContextBox,
-                    toolModeRouterHolder: toolModeRouterHolder
+                    agentModeRouterHolder: agentModeRouterHolder
                 )
             },
             writeToStandardError: { FileHandle.standardError.write($0) },
@@ -193,7 +193,7 @@ enum OpenPetAgentApp {
         userDefaults: UserDefaults = .standard,
         llmProviderBox: LLMProviderBox = LLMProviderBox(),
         liveContextBox: LiveContextBox? = nil,
-        toolModeRouterHolder: ToolModeRouterHolder? = nil,
+        agentModeRouterHolder: AgentModeRouterHolder? = nil,
         setActivationPolicy: @MainActor (NSApplication.ActivationPolicy) -> Void = { policy in
             NSApplication.shared.setActivationPolicy(policy)
         },
@@ -217,7 +217,7 @@ enum OpenPetAgentApp {
                 userDefaults: userDefaults,
                 llmProviderBox: llmProviderBox,
                 liveContextBox: liveContextBox,
-                toolModeRouterHolder: toolModeRouterHolder
+                agentModeRouterHolder: agentModeRouterHolder
             )
         }
         let delegate = resolvedMakeDelegate(rootSystem)

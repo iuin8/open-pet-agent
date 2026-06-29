@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ToolMode
+@testable import AgentMode
 
 // MARK: - SubprocessRegistry 单元测试
 //

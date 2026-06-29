@@ -80,11 +80,11 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - 工具模式
 
-    @Published var toolModeEnabled: Bool
+    @Published var agentModeEnabled: Bool
     /// raw string: "claudeCode" / "codex" / "openCode"
-    @Published var toolEngineKind: String
+    @Published var agentEngineKind: String
     /// 由 controller 异步注入(`CLIAvailability.locate` 探测)。
-    @Published var toolEngineCLIPath: String?
+    @Published var agentEngineCLIPath: String?
 
     // MARK: - 系统
 
@@ -317,10 +317,10 @@ final class SettingsViewModel: ObservableObject {
     /// Codex 宠在线装时同时写一份到兼容目录(跨 Codex 工具共享)。改 → 写 PetLibrary(下次安装生效)。
     @Published var dualWriteCompat: Bool = PetLibrary.dualWriteCompatEnabled
 
-    /// Tool engine kind 列表 —— 由 App 层从 `ToolEngineRegistry.all` 注入
-    /// (Shell 不依赖 ToolMode,故走注入而非直接读注册表)。picker 下拉渲染 +
-    /// `selectToolEngineKind` 校验用;id 与 `ToolEngineKind` rawValue 对齐。
-    let toolEngineKinds: [(id: String, displayName: String)]
+    /// Tool engine kind 列表 —— 由 App 层从 `AgentEngineRegistry.all` 注入
+    /// (Shell 不依赖 AgentMode,故走注入而非直接读注册表)。picker 下拉渲染 +
+    /// `selectAgentEngineKind` 校验用;id 与 `AgentEngineKind` rawValue 对齐。
+    let agentEngineKinds: [(id: String, displayName: String)]
 
     // MARK: - 计算属性 — picker / placeholder 跟选中后端联动(不写死类型分支)
 
@@ -348,8 +348,8 @@ final class SettingsViewModel: ObservableObject {
         "留空使用所选 provider 的默认 model"
     }
 
-    var toolEngineCLIDisplay: String {
-        toolEngineCLIPath.map { "CLI: \($0)" } ?? "CLI: 未安装"
+    var agentEngineCLIDisplay: String {
+        agentEngineCLIPath.map { "CLI: \($0)" } ?? "CLI: 未安装"
     }
 
     var islandToggleTitle: String {
@@ -382,16 +382,16 @@ final class SettingsViewModel: ObservableObject {
         islandEnabled: Bool,
         notchAvailable: Bool,
         islandHidePetOnSwitch: Bool,
-        toolModeEnabled: Bool,
-        toolEngineKind: String,
+        agentModeEnabled: Bool,
+        agentEngineKind: String,
         // 默认 = 当前内置三 engine(preview / 测试用,不经 App 注入时);生产由
-        // App 从 `ToolEngineRegistry.all` 注入,见 SettingsWindowController。
-        availableToolEngines: [(id: String, displayName: String)] = [
+        // App 从 `AgentEngineRegistry.all` 注入,见 SettingsWindowController。
+        availableAgentEngines: [(id: String, displayName: String)] = [
             (id: "claudeCode", displayName: "Claude Code"),
             (id: "codex", displayName: "Codex"),
             (id: "openCode", displayName: "opencode")
         ],
-        toolEngineCLIPath: String?,
+        agentEngineCLIPath: String?,
         openClawStatusDescription: String,
         openClawAutoStart: Bool,
         openClawAllowEndpointEnable: Bool,
@@ -443,10 +443,10 @@ final class SettingsViewModel: ObservableObject {
         self.islandEnabled = notchAvailable ? islandEnabled : false
         self.notchAvailable = notchAvailable
         self.islandHidePetOnSwitch = islandHidePetOnSwitch
-        self.toolModeEnabled = toolModeEnabled
-        self.toolEngineKind = toolEngineKind
-        self.toolEngineKinds = availableToolEngines
-        self.toolEngineCLIPath = toolEngineCLIPath
+        self.agentModeEnabled = agentModeEnabled
+        self.agentEngineKind = agentEngineKind
+        self.agentEngineKinds = availableAgentEngines
+        self.agentEngineCLIPath = agentEngineCLIPath
         self.openClawStatusDescription = openClawStatusDescription
         self.openClawAutoStart = openClawAutoStart
         self.openClawAllowEndpointEnable = openClawAllowEndpointEnable
@@ -683,9 +683,9 @@ final class SettingsViewModel: ObservableObject {
     }
 
     /// 选 tool engine kind by raw — 找不到就忽略。
-    func selectToolEngineKind(_ raw: String) {
-        guard toolEngineKinds.contains(where: { $0.id == raw }) else { return }
-        toolEngineKind = raw
+    func selectAgentEngineKind(_ raw: String) {
+        guard agentEngineKinds.contains(where: { $0.id == raw }) else { return }
+        agentEngineKind = raw
     }
 
     /// 选城市 by id — 找不到就忽略。
@@ -727,8 +727,8 @@ final class SettingsViewModel: ObservableObject {
     var onSelectPet: (String) -> Void = { _ in }
     var onCommitIsland: (Bool) -> Void = { _ in }
     var onCommitIslandHidePet: (Bool) -> Void = { _ in }
-    var onCommitToolMode: (Bool) -> Void = { _ in }
-    var onCommitToolEngine: (String) -> Void = { _ in }
+    var onCommitAgentMode: (Bool) -> Void = { _ in }
+    var onCommitAgentEngine: (String) -> Void = { _ in }
     var onCommitOpenClawAutoStart: (Bool) -> Void = { _ in }
     var onCommitOpenClawAllowEndpoint: (Bool) -> Void = { _ in }
     /// LLM(provider/key/baseURL/model)提交 —— 文本框 onSubmit / 关窗时调。

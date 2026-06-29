@@ -38,7 +38,7 @@ import Foundation
 /// - 不做 session resume (HermesPet 每个对话绑定 thread_id,我们工具层一次
 ///   一次任务,resume 留 N3+ 多轮工具对话时再做)
 /// - 不广播 `HermesPetToolStarted/Ended` 通知(notification 是 UI 关注的事,
-///   ToolMode 层不管)
+///   AgentMode 层不管)
 /// - 不消费 codex 生成的图片(`.codex/generated_images` 监听)
 ///
 /// 并发模型:
@@ -46,8 +46,8 @@ import Foundation
 ///   `StreamState` 用 NSLock 串行化
 /// - `AsyncThrowingStream` 的 yield / finish 本身线程安全
 /// - 调用方取消 stream → `onTermination` 把子进程 SIGTERM 掉
-public struct CodexEngine: ToolEngine {
-    public static let kind: ToolEngineKind = .codex
+public struct CodexEngine: AgentEngine {
+    public static let kind: AgentEngineKind = .codex
 
     /// 可注入的 binary 路径(测试用 fixture 指向 stub shell script)。
     /// `nil` = 运行时走 `CLIAvailability.locate` 找 "codex"。
@@ -111,7 +111,7 @@ public struct CodexEngine: ToolEngine {
                         searchPaths: paths
                     ) else {
                         continuation.finish(
-                            throwing: ToolEngineError.cliNotInstalled(.codex)
+                            throwing: AgentEngineError.cliNotInstalled(.codex)
                         )
                         return
                     }
@@ -215,7 +215,7 @@ public struct CodexEngine: ToolEngine {
             if Task.isCancelled { return }
             if state.markFinishedIfNeeded() {
                 if process.isRunning { process.terminate() }
-                continuation.finish(throwing: ToolEngineError.timedOut(.codex))
+                continuation.finish(throwing: AgentEngineError.timedOut(.codex))
             }
         }
 
@@ -246,7 +246,7 @@ public struct CodexEngine: ToolEngine {
                 var errData = stderrBuffer.data
                 errData.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
                 let stderr = String(data: errData, encoding: .utf8) ?? ""
-                continuation.finish(throwing: ToolEngineError.subprocessFailed(
+                continuation.finish(throwing: AgentEngineError.subprocessFailed(
                     exitCode: proc.terminationStatus,
                     stderr: stderr
                 ))

@@ -27,7 +27,7 @@ struct SettingsRootView: View {
             case .backend:   return "AI 后端"
             case .pet:       return "桌宠"
             case .weather:   return "天气"
-            case .tool:      return "工具"
+            case .tool:      return "外部 Agent"
             case .proactive: return "主动协助"
             case .debug:     return "调试"
             case .system:    return "系统"
@@ -137,7 +137,7 @@ struct SettingsRootView: View {
                     case .backend:   SettingsBackendSection(viewModel: viewModel)
                     case .pet:       SettingsPetSection(viewModel: viewModel, showingLibrary: $showingLibrary)
                     case .weather:   SettingsWeatherSection(viewModel: viewModel)
-                    case .tool:      SettingsToolSection(viewModel: viewModel)
+                    case .tool:      SettingsAgentSection(viewModel: viewModel)
                     case .proactive: SettingsProactiveSection(viewModel: viewModel)
                     case .debug:     SettingsDebugSection(viewModel: viewModel)
                     case .system:    SettingsSystemSection(viewModel: viewModel)

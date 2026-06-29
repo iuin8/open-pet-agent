@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ToolMode
+@testable import AgentMode
 
 @Test("CLIProcessEnvironment.augmented 返回的 dict 包含 PATH key")
 func augmentedHasPathKey() {

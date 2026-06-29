@@ -8,7 +8,7 @@ extension CompanionOrchestrator {
     ///   - **不读 conversationStore**（无历史）
     ///   - **不调 liveContextBox.observe**（不侧写 lastNonSelfApplicationName，
     ///     不污染用户主动 chat 的「最近活跃应用」记忆）
-    ///   - **不发 ChatBehaviorStateMachine 事件**、**不走 toolMode**
+    ///   - **不发 ChatBehaviorStateMachine 事件**、**不走 agentMode**
     ///   - **不复用 chat 的 `buildSystemPrompt`**：那是助手 persona + 大段桌面上下文，
     ///     正是让模型把字数/格式要求当任务、用英文复述出来的根源（见 Image #9 反馈 +
     ///     docs/lessons-learned.md）。改用 `ProactivePromptComposer` 的专用 pet persona

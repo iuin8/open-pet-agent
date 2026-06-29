@@ -1,7 +1,7 @@
 import Foundation
 
 /// 真 `claude -p` 子进程封装 (N2.1)。替换 `StubClaudeCodeEngine` 用于工具层
-/// 实际任务执行。`StubClaudeCodeEngine` 保留作 ToolMode-disabled / 开发机
+/// 实际任务执行。`StubClaudeCodeEngine` 保留作 AgentMode-disabled / 开发机
 /// 没装 claude 时的 fallback。
 ///
 /// 流程:
@@ -19,15 +19,15 @@ import Foundation
 /// - 不做 `--add-dir` 自动路径推断
 /// - 不接 stderr 中间过程 (HermesPet 用 stderr 做 progress 提示, 我们只在异常时拼到错误)
 /// - 不做 process pool / queue (单次 task 单 process)
-/// - 不做工具调用 Notification 广播 (Notifications 是 UI 关注的事, ToolMode 层不管)
+/// - 不做工具调用 Notification 广播 (Notifications 是 UI 关注的事, AgentMode 层不管)
 ///
 /// 并发模型:
 /// - `Process.run()` 在调用 thread 启动子进程, stdout/stderr 由系统线程回调
 ///   `readabilityHandler` —— 解析状态必须线程安全, 用 `StreamState` (NSLock 保护)
 /// - `AsyncThrowingStream` 的 `continuation.yield` / `finish` 本身线程安全
 /// - 调用方取消 stream → `onTermination` 把子进程 SIGTERM 掉
-public struct ClaudeCodeEngine: ToolEngine {
-    public static let kind: ToolEngineKind = .claudeCode
+public struct ClaudeCodeEngine: AgentEngine {
+    public static let kind: AgentEngineKind = .claudeCode
 
     /// 可注入的 binary 路径(测试用 fixture 指向 stub shell script)。
     /// `nil` = 运行时走 `CLIAvailability.locate` 找 "claude"。
@@ -90,7 +90,7 @@ public struct ClaudeCodeEngine: ToolEngine {
                         searchPaths: paths
                     ) else {
                         continuation.finish(
-                            throwing: ToolEngineError.cliNotInstalled(.claudeCode)
+                            throwing: AgentEngineError.cliNotInstalled(.claudeCode)
                         )
                         return
                     }
@@ -184,7 +184,7 @@ public struct ClaudeCodeEngine: ToolEngine {
             if Task.isCancelled { return }
             if state.markFinishedIfNeeded() {
                 if process.isRunning { process.terminate() }
-                continuation.finish(throwing: ToolEngineError.timedOut(.claudeCode))
+                continuation.finish(throwing: AgentEngineError.timedOut(.claudeCode))
             }
         }
 
@@ -219,7 +219,7 @@ public struct ClaudeCodeEngine: ToolEngine {
                 var errData = stderrBuffer.data
                 errData.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
                 let stderr = String(data: errData, encoding: .utf8) ?? ""
-                continuation.finish(throwing: ToolEngineError.subprocessFailed(
+                continuation.finish(throwing: AgentEngineError.subprocessFailed(
                     exitCode: proc.terminationStatus,
                     stderr: stderr
                 ))
@@ -417,7 +417,7 @@ private final class StreamState: @unchecked Sendable {
         case .some(.success):
             finishSuccess()
         case .some(.failure(let msg)):
-            finishWithError(ToolEngineError.subprocessFailed(exitCode: 0, stderr: msg))
+            finishWithError(AgentEngineError.subprocessFailed(exitCode: 0, stderr: msg))
         case .none:
             break
         }

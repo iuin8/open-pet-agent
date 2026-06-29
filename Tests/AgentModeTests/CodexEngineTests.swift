@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import ToolMode
+@testable import AgentMode
 
 // MARK: - 测试辅助
 
@@ -207,11 +207,11 @@ func codexRunFailedExitThrowsSubprocessFailed() async throws {
     do {
         for try await _ in engine.run(prompt: "test") {}
         Issue.record("expected subprocessFailed but stream ended cleanly")
-    } catch let ToolEngineError.subprocessFailed(code, stderr) {
+    } catch let AgentEngineError.subprocessFailed(code, stderr) {
         #expect(code == 7)
         #expect(stderr.contains("codex fatal stderr"))
     } catch {
-        Issue.record("expected ToolEngineError.subprocessFailed, got: \(error)")
+        Issue.record("expected AgentEngineError.subprocessFailed, got: \(error)")
     }
 }
 
@@ -320,9 +320,9 @@ func codexRunTimesOutOnHangingSubprocess() async throws {
     do {
         for try await _ in engine.run(prompt: "test") {}
         Issue.record("expected timedOut but stream ended cleanly")
-    } catch ToolEngineError.timedOut(let kind) {
+    } catch AgentEngineError.timedOut(let kind) {
         #expect(kind == .codex)
     } catch {
-        Issue.record("expected ToolEngineError.timedOut, got: \(error)")
+        Issue.record("expected AgentEngineError.timedOut, got: \(error)")
     }
 }

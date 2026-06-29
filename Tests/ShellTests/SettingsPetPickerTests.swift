@@ -20,7 +20,7 @@ struct SettingsPetPickerTests {
             selectedProviderIndex: 0, apiKey: "", baseURL: "", model: "",
             availablePetPlugins: entries, selectedPetPluginID: selected,
             islandEnabled: false, notchAvailable: false, islandHidePetOnSwitch: false,
-            toolModeEnabled: false, toolEngineKind: "claudeCode", toolEngineCLIPath: nil,
+            agentModeEnabled: false, agentEngineKind: "claudeCode", agentEngineCLIPath: nil,
             openClawStatusDescription: "", openClawAutoStart: false, openClawAllowEndpointEnable: false,
             aboutVersion: "test")
     }

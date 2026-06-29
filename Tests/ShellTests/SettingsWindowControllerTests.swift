@@ -526,26 +526,26 @@ func islandToggleSaveFiresWithFalse() {
 
 @Test("Tool Mode toggle: 默认 init → 关闭")
 @MainActor
-func toolModeToggleDefaultOff() {
+func agentModeToggleDefaultOff() {
     let controller = SettingsWindowController()
-    #expect(controller.isToolModeToggleOn == false)
+    #expect(controller.isAgentModeToggleOn == false)
 }
 
-@Test("Tool Mode toggle: toolModeEnabled=true 初始化 → toggle 勾选")
+@Test("Tool Mode toggle: agentModeEnabled=true 初始化 → toggle 勾选")
 @MainActor
-func toolModeToggleInitWithTrueIsOn() {
-    let controller = SettingsWindowController(toolModeEnabled: true)
-    #expect(controller.isToolModeToggleOn == true)
+func agentModeToggleInitWithTrueIsOn() {
+    let controller = SettingsWindowController(agentModeEnabled: true)
+    #expect(controller.isAgentModeToggleOn == true)
 }
 
-@Test("Tool Mode toggle: simulateToggleToolMode(true) + Save → onSaveToolModeEnabled(true) 触发")
+@Test("Tool Mode toggle: simulateToggleAgentMode(true) + Save → onSaveAgentModeEnabled(true) 触发")
 @MainActor
-func toolModeToggleSaveFiresWithTrue() {
+func agentModeToggleSaveFiresWithTrue() {
     var captured: Bool?
-    let controller = SettingsWindowController(toolModeEnabled: false)
-    controller.onSaveToolModeEnabled = { enabled in captured = enabled }
+    let controller = SettingsWindowController(agentModeEnabled: false)
+    controller.onSaveAgentModeEnabled = { enabled in captured = enabled }
 
-    controller.simulateToggleToolMode(true)
+    controller.simulateToggleAgentMode(true)
     // 走 island toggle 同款 "无 LLM 输入" save 路径 —— Tool Mode callback
     // 跟 LLM 配置完全独立, 即便没填 key 也应该触发。
     controller.simulateSave(apiKey: "")
@@ -553,14 +553,14 @@ func toolModeToggleSaveFiresWithTrue() {
     #expect(captured == true)
 }
 
-@Test("Tool Mode toggle: simulateToggleToolMode(false) + Save → onSaveToolModeEnabled(false) 触发")
+@Test("Tool Mode toggle: simulateToggleAgentMode(false) + Save → onSaveAgentModeEnabled(false) 触发")
 @MainActor
-func toolModeToggleSaveFiresWithFalse() {
+func agentModeToggleSaveFiresWithFalse() {
     var captured: Bool?
-    let controller = SettingsWindowController(toolModeEnabled: true)
-    controller.onSaveToolModeEnabled = { enabled in captured = enabled }
+    let controller = SettingsWindowController(agentModeEnabled: true)
+    controller.onSaveAgentModeEnabled = { enabled in captured = enabled }
 
-    controller.simulateToggleToolMode(false)
+    controller.simulateToggleAgentMode(false)
     controller.simulateSave(apiKey: "")
 
     #expect(captured == false)
@@ -794,60 +794,60 @@ func islandHidePetOnSwitchSaveFiresFalse() {
 
 @Test("Task E: tool engine kind picker 默认值 'claudeCode'")
 @MainActor
-func toolEngineKindDefaultsToClaudeCode() {
+func agentEngineKindDefaultsToClaudeCode() {
     let controller = SettingsWindowController()
-    #expect(controller.selectedToolEngineKind == "claudeCode")
+    #expect(controller.selectedAgentEngineKind == "claudeCode")
 }
 
-@Test("Task E: currentToolEngineKind 'codex' 初始化 → picker 选中 codex")
+@Test("Task E: currentAgentEngineKind 'codex' 初始化 → picker 选中 codex")
 @MainActor
-func toolEngineKindInitCodex() {
-    let controller = SettingsWindowController(currentToolEngineKind: "codex")
-    #expect(controller.selectedToolEngineKind == "codex")
+func agentEngineKindInitCodex() {
+    let controller = SettingsWindowController(currentAgentEngineKind: "codex")
+    #expect(controller.selectedAgentEngineKind == "codex")
 }
 
-@Test("Task E: currentToolEngineKind 'openCode' 初始化 → picker 选中 openCode")
+@Test("Task E: currentAgentEngineKind 'openCode' 初始化 → picker 选中 openCode")
 @MainActor
-func toolEngineKindInitOpenCode() {
-    let controller = SettingsWindowController(currentToolEngineKind: "openCode")
-    #expect(controller.selectedToolEngineKind == "openCode")
+func agentEngineKindInitOpenCode() {
+    let controller = SettingsWindowController(currentAgentEngineKind: "openCode")
+    #expect(controller.selectedAgentEngineKind == "openCode")
 }
 
-@Test("Task E: simulateSelectToolEngineKind('codex') + Save → onSaveToolEngineKind fire 'codex'")
+@Test("Task E: simulateSelectAgentEngineKind('codex') + Save → onSaveAgentEngineKind fire 'codex'")
 @MainActor
-func toolEngineKindSaveFiresCodex() {
+func agentEngineKindSaveFiresCodex() {
     var captured: String?
-    let controller = SettingsWindowController(currentToolEngineKind: "claudeCode")
-    controller.onSaveToolEngineKind = { kind in captured = kind }
+    let controller = SettingsWindowController(currentAgentEngineKind: "claudeCode")
+    controller.onSaveAgentEngineKind = { kind in captured = kind }
 
-    controller.simulateSelectToolEngineKind("codex")
+    controller.simulateSelectAgentEngineKind("codex")
     controller.simulateSave(apiKey: "")
 
     #expect(captured == "codex")
 }
 
-@Test("Task E: simulateSelectToolEngineKind('unknown-xyz') 是 no-op,选择保留")
+@Test("Task E: simulateSelectAgentEngineKind('unknown-xyz') 是 no-op,选择保留")
 @MainActor
-func toolEngineKindUnknownIsNoOp() {
-    let controller = SettingsWindowController(currentToolEngineKind: "codex")
-    controller.simulateSelectToolEngineKind("does-not-exist-engine")
-    #expect(controller.selectedToolEngineKind == "codex")
+func agentEngineKindUnknownIsNoOp() {
+    let controller = SettingsWindowController(currentAgentEngineKind: "codex")
+    controller.simulateSelectAgentEngineKind("does-not-exist-engine")
+    #expect(controller.selectedAgentEngineKind == "codex")
 }
 
-@Test("Task E: updateToolEngineCLIPath(nil) → 显示 'CLI: 未安装'")
+@Test("Task E: updateAgentEngineCLIPath(nil) → 显示 'CLI: 未安装'")
 @MainActor
-func toolEngineCLIPathNilShowsUninstalled() {
-    let controller = SettingsWindowController(toolEngineCLIPath: nil)
-    controller.updateToolEngineCLIPath(nil)
-    #expect(controller.toolEngineCLIPathLabel.stringValue == "CLI: 未安装")
+func agentEngineCLIPathNilShowsUninstalled() {
+    let controller = SettingsWindowController(agentEngineCLIPath: nil)
+    controller.updateAgentEngineCLIPath(nil)
+    #expect(controller.agentEngineCLIPathLabel.stringValue == "CLI: 未安装")
 }
 
-@Test("Task E: updateToolEngineCLIPath('/usr/local/bin/claude') → 显示路径")
+@Test("Task E: updateAgentEngineCLIPath('/usr/local/bin/claude') → 显示路径")
 @MainActor
-func toolEngineCLIPathShowsActualPath() {
+func agentEngineCLIPathShowsActualPath() {
     let controller = SettingsWindowController()
-    controller.updateToolEngineCLIPath("/usr/local/bin/claude")
-    #expect(controller.toolEngineCLIPathLabel.stringValue == "CLI: /usr/local/bin/claude")
+    controller.updateAgentEngineCLIPath("/usr/local/bin/claude")
+    #expect(controller.agentEngineCLIPathLabel.stringValue == "CLI: /usr/local/bin/claude")
 }
 
 @Test("Task E: 关于版本号 init 默认 'OpenPetAgent (dev)'")
@@ -867,25 +867,25 @@ func aboutVersionInjectedText() {
 @Test("Task E: 单次 simulateSave(空 key) → 四个新 callback 同时 fire")
 @MainActor
 func taskENewCallbacksAllFireOnSingleSave() {
-    var toolEngineFired = false
+    var agentEngineFired = false
     var autoStartFired = false
     var allowEndpointFired = false
     var hideOnSwitchFired = false
 
     let controller = SettingsWindowController(
-        currentToolEngineKind: "codex",
+        currentAgentEngineKind: "codex",
         openClawAutoStart: false,
         openClawAllowEndpointEnable: false,
         islandHidePetOnSwitch: false
     )
-    controller.onSaveToolEngineKind = { _ in toolEngineFired = true }
+    controller.onSaveAgentEngineKind = { _ in agentEngineFired = true }
     controller.onSaveOpenClawAutoStart = { _ in autoStartFired = true }
     controller.onSaveOpenClawAllowEndpointEnable = { _ in allowEndpointFired = true }
     controller.onSaveIslandHidePetOnSwitch = { _ in hideOnSwitchFired = true }
 
     controller.simulateSave(apiKey: "")
 
-    #expect(toolEngineFired)
+    #expect(agentEngineFired)
     #expect(autoStartFired)
     #expect(allowEndpointFired)
     #expect(hideOnSwitchFired)
