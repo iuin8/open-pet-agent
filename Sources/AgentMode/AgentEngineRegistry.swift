@@ -84,18 +84,15 @@ public enum AgentEngineRegistry {
         makeEngine: { CodexEngine() }
     )
 
-    /// bundled opencode headless server —— DMG 内嵌,用户无需装 CLI。
-    ///
-    /// ⚠️ 真 `OpenCodeEngine` 子进程(bundled runtime)N3.x 接入;接入前
-    /// `makeEngine` 暂兜底到 `ClaudeCodeEngine`(与旧 `switch` 的
-    /// `case .openCode, .claudeCode` 行为一致,避免选中 opencode 进无 engine 废态)。
-    /// N3.x 把闭包换成 `OpenCodeEngine()` 即可,路由分支无须改。
+    /// opencode via **ACP**(Agent Client Protocol)—— 经 JSON-RPC/stdio 接 opencode 子进程,
+    /// 一套协议取代手写 stdout parser(ACP-0~1b)。需用户已装 opencode CLI(或未来 bundle 进 .app)。
+    /// 实测 opencode 1.2.27 真互操作(initialize/session/prompt/agent_message_chunk/end_turn 全通)。
     public static let openCode = AgentEngineEntry(
         id: AgentEngineKind.openCode.rawValue,
-        displayName: "opencode",
+        displayName: "opencode (ACP)",
         binaryName: "opencode",
         capabilities: [.bundleable],
-        makeEngine: { ClaudeCodeEngine() }
+        makeEngine: { ACPAgentEngine() }
     )
 
     /// 所有内置 engine。顺序即 picker 展示顺序;`all[0]`(claudeCode)是 fallback。

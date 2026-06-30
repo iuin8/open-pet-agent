@@ -66,8 +66,11 @@ public struct ACPAgentEngine: AgentEngine {
                     await client.setSessionId(sid)
 
                     let stop = try await client.prompt(text: prompt) { update in
-                        // agent_message_chunk 的 text delta → yield(对齐 AgentEngine delta 契约)
-                        if let text = update.textContent, !text.isEmpty {
+                        // 只 yield 最终回复(agent_message_chunk);agent_thought_chunk(思考流,
+                        // opencode/deepseek 扩展)不 yield,避免 pet 显示 "The user wants..." 碎片。
+                        // thought 展示留 ACP-2(单独通道)。
+                        if update.sessionUpdate == .agentMessageChunk,
+                           let text = update.textContent, !text.isEmpty {
                             continuation.yield(text)
                         }
                     }

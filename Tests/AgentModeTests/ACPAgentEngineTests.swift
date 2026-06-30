@@ -19,7 +19,15 @@ struct ACPAgentEngineTests {
         return .notification(method: "session/update", params: ACPJSON.parse(json))
     }
 
-    @Test("ACPAgentEngine.run: 流式 yield agent_message_chunk text delta 后 finish")
+    /// thought chunk(opencode/deepseek 扩展,思考流)—— engine 应**不** yield。
+    private func thoughtChunk(_ text: String) -> ACPInbound {
+        let json = """
+        {"sessionId":"s","update":{"sessionUpdate":"agent_thought_chunk","messageId":"m","content":{"type":"text","text":\(JSONEncoder().encodedString(text)!)}}}
+        """
+        return .notification(method: "session/update", params: ACPJSON.parse(json))
+    }
+
+    @Test("ACPAgentEngine.run: 只 yield agent_message_chunk(thought_chunk 不 yield,免 pet 显示思考碎片)")
     func runYieldsDeltas() async throws {
         let canned: [ACPInbound] = [
             resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
@@ -32,11 +40,12 @@ struct ACPAgentEngineTests {
             transportFactory: { mock }
         )
 
-        // prompt 阶段的 update + result 在 engine 发 session/prompt 后异步推
+        // prompt 阶段:thought(不应 yield)+ 两个 message chunk(应 yield)+ result
         Task {
             try? await Task.sleep(nanoseconds: 80_000_000)
-            mock.push(updateChunk("Hello "))
-            mock.push(updateChunk("world!"))
+            mock.push(thoughtChunk("The user wants a greeting"))
+            mock.push(updateChunk("你好"))
+            mock.push(updateChunk("！"))
             mock.push(resp(2, #"{"stopReason":"end_turn"}"#))
         }
 
@@ -48,7 +57,7 @@ struct ACPAgentEngineTests {
         } catch {
             Issue.record("engine.run 不应抛错: \(error)")
         }
-        #expect(deltas == ["Hello ", "world!"])
+        #expect(deltas == ["你好", "！"])
     }
 
     @Test("ACPAgentEngine: isAvailable=true 当 binaryPath 存在")

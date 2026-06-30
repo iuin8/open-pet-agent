@@ -141,6 +141,17 @@ func sessionUpdateUserMessageChunk() throws {
     #expect(update.textContent == "q")
 }
 
+@Test("ACPSessionUpdate: agent_thought_chunk(opencode 扩展)识别为 .agentThoughtChunk + text")
+func sessionUpdateThoughtChunk() throws {
+    let json = """
+    {"sessionId":"s","update":{"sessionUpdate":"agent_thought_chunk","messageId":"m","content":{"type":"text","text":"thinking..."}}}
+    """
+    let params = try #require(ACPJSON.parse(json))
+    let update = try #require(try ACPSessionUpdate.decode(from: params))
+    #expect(update.sessionUpdate == .agentThoughtChunk)
+    #expect(update.textContent == "thinking...")
+}
+
 @Test("ACPSessionUpdate: 未知 sessionUpdate 类型不崩(向前兼容, future-proof)")
 func sessionUpdateUnknownKind() throws {
     let json = """

@@ -51,7 +51,7 @@ struct AgentEngineRegistryTests {
         #expect(AgentEngineRegistry.claudeCode.binaryName == "claude")
         #expect(AgentEngineRegistry.codex.displayName == "Codex")
         #expect(AgentEngineRegistry.codex.binaryName == "codex")
-        #expect(AgentEngineRegistry.openCode.displayName == "opencode")
+        #expect(AgentEngineRegistry.openCode.displayName == "opencode (ACP)")
         #expect(AgentEngineRegistry.openCode.binaryName == "opencode")
     }
 
@@ -127,11 +127,12 @@ struct AgentEngineRegistryTests {
         #expect(type(of: engine).kind == .codex)
     }
 
-    @Test("makeEngine: openCode entry 当前兜底到 .claudeCode engine(N3.x 前)")
-    func makeEngineOpenCodeFallsBackToClaude() {
-        // bundled opencode runtime 接入前,opencode entry 暂用 ClaudeCodeEngine
-        // 兜底(与旧 switch 行为一致);N3.x 换成真 OpenCodeEngine 时改此断言。
+    @Test("makeEngine: openCode entry 造出 .openCode engine(ACP,ACP-1b 接线)")
+    func makeEngineOpenCodeIsACP() {
+        // ACP-1b:openCode entry 的 makeEngine 从兜底 ClaudeCodeEngine 换成真 ACPAgentEngine
+        // (经 ACP 协议接 opencode 子进程)。ACPAgentEngine.kind = .openCode。
         let engine = AgentEngineRegistry.openCode.makeEngine()
-        #expect(type(of: engine).kind == .claudeCode)
+        #expect(type(of: engine).kind == .openCode)
+        #expect(engine is ACPAgentEngine)
     }
 }

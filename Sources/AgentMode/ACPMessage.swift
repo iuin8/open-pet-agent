@@ -150,8 +150,11 @@ public enum ACPInbound: Decodable, Sendable {
 
 /// `session/update` notification 的 `update` discriminator 值(已知子集;未知不崩)。
 public enum ACPSessionUpdateKind: String, Sendable, Equatable {
+    /// 最终回复文本(给用户看的)—— engine yield 此 kind 的 text。
     case agentMessageChunk = "agent_message_chunk"
     case userMessageChunk = "user_message_chunk"
+    /// 思考流(opencode/deepseek 扩展,reasoning token)—— engine 不 yield(避免 pet 显示思考碎片)。
+    case agentThoughtChunk = "agent_thought_chunk"
 }
 
 /// `session/update` 的 update payload(从 notification params 解出)。
