@@ -2,6 +2,14 @@ import Testing
 import Foundation
 @testable import AgentMode
 
+/// 测试 fixture helper:把 Encodable 编码成 JSON 字符串(构造 ACP canned 消息用)。
+extension JSONEncoder {
+    func encodedString<T: Encodable>(_ value: T) -> String? {
+        guard let data = try? encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
 // ACPClient 流程测试:用 MockACPTransport 喂完整 initialize → session/new →
 // session/update ×N → session/prompt result 序列,验证 client 的 connect/createSession/
 // prompt 流程 + response 配对 + session/update 回调。
@@ -80,6 +88,41 @@ func clientResponseError() async throws {
         .response(id: 0, result: nil, error: .init(code: -32601, message: "nope", data: nil)),
     ])
     let client = ACPClient(transport: mock)
+    await #expect(throws: ACPClientError.self) {
+        _ = try await client.connect()
+    }
+}
+
+@Test("ACPClient: transport EOF → pending request 唤醒 throwing(免永挂,task6/7 健壮性)")
+func clientEOFWakesPending() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+        resp(1, #"{"sessionId":"sess_eof"}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    _ = try await client.connect()
+    _ = try await client.createSession(cwd: "/tmp", mcpServers: [])
+
+    // prompt 发出后不推 result,模拟 agent 进程死 → onEOF → client 唤醒 pending
+    Task {
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        mock.simulateEOF()
+    }
+
+    await #expect(throws: ACPClientError.self) {
+        _ = try await client.prompt(text: "hi") { _ in }
+    }
+}
+
+@Test("ACPClient: connect 阶段 EOF → initialize 唤醒 throwing(免初始化永挂)")
+func clientEOFDuringConnect() async throws {
+    // initialize 发出后不回 response,模拟 agent 立即崩 → onEOF
+    let mock = MockACPTransport([])
+    let client = ACPClient(transport: mock)
+    Task {
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        mock.simulateEOF()
+    }
     await #expect(throws: ACPClientError.self) {
         _ = try await client.connect()
     }

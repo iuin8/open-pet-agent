@@ -85,6 +85,13 @@ var targets: [Target] = [
             .linkedFramework("AppKit")
         ]
     ),
+    // ACP-1a 冒烟:用真 ACPStdioTransport spawn opencode acp,验证自写 client 真互操作。
+    // swift run ACPSmoke "你的 prompt"
+    .executableTarget(
+        name: "ACPSmoke",
+        dependencies: ["AgentMode"],
+        path: "Sources/ACPSmoke"
+    ),
     .testTarget(
         name: "AppTests",
         dependencies: ["App", .product(name: "Context", package: "Vivarium"), "Orchestrator"],

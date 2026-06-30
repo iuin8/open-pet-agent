@@ -1,26 +1,29 @@
 import Foundation
 
 // ACPClient:持 `ACPTransport`,实现 ACP client 角色 —— send request(配 id 等 response)、
-// 收 notification(session/update)分发到 handler、收 response(request→id 配对唤醒)。
+// 收 notification(session/update)分发到 handler、收 response(id→continuation 配对)。
 //
-// 高层流程(ACP v1):connect(initialize 协商)→ createSession(session/new 拿 sessionId)
-// → prompt(session/prompt,流式收 session/update,最后 result 带 stopReason)。
+// 高层流程(ACP v1):connect(initialize 协商)→ createSession(session/new)→
+// prompt(session/prompt,流式 session/update,最后 result 带 stopReason)。
 //
-// 并发:transport 的 onInbound 在后台线程回调;pending request 用 id→Continuation 字典
-// (actor 保护);notification 同步调 handler(上层保证 handler 线程安全 / 跨 actor hop)。
+// 健壮性(ACP-1a 审查 follow-up):
+// - `onEOF`(transport 的 EOF/进程死通知)→ 唤醒所有 pending continuation throwing,免永挂。
+// - per-request wall-clock timeout → agent 失联 response 不永挂。
+// - `withTaskCancellationHandler` → consumer 取消时唤醒 pending throwing(cancel 不响应是
+//   `withCheckedThrowingContinuation` 的固有限制,onCancel 兜底唤醒)。
 
 /// ACP client 错误。
 public enum ACPClientError: Error, Sendable, Equatable {
     case responseError(code: Int, message: String)
     case transport(String)
     case timeout
+    case cancelled
     case notConnected
 }
 
 /// `initialize` 协商结果。
 public struct ACPAgentCapabilities: Sendable, Equatable {
     public let protocolVersion: Int
-    /// agent 能力键集合(loadSession / sessionCapabilities.* / mcpCapabilities.* 等原始 key)。
     public let agentCapabilities: Set<String>
 
     public init(protocolVersion: Int, agentCapabilities: Set<String>) {
@@ -29,14 +32,18 @@ public struct ACPAgentCapabilities: Sendable, Equatable {
     }
 }
 
-/// ACP client:经 transport 跟 agent 子进程通信,封装 request/response 配对 + session/update 分发。
+/// ACP client:经 transport 跟 agent 子进程通信。
 public actor ACPClient {
     private let transport: any ACPTransport
     private var nextID: Int = 0
     private var pending: [Int: CheckedContinuation<ACPJSON, any Error>] = [:]
-    /// 当前 active prompt 的 update handler(单条 prompt 在飞;多 prompt 串行)。
     private var updateHandler: (@Sendable (ACPSessionUpdate) -> Void)?
     private var didConnect = false
+    private var eofHandled = false
+
+    /// 默认 per-request timeout(纳秒)。connect/createSession 用短,prompt 用长。
+    private static let shortTimeoutNs: UInt64 = 30_000_000_000   // 30s
+    private static let promptTimeoutNs: UInt64 = 180_000_000_000 // 180s(agent 思考 + 流式)
 
     public init(transport: any ACPTransport) {
         self.transport = transport
@@ -44,33 +51,29 @@ public actor ACPClient {
 
     // MARK: - connect(initialize)
 
-    /// 发 `initialize` 协商协议版本 + 能力。仅一次(didConnect 守卫)。
     public func connect() async throws -> ACPAgentCapabilities {
-        guard !didConnect else {
-            // 已连接:不重复 initialize,直接返回(简单;真实可缓存 caps)
-            return ACPAgentCapabilities(protocolVersion: 1, agentCapabilities: [])
-        }
-        try await transport.start { [weak self] msg in
-            Task { await self?.handleInbound(msg) }
-        }
+        guard !didConnect else { return ACPAgentCapabilities(protocolVersion: 1, agentCapabilities: []) }
+        try await transport.start(
+            onInbound: { [weak self] msg in Task { await self?.handleInbound(msg) } },
+            onEOF: { [weak self] in Task { await self?.handleEOF() } }
+        )
         let id = nextRequestID()
         let params: ACPJSON = .object([
             "protocolVersion": .int(1),
             "clientCapabilities": .object([:]),
         ])
-        let result = try await sendRequest(id: id, method: ACPMethod.initialize, params: params)
+        let result = try await sendRequest(id: id, method: ACPMethod.initialize, params: params, timeoutNs: Self.shortTimeoutNs)
         let obj = result.objectValue ?? [:]
         let proto = obj["protocolVersion"]?.stringValue.flatMap(Int.init)
             ?? obj["protocolVersion"].flatMap { if case .int(let v) = $0 { return v }; return nil }
             ?? 1
-        let capsKeys = obj["agentCapabilities"]?.objectValue?.keys.reduce(into: Set<String>()) { s, k in s.insert(k) } ?? []
+        let capsKeys = obj["agentCapabilities"]?.objectValue?.keys.reduce(into: Set<String>()) { $0.insert($1) } ?? []
         didConnect = true
         return ACPAgentCapabilities(protocolVersion: proto, agentCapabilities: capsKeys)
     }
 
     // MARK: - createSession(session/new)
 
-    /// 发 `session/new` 创建会话,返回 sessionId。**须先 connect。**
     public func createSession(cwd: String, mcpServers: [ACPJSON]) async throws -> String {
         guard didConnect else { throw ACPClientError.notConnected }
         let id = nextRequestID()
@@ -78,7 +81,7 @@ public actor ACPClient {
             "cwd": .string(cwd),
             "mcpServers": .array(mcpServers),
         ])
-        let result = try await sendRequest(id: id, method: ACPMethod.sessionNew, params: params)
+        let result = try await sendRequest(id: id, method: ACPMethod.sessionNew, params: params, timeoutNs: Self.shortTimeoutNs)
         guard let sid = result.objectValue?["sessionId"]?.stringValue else {
             throw ACPClientError.transport("session/new 未返回 sessionId")
         }
@@ -87,62 +90,58 @@ public actor ACPClient {
 
     // MARK: - prompt(session/prompt + 流式 update)
 
-    /// 发 `session/prompt`,流式收 `session/update`(每条 `agent_message_chunk` 调 `onUpdate`),
-    /// 等 prompt 的 result(带 stopReason)后返回 stopReason 字符串。**须先 createSession。**
     public func prompt(text: String, onUpdate: @escaping @Sendable (ACPSessionUpdate) -> Void) async throws -> String {
         guard didConnect else { throw ACPClientError.notConnected }
         updateHandler = onUpdate
         defer { updateHandler = nil }
-
         let id = nextRequestID()
-        let result = try await sendPromptRequest(id: id, text: text)
-        let stop = result.objectValue?["stopReason"]?.stringValue ?? ""
-        return stop
+        var params: [String: ACPJSON] = [
+            "prompt": .array([.object(["type": .string("text"), "text": .string(text)])]),
+        ]
+        if let sessionId { params["sessionId"] = .string(sessionId) }
+        let result = try await sendRequest(
+            id: id, method: ACPMethod.sessionPrompt, params: .object(params), timeoutNs: Self.promptTimeoutNs)
+        return result.objectValue?["stopReason"]?.stringValue ?? ""
     }
 
-    // MARK: - 内部:request/response 配对
+    // MARK: - 内部:request/response 配对 + timeout + cancel
 
     private func nextRequestID() -> Int {
         let id = nextID; nextID += 1; return id
     }
 
-    private func sendRequest(id: Int, method: String, params: ACPJSON) async throws -> ACPJSON {
+    /// 发 request + 等 response(按 id 配对)+ wall-clock timeout + cancel 兜底。
+    private func sendRequest(id: Int, method: String, params: ACPJSON, timeoutNs: UInt64) async throws -> ACPJSON {
         let req = ACPRPCRequest(id: id, method: method, params: params)
         let json = String(data: try JSONEncoder().encode(req), encoding: .utf8) ?? "{}"
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<ACPJSON, any Error>) in
-            self.pending[id] = cont
-            do {
-                try self.transport.send(json)
-            } catch {
-                if let c = self.pending.removeValue(forKey: id) {
-                    c.resume(throwing: ACPClientError.transport(error.localizedDescription))
+
+        // timeout Task:到点唤醒 pending throwing .timeout(self-hop)
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: timeoutNs)
+            if !Task.isCancelled {
+                await self?.failPending(id: id, error: .timeout)
+            }
+        }
+        defer { timeoutTask.cancel() }
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<ACPJSON, any Error>) in
+                self.pending[id] = cont
+                do {
+                    try self.transport.send(json)
+                } catch {
+                    if let c = self.pending.removeValue(forKey: id) {
+                        c.resume(throwing: ACPClientError.transport(error.localizedDescription))
+                    }
                 }
             }
+        } onCancel: { [weak self] in
+            // consumer 取消 → 唤醒 pending throwing .cancelled(continuation 本身不响应 cancel)
+            Task { await self?.failPending(id: id, error: .cancelled) }
         }
     }
 
-    /// session/prompt:onUpdate handler 在 result 到达**前**持续收 notification
-    /// (handleInbound 里调 updateHandler)。params 带 sessionId(若已注入)+ prompt text。
-    private func sendPromptRequest(id: Int, text: String) async throws -> ACPJSON {
-        var promptParams: [String: ACPJSON] = [
-            "prompt": .array([.object(["type": .string("text"), "text": .string(text)])]),
-        ]
-        if let sessionId { promptParams["sessionId"] = .string(sessionId) }
-        let req = ACPRPCRequest(id: id, method: ACPMethod.sessionPrompt, params: .object(promptParams))
-        let json = String(data: try JSONEncoder().encode(req), encoding: .utf8) ?? "{}"
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<ACPJSON, any Error>) in
-            self.pending[id] = cont
-            do {
-                try self.transport.send(json)
-            } catch {
-                if let c = self.pending.removeValue(forKey: id) {
-                    c.resume(throwing: ACPClientError.transport(error.localizedDescription))
-                }
-            }
-        }
-    }
-
-    // MARK: - 内部:inbound 路由(transport 后台线程回调)
+    // MARK: - 内部:inbound 路由 + EOF/cancel/timeout 唤醒
 
     private func handleInbound(_ msg: ACPInbound) {
         switch msg {
@@ -154,14 +153,13 @@ public actor ACPClient {
                 cont.resume(returning: result ?? .null)
             }
         case let .request(id, method, params):
-            // agent → client request(如 session/request_permission):MVP 不处理,回空 result
-            // (ACP-2 接 PermissionCard)。fire-and-forget 回 response 免 agent 卡等。
+            // agent → client request(如 session/request_permission):MVP 回空 result
+            // (ACP-2 接 PermissionCard)。fire-and-forget 免 agent 卡等。
             let res = #"{"jsonrpc":"2.0","id":\#(id),"result":null}"#
             try? transport.send(res)
             _ = method; _ = params
         case let .notification(method, params):
             guard method == ACPMethod.sessionUpdate else { return }
-            // decode 返回 `ACPSessionUpdate?`(可解出但 update 字段缺失 → nil);外层 try? 吞解析异常
             let decoded: ACPSessionUpdate? = (try? ACPSessionUpdate.decode(from: params)) ?? nil
             if let update = decoded, let handler = updateHandler {
                 handler(update)
@@ -169,25 +167,32 @@ public actor ACPClient {
         }
     }
 
-    /// 供 ACPAgentEngine 注入当前 sessionId(session/prompt params 要带)。
+    /// transport EOF / 进程异常退出 → 唤醒所有 pending throwing(idempotent)。
+    private func handleEOF() {
+        guard !eofHandled else { return }
+        eofHandled = true
+        for (_, cont) in pending {
+            cont.resume(throwing: ACPClientError.transport("agent 进程 EOF / 异常退出"))
+        }
+        pending.removeAll()
+    }
+
+    /// 唤醒某 pending(timeout / cancel)。
+    private func failPending(id: Int, error: ACPClientError) {
+        if let cont = pending.removeValue(forKey: id) {
+            cont.resume(throwing: error)
+        }
+    }
+
+    // MARK: - session / 生命周期
+
     public var sessionId: String?
 
-    /// 设置当前 session id(由 ACPAgentEngine 在 createSession 后注入)。
     public func setSessionId(_ sid: String?) {
         self.sessionId = sid
     }
 
     public func shutdown() {
         transport.shutdown()
-    }
-}
-
-// MARK: - 测试 helper(JSONEncoder 编码字符串)
-
-extension JSONEncoder {
-    /// 编码任意 Codable 为 JSON 字符串(测试 fixture 用)。
-    func encodedString<T: Encodable>(_ value: T) -> String? {
-        guard let data = try? encode(value) else { return nil }
-        return String(data: data, encoding: .utf8)
     }
 }

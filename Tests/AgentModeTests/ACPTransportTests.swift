@@ -31,6 +31,8 @@ final class MockACPTransport: ACPTransport, @unchecked Sendable {
     private var queue: [ACPInbound]
     private(set) var sentLines: [String] = []
     private var onInbound: (@Sendable (ACPInbound) -> Void)?
+    private var onEOF: (@Sendable () -> Void)?
+    private(set) var didShutdown = false
     private let lock = NSLock()
 
     init(_ inbound: [ACPInbound]) {
@@ -38,15 +40,30 @@ final class MockACPTransport: ACPTransport, @unchecked Sendable {
     }
 
     func send(_ jsonString: String) throws {
-        lock.lock(); sentLines.append(jsonString); lock.unlock()
+        lock.lock()
+        sentLines.append(jsonString)
+        // send-driven:每次 client send 取「直到下一个 response(含)」的消息组
+        // (一个 request → 若干 notification + 一个 response),异步推(给 client
+        // 设 pending 的机会,免「response 在 request 前到」的 race —— 原 start 同步
+        // 推会被 client pending 前丢弃,被 timeout 暴露)。
+        var group: [ACPInbound] = []
+        while !queue.isEmpty {
+            let msg = queue.removeFirst()
+            group.append(msg)
+            if case .response = msg { break }
+        }
+        let onInbound = self.onInbound
+        lock.unlock()
+        guard let onInbound, !group.isEmpty else { return }
+        Task { for msg in group { onInbound(msg) } }
     }
 
-    func start(onInbound: @escaping @Sendable (ACPInbound) -> Void) async throws {
-        lock.lock(); self.onInbound = onInbound; let snap = queue; queue = []; lock.unlock()
-        // 模拟 agent 依次回消息(立即,主线程同步)
-        for msg in snap {
-            onInbound(msg)
-        }
+    func start(
+        onInbound: @escaping @Sendable (ACPInbound) -> Void,
+        onEOF: @escaping @Sendable () -> Void
+    ) async throws {
+        lock.lock(); self.onInbound = onInbound; self.onEOF = onEOF; lock.unlock()
+        // 不在 start 推队列 —— 留给 send 触发(见 send),模拟真实 agent request-response。
     }
 
     /// 测试用:后续再推一条消息(模拟流式 update 后到)。
@@ -54,5 +71,12 @@ final class MockACPTransport: ACPTransport, @unchecked Sendable {
         onInbound?(msg)
     }
 
-    func shutdown() {}
+    /// 测试用:模拟 agent 进程 EOF / 异常退出 → 触发 onEOF(client 应唤醒 pending)。
+    func simulateEOF() {
+        onEOF?()
+    }
+
+    func shutdown() {
+        lock.lock(); didShutdown = true; lock.unlock()
+    }
 }

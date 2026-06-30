@@ -8,18 +8,28 @@ import Foundation
 //
 // 生命周期:ACP 是**长连接**(client 跨多 turn 用同一 agent 子进程),不同于
 // ClaudeCodeEngine 的「单 prompt 子进程退出」。transport 起 agent 进程一次,client
-// 反复 send/recv;shutdown() 才 SIGTERM。idle/总超时由上层(client/engine)管,transport
-// 只管 IO + 进程生命周期 + 经 callback 推 inbound(被动管道,client 主动路由)。
+// 反复 send/recv;shutdown() 才 SIGTERM。
+//
+// 健壮性(ACP-1a 审查 follow-up):
+// - readabilityHandler 的 `availableData` 空 = EOF → 置 nil 停 dispatch source(否则高频
+//   回调烧 ~200% CPU,有同类判例)+ onEOF 通知 client。
+// - terminationHandler:进程异常退出(非 shutdown 触发)→ onEOF(client 唤醒 pending)。
+// - start() 的 `CLIAvailability.locate`(actor await)在锁外,免锁跨 await 阻塞读线程。
+// - send 检查 process.isRunning,死则抛(免 broken pipe 异常)。
 
-/// ACP 消息 transport。`send` 写 agent stdin;`start(onInbound:)` 把收到的消息
-/// 经 callback 推给上层(client 按需路由:response 按 id 配对 / notification 分发)。
+/// ACP 消息 transport。`send` 写 agent stdin;`start(onInbound:onEOF:)` 把收到的消息
+/// 经 `onInbound` 推给上层,EOF/进程死时调 `onEOF`(client 据此唤醒 pending continuation)。
 public protocol ACPTransport: Sendable {
     /// 写一行 JSON(JSON-RPC request/notification)到 agent stdin。本方法追加换行。
+    /// 进程已退出 → 抛 `AgentEngineError.subprocessFailed`。
     func send(_ jsonString: String) throws
-    /// spawn 子进程(若 stdio 实现)+ 开始读 stdout,每收到一条 `ACPInbound` 调 `onInbound`。
-    /// `onInbound` 在后台线程(readabilityHandler)回调,须线程安全。
-    func start(onInbound: @escaping @Sendable (ACPInbound) -> Void) async throws
-    /// SIGTERM 子进程 + cleanup。
+    /// spawn 子进程(若 stdio 实现)+ 开始读 stdout。每收到一条 `ACPInbound` 调 `onInbound`;
+    /// stdout EOF 或进程异常退出时调 `onEOF`(client 唤醒 pending 免永挂)。回调在后台线程。
+    func start(
+        onInbound: @escaping @Sendable (ACPInbound) -> Void,
+        onEOF: @escaping @Sendable () -> Void
+    ) async throws
+    /// SIGTERM 子进程 + cleanup(主动关闭,不触发 onEOF)。
     func shutdown()
 }
 
@@ -27,7 +37,6 @@ public protocol ACPTransport: Sendable {
 
 public enum ACPLineParser {
     /// 把累积的 stdout `Data` 按 `\n` 切成「完整行」+「剩余半行」。
-    /// 返回 (完整行数据数组[不含换行], 剩余未结束的 bytes)。
     public static func splitLines(_ data: Data) -> (lines: [Data], remainder: Data) {
         var lines: [Data] = []
         var buf = data
@@ -53,11 +62,8 @@ public enum ACPLineParser {
 public final class ACPStdioTransport: ACPTransport, @unchecked Sendable {
     /// agent 启动命令,如 ["opencode","acp"] / ["gemini","--acp"]。
     public let command: [String]
-    /// 可注入的 binary 绝对路径(nil = `CLIAvailability.locate` 找 command[0])。
     public let binaryPath: String?
-    /// 环境变量(nil = `CLIProcessEnvironment.augmented`)。
     public let processEnvironment: [String: String]?
-    /// 工作目录(nil = 进程当前 cwd)。
     public let currentDirectoryURL: URL?
 
     private var process: Process?
@@ -66,6 +72,8 @@ public final class ACPStdioTransport: ACPTransport, @unchecked Sendable {
     private var stdoutBuffer = Data()
     private let lock = NSLock()
     private var didStart = false
+    /// 主动 shutdown 置 true → terminationHandler 跳过 onEOF(免重复通知)。
+    private var didShutdown = false
 
     public init(
         command: [String],
@@ -80,21 +88,25 @@ public final class ACPStdioTransport: ACPTransport, @unchecked Sendable {
     }
 
     public func send(_ jsonString: String) throws {
-        lock.lock(); let pipe = stdinPipe; lock.unlock()
+        lock.lock(); let pipe = stdinPipe; let proc = process; lock.unlock()
         guard let pipe else {
             throw AgentEngineError.cliNotInstalled(.openCode)   // 未 start
+        }
+        // 进程已退出 → 直接抛(免写 broken pipe 抛底层 POSIXError)
+        if let proc, !proc.isRunning {
+            throw AgentEngineError.subprocessFailed(
+                exitCode: proc.terminationStatus, stderr: "agent 进程已退出")
         }
         var data = jsonString.data(using: .utf8) ?? Data()
         data.append(0x0A)   // JSON-RPC over stdio:行帧,换行结尾
         try pipe.fileHandleForWriting.write(contentsOf: data)
     }
 
-    public func start(onInbound: @escaping @Sendable (ACPInbound) -> Void) async throws {
-        lock.lock(); defer { lock.unlock() }
-        guard !didStart else { return }
-        didStart = true
-
-        // 1. 定位 binary
+    public func start(
+        onInbound: @escaping @Sendable (ACPInbound) -> Void,
+        onEOF: @escaping @Sendable () -> Void
+    ) async throws {
+        // 1. 定位 binary —— **锁外** await(actor 调用,不持锁免阻塞读线程)
         let binary: String
         if let binaryPath {
             binary = binaryPath
@@ -103,7 +115,13 @@ public final class ACPStdioTransport: ACPTransport, @unchecked Sendable {
             binary = await cli.locate(binary: command[0]) ?? command[0]
         }
 
-        // 2. Process 配置
+        // 2. 锁内只检查 didStart(不跨 await)
+        lock.lock()
+        guard !didStart else { lock.unlock(); return }
+        didStart = true
+        lock.unlock()
+
+        // 3. 锁外配置 Process + Pipe + run(不持锁)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: binary)
         proc.arguments = Array(command.dropFirst())
@@ -116,14 +134,18 @@ public final class ACPStdioTransport: ACPTransport, @unchecked Sendable {
         let outPipe = Pipe()
         proc.standardInput = inPipe
         proc.standardOutput = outPipe
-        proc.standardError = Pipe()   // stderr 不读(agent 日志,异常时拼错误即可)
+        proc.standardError = Pipe()   // stderr 不读
 
-        // 3. 按行读 stdout → 解 ACPInbound → onInbound 回调
-        outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            guard let self else { return }
+        // 4. 按行读 stdout → onInbound;EOF(availableData 空)→ 置 nil 停回调 + onEOF
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
-            // 按行切(跨 chunk 累积,免半行)
+            if chunk.isEmpty {
+                // EOF:对端关 stdout。置 nil 停 dispatch source(否则高频回调烧 CPU)。
+                handle.readabilityHandler = nil
+                onEOF()
+                return
+            }
+            // 按行切(跨 chunk 累积,免半行)—— 锁只保护 buffer
             self.lock.lock()
             self.stdoutBuffer.append(chunk)
             let (lines, remainder) = ACPLineParser.splitLines(self.stdoutBuffer)
@@ -136,21 +158,47 @@ public final class ACPStdioTransport: ACPTransport, @unchecked Sendable {
             }
         }
 
-        try proc.run()
+        // 5. 进程退出 → unregister + (若非主动 shutdown)onEOF 通知 client 唤醒 pending
+        proc.terminationHandler = { proc in
+            Task { await SubprocessRegistry.shared.unregister(proc) }
+            let isShutdown = self.lockedRead(\.didShutdown)
+            if !isShutdown {
+                onEOF()   // 异常退出(崩溃 / 被 OS 杀)→ client 收 EOF 唤醒 pending
+            }
+        }
+
+        do {
+            try proc.run()
+        } catch {
+            lock.lock(); didStart = false; lock.unlock()
+            throw AgentEngineError.subprocessFailed(exitCode: -1, stderr: error.localizedDescription)
+        }
+        lock.lock()
         self.process = proc
         self.stdinPipe = inPipe
         self.stdoutPipe = outPipe
+        lock.unlock()
         Task { await SubprocessRegistry.shared.register(proc) }
     }
 
     public func shutdown() {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        didShutdown = true   // 标记主动关闭 → terminationHandler 跳过 onEOF
+        let proc = process
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
-        if let proc = process, proc.isRunning {
+        lock.unlock()
+        if let proc, proc.isRunning {
             proc.terminate()
         }
-        Task { [proc = process] in
+        Task { [proc] in
             if let proc { await SubprocessRegistry.shared.unregister(proc) }
         }
+    }
+
+    /// 锁内读属性(helper,terminationHandler 后台线程安全访问)。
+    @inline(__always)
+    private func lockedRead<T>(_ key: (ACPStdioTransport) -> T) -> T {
+        lock.lock(); defer { lock.unlock() }
+        return key(self)
     }
 }
