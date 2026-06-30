@@ -46,6 +46,18 @@ func rpcRequestEncodes() throws {
 
 // MARK: - JSON-RPC 解码 + 区分(request/notification/response)
 
+@Test("ACPInbound: response 缺 id(畸形/不合规)→ decode 抛错,被 parseLine 丢弃(不错配 pending[0])")
+func inboundResponseNoID() {
+    // 有 result 无 id → 不合法 response(JSON-RPC 2.0 response 必带 id)
+    let withResult = Data(#"{"jsonrpc":"2.0","result":{"sessionId":"x"}}"#.utf8)
+    let decoded: ACPInbound? = try? JSONDecoder().decode(ACPInbound.self, from: withResult)
+    #expect(decoded == nil)
+    #expect(ACPLineParser.parseLine(withResult) == nil)
+    // 有 error 无 id → 同样丢弃
+    let withError = Data(#"{"jsonrpc":"2.0","error":{"code":-1,"message":"x"}}"#.utf8)
+    #expect(ACPLineParser.parseLine(withError) == nil)
+}
+
 @Test("ACPInbound: 有 id + method → request")
 func inboundRequest() throws {
     let json = #"{"jsonrpc":"2.0","id":7,"method":"session/request_permission","params":{"tools":["fs"]}}"#

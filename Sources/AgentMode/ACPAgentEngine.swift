@@ -81,6 +81,9 @@ public struct ACPAgentEngine: AgentEngine {
 
             continuation.onTermination = { _ in
                 task.cancel()
+                // 防 agent 子进程孤儿:cancel 不唤醒 continuation,但至少 SIGTERM 子进程。
+                // (continuation 永挂 + cancel 语义重构留 ACP-1:prompt 改 withTaskCancellationHandler)
+                Task { await client.shutdown() }
             }
         }
     }

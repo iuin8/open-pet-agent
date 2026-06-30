@@ -10,8 +10,9 @@ import Foundation
 // - JSON-RPC 2.0 三类消息:Request(id+method+params)、Notification(method+params 无 id)、
 //   Response(id+result|error)。`ACPInbound` 把收到的 raw JSON 判类后归一。
 // - session/update 是 notification,其 params.update 含 sessionUpdate discriminator
-//   (agent_message_chunk / user_message_chunk / 未来 action_log 等)。未知 kind 不崩
-//   (向前兼容)。
+//   (spec v1 共 6 类:agent_message_chunk / user_message_chunk / plan / tool_call /
+//   tool_call_update / usage_update)。本层只解 agent_message_chunk 的 text,未知 kind
+//   退 nil 不崩(向前兼容;tool_call 等留 ACP-2)。
 // - 属性 camelCase,sessionUpdate 值 snake_case(ACP spec 约定)。
 
 // MARK: - ACPJSON(最小 JSON 值,承载 params/result)
@@ -105,15 +106,25 @@ public enum ACPInbound: Decodable, Sendable {
         let method = try c.decodeIfPresent(String.self, forKey: .method)
         let id = try c.decodeIfPresent(Int.self, forKey: .id)
 
-        // response:有 id 且有 result 或 error(可能 result 为 null,但 error/result 键存在)
+        // response:有 result 或 error + 必有 id(JSON-RPC 2.0)。id 缺失/畸形(上游不合规
+        // 或 stdout 串入非协议 JSON)→ 抛错,被 parseLine 的 try? 吞掉丢弃,不错配 pending[0]
+        // (审查 follow-up:原 id ?? 0 兜底会把畸形 response 错配到首个 request 卡死初始化)。
         if c.contains(.error) {
+            guard let id else {
+                throw DecodingError.dataCorrupted(DecodingError.Context(
+                    codingPath: decoder.codingPath, debugDescription: "JSON-RPC response 缺 id"))
+            }
             let err = try c.decodeIfPresent(ACPRPCError.self, forKey: .error)
-            self = .response(id: id ?? 0, result: nil, error: err)
+            self = .response(id: id, result: nil, error: err)
             return
         }
         if c.contains(.result) {
+            guard let id else {
+                throw DecodingError.dataCorrupted(DecodingError.Context(
+                    codingPath: decoder.codingPath, debugDescription: "JSON-RPC response 缺 id"))
+            }
             let result = try c.decodeIfPresent(ACPJSON.self, forKey: .result)
-            self = .response(id: id ?? 0, result: result, error: nil)
+            self = .response(id: id, result: result, error: nil)
             return
         }
 
