@@ -38,6 +38,8 @@ public actor ACPClient {
     private var nextID: Int = 0
     private var pending: [Int: CheckedContinuation<ACPJSON, any Error>] = [:]
     private var updateHandler: (@Sendable (ACPSessionUpdate) -> Void)?
+    /// agent → client 权限请求回调(ACP-2:App 注入显示 PermissionCard)。无则安全默认 reject。
+    public var onPermissionRequest: (@Sendable (ACPPermissionRequest) async -> ACPPermissionOutcome)?
     private var didConnect = false
     private var eofHandled = false
 
@@ -143,7 +145,7 @@ public actor ACPClient {
 
     // MARK: - 内部:inbound 路由 + EOF/cancel/timeout 唤醒
 
-    private func handleInbound(_ msg: ACPInbound) {
+    private func handleInbound(_ msg: ACPInbound) async {
         switch msg {
         case let .response(id, result, error):
             guard let cont = pending.removeValue(forKey: id) else { return }
@@ -153,11 +155,21 @@ public actor ACPClient {
                 cont.resume(returning: result ?? .null)
             }
         case let .request(id, method, params):
-            // agent → client request(如 session/request_permission):MVP 回空 result
-            // (ACP-2 接 PermissionCard)。fire-and-forget 免 agent 卡等。
-            let res = #"{"jsonrpc":"2.0","id":\#(id),"result":null}"#
-            try? transport.send(res)
-            _ = method; _ = params
+            // agent → client request。session/request_permission → 调 onPermissionRequest
+            // (App 显示 PermissionCard);无回调 → 安全默认 reject_once(opencode 可继续换方法)。
+            if method == ACPMethod.sessionRequestPermission {
+                let req = ACPPermissionRequest.decode(from: params)
+                let outcome: ACPPermissionOutcome
+                if let onPermissionRequest, let req {
+                    outcome = await onPermissionRequest(req)
+                } else {
+                    outcome = req?.safeDefaultOutcome ?? .cancelled
+                }
+                try? transport.send(outcome.responseJSON(id: id))
+            } else {
+                // 其它 agent→client request(MVP 回空 result 免 agent 卡等)
+                try? transport.send(#"{"jsonrpc":"2.0","id":\#(id),"result":null}"#)
+            }
         case let .notification(method, params):
             guard method == ACPMethod.sessionUpdate else { return }
             let decoded: ACPSessionUpdate? = (try? ACPSessionUpdate.decode(from: params)) ?? nil
@@ -190,6 +202,11 @@ public actor ACPClient {
 
     public func setSessionId(_ sid: String?) {
         self.sessionId = sid
+    }
+
+    /// 设置权限请求回调(actor-isolated setter)。
+    public func setOnPermissionRequest(_ handler: (@Sendable (ACPPermissionRequest) async -> ACPPermissionOutcome)?) {
+        self.onPermissionRequest = handler
     }
 
     public func shutdown() {

@@ -56,6 +56,7 @@ public enum ACPJSON: Sendable, Equatable, Codable {
     // MARK: - 便捷访问 / 解析
 
     public var objectValue: [String: ACPJSON]? { if case .object(let o) = self { return o }; return nil }
+    public var arrayValue: [ACPJSON]? { if case .array(let a) = self { return a }; return nil }
     public var stringValue: String? { if case .string(let s) = self { return s }; return nil }
 
     /// 从 JSON 字符串解析。失败 → nil。
@@ -189,4 +190,68 @@ public enum ACPMethod {
     public static let sessionCancel = "session/cancel"
     public static let sessionUpdate = "session/update"   // notification(agent → client)
     public static let sessionRequestPermission = "session/request_permission"  // agent → client request
+}
+
+// MARK: - session/request_permission(ACP-2)
+
+/// agent → client 的权限请求(agent 执行工具前问用户授权)。核自 ACP spec v1 tool-calls。
+public struct ACPPermissionRequest: Sendable, Equatable {
+    public let toolCallId: String?
+    public let title: String?
+    /// 工具类别(read / edit / delete / move / search / execute / fetch / other)。
+    public let kind: String?
+    public let options: [Option]
+
+    public struct Option: Sendable, Equatable {
+        public let optionId: String
+        public let name: String
+        /// allow_once / allow_always / reject_once / reject_always。
+        public let kind: String
+    }
+
+    /// 从 session/request_permission 的 params 解出。
+    public static func decode(from params: ACPJSON?) -> ACPPermissionRequest? {
+        guard let params, let obj = params.objectValue else { return nil }
+        let tc = obj["toolCall"]?.objectValue
+        let opts: [Option] = (obj["options"]?.arrayValue ?? []).compactMap { o in
+            guard let o = o.objectValue else { return nil }
+            return Option(
+                optionId: o["optionId"]?.stringValue ?? "",
+                name: o["name"]?.stringValue ?? "",
+                kind: o["kind"]?.stringValue ?? ""
+            )
+        }
+        return ACPPermissionRequest(
+            toolCallId: tc?["toolCallId"]?.stringValue,
+            title: tc?["title"]?.stringValue,
+            kind: tc?["kind"]?.stringValue,
+            options: opts
+        )
+    }
+
+    /// 安全默认(无 UI 回调时):找 reject_once 选项拒绝;无则 cancelled。
+    /// 选 reject_once 而非 cancelled —— opencode 收 reject 可继续换方法,cancelled 整 turn 卡。
+    var safeDefaultOutcome: ACPPermissionOutcome {
+        if let opt = options.first(where: { $0.kind == "reject_once" }) {
+            return .selected(optionId: opt.optionId)
+        }
+        return .cancelled
+    }
+}
+
+/// client 对权限请求的响应。
+public enum ACPPermissionOutcome: Sendable, Equatable {
+    case selected(optionId: String)
+    case cancelled
+
+    /// 编码成 session/request_permission 的完整 JSON-RPC response。
+    public func responseJSON(id: Int) -> String {
+        switch self {
+        case .selected(let optionId):
+            let opt = (try? JSONEncoder().encode(optionId)).flatMap { String(data: $0, encoding: .utf8) } ?? "\"\""
+            return #"{"jsonrpc":"2.0","id":\#(id),"result":{"outcome":{"outcome":"selected","optionId":\#(opt)}}}"#
+        case .cancelled:
+            return #"{"jsonrpc":"2.0","id":\#(id),"result":{"outcome":{"outcome":"cancelled"}}}"#
+        }
+    }
 }

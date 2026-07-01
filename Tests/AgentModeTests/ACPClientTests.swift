@@ -114,6 +114,56 @@ func clientEOFWakesPending() async throws {
     }
 }
 
+@Test("ACPClient: session/request_permission → 调 onPermissionRequest 回调 → 回 outcome(ACP-2)")
+func clientPermissionRequest() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+        resp(1, #"{"sessionId":"s"}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    // 注入回调:收权限请求 → 用户选 allow-once
+    var capturedReq: ACPPermissionRequest?
+    await client.setOnPermissionRequest { req in
+        capturedReq = req
+        return .selected(optionId: "allow-once")
+    }
+    _ = try await client.connect()
+    _ = try await client.createSession(cwd: "/tmp", mcpServers: [])
+
+    // 模拟 agent 发 session/request_permission(id=5)
+    let permJSON = #"{"sessionId":"s","toolCall":{"toolCallId":"c1","title":"Write file","kind":"edit"},"options":[{"optionId":"allow-once","name":"Allow once","kind":"allow_once"},{"optionId":"reject-once","name":"Reject","kind":"reject_once"}]}"#
+    mock.push(.request(id: 5, method: "session/request_permission", params: ACPJSON.parse(permJSON)))
+
+    // 给 actor 处理时间
+    try? await Task.sleep(nanoseconds: 80_000_000)
+
+    // 回调被调 + sentLines 含 outcome selected allow-once
+    #expect(capturedReq?.toolCallId == "c1")
+    #expect(capturedReq?.title == "Write file")
+    #expect(capturedReq?.kind == "edit")
+    let outcomeSent = mock.sentLines.last ?? ""
+    #expect(outcomeSent.contains("\"optionId\":\"allow-once\""))
+    #expect(outcomeSent.contains("\"id\":5"))
+}
+
+@Test("ACPClient: session/request_permission 无回调 → 安全默认 reject_once(生产安全)")
+func clientPermissionDefaultReject() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+        resp(1, #"{"sessionId":"s"}"#),
+    ])
+    let client = ACPClient(transport: mock)   // 无 onPermissionRequest
+    _ = try await client.connect()
+    _ = try await client.createSession(cwd: "/tmp", mcpServers: [])
+
+    let permJSON = #"{"sessionId":"s","toolCall":{"toolCallId":"c1","kind":"edit"},"options":[{"optionId":"allow-once","name":"Allow","kind":"allow_once"},{"optionId":"reject-once","name":"Reject","kind":"reject_once"}]}"#
+    mock.push(.request(id: 7, method: "session/request_permission", params: ACPJSON.parse(permJSON)))
+    try? await Task.sleep(nanoseconds: 80_000_000)
+
+    let outcomeSent = mock.sentLines.last ?? ""
+    #expect(outcomeSent.contains("\"optionId\":\"reject-once\""), "无 UI 回调 → 安全默认 reject_once")
+}
+
 @Test("ACPClient: connect 阶段 EOF → initialize 唤醒 throwing(免初始化永挂)")
 func clientEOFDuringConnect() async throws {
     // initialize 发出后不回 response,模拟 agent 立即崩 → onEOF

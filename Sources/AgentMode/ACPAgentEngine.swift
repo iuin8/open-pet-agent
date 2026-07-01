@@ -33,6 +33,9 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     /// transport 工厂(测试注入 mock;生产 `ACPStdioTransport`)。
     public let transportFactory: @Sendable () -> any ACPTransport
 
+    /// 权限请求回调(ACP-2:App 注入显示 PermissionCard;nil → client 安全默认 reject_once)。
+    public var onPermissionRequest: (@Sendable (ACPPermissionRequest) async -> ACPPermissionOutcome)?
+
     /// 复用的 client(首次 run 建,后续复用)。lock 保护(防并发首次建两次)。
     private var client: ACPClient?
     private let lock = NSLock()
@@ -68,6 +71,7 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
         if let existing { return existing }
 
         let new = ACPClient(transport: transportFactory())
+        await new.setOnPermissionRequest(onPermissionRequest)   // 透传权限回调(ACP-2)
         _ = try await new.connect()   // initialize(协议协商,~2-3s 冷启动)
 
         lock.lock()
