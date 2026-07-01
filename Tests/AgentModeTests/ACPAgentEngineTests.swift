@@ -75,4 +75,37 @@ struct ACPAgentEngineTests {
     func kindIsOpenCode() {
         #expect(ACPAgentEngine.kind == .openCode)
     }
+
+    @Test("ACPAgentEngine: connection 复用 —— 第二次 run 不重发 initialize(生产级性能)")
+    func connectionReusedAcrossRuns() async throws {
+        // mock queue 按 send 顺序预置(send-driven 每次 send 取「到下一个 response 含」组):
+        // initialize(0) → session_1(1) → [update "第一回" + prompt1 result(2)] →
+        // session_2(3) → [update "第二回" + prompt2 result(4)]
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            updateChunk("第一回"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+            resp(3, #"{"sessionId":"sess_2"}"#),
+            updateChunk("第二回"),
+            resp(4, #"{"stopReason":"end_turn"}"#),
+        ])
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            transportFactory: { mock }
+        )
+
+        var first: [String] = []
+        for try await d in engine.run(prompt: "a") { first.append(d) }
+
+        var second: [String] = []
+        for try await d in engine.run(prompt: "b") { second.append(d) }
+
+        // sentLines 含 initialize method 次数应 = 1(第二轮复用 connection,不重发)
+        let initCount = mock.sentLines.filter { $0.contains("\"initialize\"") }.count
+        #expect(initCount == 1, "第二轮应复用 connection,不重发 initialize(实际 \(initCount))")
+        #expect(first == ["第一回"])
+        #expect(second == ["第二回"])
+    }
 }
