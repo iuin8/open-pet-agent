@@ -447,6 +447,24 @@ extension MinimalAppDelegate {
         }
         // 「清空对话」：卡片 trash 按钮 → app 确认弹窗 → 清 ConversationStore + 重置卡片。
         cardCtrl.onClearConversation = { [weak self] in self?.confirmAndClearConversation() }
+        // 回复来源 segmented（直觉可用性）：Composer 上方一眼可切灵魂层/Agent engine，
+        // 不必去设置深处找开关。provider 从 UD 派生当前 target + 可选项；onCommit 写 UD +
+        // router.setEngine 即时生效（同设置面板 onSaveAgentModeEnabled/EngineKind 机制）。
+        cardCtrl.replyConfigurationProvider = { [weak self] in
+            Self.replyConfiguration(for: self?.userDefaults ?? .standard)
+        }
+        cardCtrl.onCommitReplyTarget = { [weak self] target in
+            guard let self else { return }
+            switch target {
+            case .soul:
+                self.userDefaults.set(false, forKey: Self.agentModeEnabledKey)
+                self.agentModeRouter?.setEngine(nil)
+            case .agent(let engineId):
+                self.userDefaults.set(true, forKey: Self.agentModeEnabledKey)
+                self.userDefaults.set(engineId, forKey: AgentEngineKind.userDefaultsKey)
+                Self.applySelectedAgentEngine(to: self.agentModeRouter, defaults: self.userDefaults)
+            }
+        }
         // 开卡片从 ConversationStore 恢复多轮历史（system 消息不展示）。
         cardCtrl.historyProvider = { [weak self] in
             guard let store = self?.rootSystem.conversationStore else { return [] }

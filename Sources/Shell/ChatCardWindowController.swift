@@ -45,6 +45,13 @@ public final class ChatCardWindowController {
     /// 在卡片**弹出之后**异步调（reader 文件读在后台，store 更新驱动 tab 视图，不阻塞进场）。
     public var sessionHistoryLoader: (@MainActor () async -> Void)?
 
+    /// App 注入：回复来源配置 provider（当前 target + 可选项）。每次开卡调，从 UserDefaults
+    /// 派生最新值刷进 state → 驱动 `ReplySourceBar`（同步设置面板的改动，两处写同一份 UD）。
+    /// nil → 不显示回复来源选择器。
+    public var replyConfigurationProvider: (@MainActor () -> (target: ReplyTarget, options: [ReplyOption]))?
+    /// App 注入：用户切回复来源 → 写 UserDefaults + `router.setEngine` 即时生效。
+    public var onCommitReplyTarget: (@MainActor (ReplyTarget) -> Void)?
+
     // MARK: - Init
 
     public init(streamProvider: @escaping StreamProvider) {
@@ -145,6 +152,7 @@ public final class ChatCardWindowController {
 
     private func show(prefill: String?) {
         if panel == nil { createPanel() }
+        syncReplyConfiguration()   // 开卡时从 UD 刷回复来源 segmented（同步设置面板的改动）
         if let prefill, !prefill.isEmpty { state.draft = prefill }
         // 先从 store 恢复历史（仅本会话尚无消息时），再定位 + spring 进场 → 卡片弹出即满载，
         // 不会"开卡时内容一闪而入"。历史读是 actor 快照（亚毫秒级），不会明显拖慢弹出。
@@ -157,6 +165,15 @@ public final class ChatCardWindowController {
             // 外部会话历史在弹出后台补（文件读在 loader 内部 off-main，store 更新驱动 tab 视图）。
             await self.sessionHistoryLoader?()
         }
+    }
+
+    /// 从 App 注入的 provider 刷新回复来源配置到 state（开卡时同步设置面板改动）+ 透传 onCommit。
+    private func syncReplyConfiguration() {
+        if let cfg = replyConfigurationProvider?() {
+            state.replyTarget = cfg.target
+            state.replyOptions = cfg.options
+        }
+        state.onCommitReplyTarget = onCommitReplyTarget
     }
 
     /// 锚定定位 + 弹出 + spring 进场。固定尺寸，不依赖历史。

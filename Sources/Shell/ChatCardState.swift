@@ -46,6 +46,20 @@ public final class ChatCardState: ObservableObject {
     /// 避 accessory activate 闪 Dock）；取消钉住 → .normal+.transient 可被其他 app 盖住（标准切应用行为）。
     @Published public var isPinned: Bool = true
 
+    /// 回复来源（灵魂层 vs Agent 层 engine）—— Composer 上方 segmented 的当前选中。
+    /// App 注入（开卡时从 UserDefaults 派生）；用户切换经 `commitReplyTarget` 触发持久化。
+    @Published public var replyTarget: ReplyTarget = .soul
+    /// 可选回复来源列表（App 从 `AgentEngineRegistry.all` 派生注入）。空 → 不渲染 `ReplySourceBar`。
+    @Published public var replyOptions: [ReplyOption] = []
+    /// 切换回复来源回调（App 注入：写 UserDefaults + `router.setEngine` 即时生效）。nil → 仅改本地（测试/preview）。
+    public var onCommitReplyTarget: (@MainActor (ReplyTarget) -> Void)?
+
+    /// 设置回复来源 + 触发 `onCommitReplyTarget`（持久化 + 即时切 engine）。
+    public func commitReplyTarget(_ target: ReplyTarget) {
+        replyTarget = target
+        onCommitReplyTarget?(target)
+    }
+
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
     public var streamTask: Task<Void, Never>?
 

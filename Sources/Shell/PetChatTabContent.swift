@@ -60,11 +60,24 @@ struct PetChatTabContent: View {
     // MARK: - Composer
 
     private var composer: some View {
-        ChatCardComposer(draft: $state.draft, isSending: state.isSending) {
-            onSend(state.draft)
+        VStack(spacing: 6) {
+            if !state.replyOptions.isEmpty {
+                ReplySourceBar(selected: replyTargetBinding, options: state.replyOptions)
+            }
+            ChatCardComposer(draft: $state.draft, isSending: state.isSending) {
+                onSend(state.draft)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 12)
+    }
+
+    /// 回复来源绑定：set 触发 `commitReplyTarget`（持久化 + 即时切 engine）。
+    private var replyTargetBinding: Binding<ReplyTarget> {
+        Binding(
+            get: { state.replyTarget },
+            set: { state.commitReplyTarget($0) }
+        )
     }
 }

@@ -29,33 +29,27 @@ struct ACPAgentEngineTests {
 
     @Test("ACPAgentEngine.run: 只 yield agent_message_chunk(thought_chunk 不 yield,免 pet 显示思考碎片)")
     func runYieldsDeltas() async throws {
-        let canned: [ACPInbound] = [
+        // send-driven 预置(mock 每次 send 取「到下一个 response 含」组):
+        // initialize(0) → session(1) → [thought(不 yield) + 2 message(yield) + prompt result(2)]。
+        // 全预置取代旧 `Task.sleep(80ms) + push` —— 后者在 --parallel 全套并发下 Task 调度
+        // 被抢占,偶发超 prompt 180s timeout 假红(并发 flaky,非 engine 回归)。
+        let mock = MockACPTransport([
             resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
             resp(1, #"{"sessionId":"sess_1"}"#),
-        ]
-        let mock = MockACPTransport(canned)
+            thoughtChunk("The user wants a greeting"),
+            updateChunk("你好"),
+            updateChunk("！"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
         let engine = ACPAgentEngine(
             command: ["fake", "acp"],
             binaryPath: "/usr/bin/true",
             transportFactory: { mock }
         )
 
-        // prompt 阶段:thought(不应 yield)+ 两个 message chunk(应 yield)+ result
-        Task {
-            try? await Task.sleep(nanoseconds: 80_000_000)
-            mock.push(thoughtChunk("The user wants a greeting"))
-            mock.push(updateChunk("你好"))
-            mock.push(updateChunk("！"))
-            mock.push(resp(2, #"{"stopReason":"end_turn"}"#))
-        }
-
         var deltas: [String] = []
-        do {
-            for try await delta in engine.run(prompt: "hi") {
-                deltas.append(delta)
-            }
-        } catch {
-            Issue.record("engine.run 不应抛错: \(error)")
+        for try await delta in engine.run(prompt: "hi") {
+            deltas.append(delta)
         }
         #expect(deltas == ["你好", "！"])
     }

@@ -217,7 +217,9 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// 特性, 用户需显式打开)。开关 = true + CLI 已安装 时, prompt 走
     /// `ClaudeCodeEngine` 子进程而非 LLM HTTP。
     /// **值保留 legacy `tool.mode.enabled`**(符号已改名 agentModeEnabledKey,key 串不改 → 零迁移)。
-    public static let agentModeEnabledKey: String = "tool.mode.enabled"
+    /// `nonisolated`:纯 String 常量,任何 actor/线程读 key 均安全(默认会继承 class 的
+    /// @MainActor 隔离,但常量无数据竞争,显式放宽供 `replyConfiguration` 等 nonisolated 纯函数复用)。
+    nonisolated public static let agentModeEnabledKey: String = "tool.mode.enabled"
 
     /// Task E: 灵动岛切桌面 / overlay 显隐时是否要 fade 桌宠避免遮挡感
     /// 的闪烁。默认 true(开启)。当前由 settings 写入,实际"切桌面 fade"
