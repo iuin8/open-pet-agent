@@ -28,9 +28,9 @@ extension MinimalAppDelegate {
     /// `.standard` 型(allow/deny 按钮):allow → `allow_*` optionId;deny → `reject_*` optionId 或 cancelled。
     /// store 缺席 → safeDefaultOutcome(不卡 turn)。
     ///
-    /// ⚠️ 留后:agent 死(transport EOF)时此 continuation 不会被 resume(ACPClient.handleEOF 不知
-    /// 此 cont)→ onPermissionRequest 永挂(内存泄漏 + 该请求不返回)。生产级需加 timeout / agent 死
-    /// cancel 补 cont.resume(safeDefault)。当前最小可行,边缘场景(agent 死在等权限时)。
+    /// agent 死(transport EOF)时 `ACPClient.handleEOF` 不知此 cont → onPermissionRequest 不会因
+    /// agent 死而 resume。靠 **600s timeout 兜底**(超时 → safeDefault),不永挂(边缘:agent 死在等权限)。
+    /// once-guard 保证 cont 只 resume 一次(用户先答则 timeout no-op)。
     @MainActor
     func presentACPPermission(_ req: ACPPermissionRequest) async -> ACPPermissionOutcome {
         guard let store = chatCardWindowController?.agentSessionStore else {
@@ -41,7 +41,7 @@ extension MinimalAppDelegate {
         let model = Self.permissionCardModel(from: req)
 
         return await withCheckedContinuation { (cont: CheckedContinuation<ACPPermissionOutcome, Never>) in
-            // once-guard:防 double resume(onAllow 后 onSuperseded 等并发触发 → CheckedContinuation
+            // once-guard:防 double resume(onAllow 后 onSuperseded / timeout 等并发触发 → CheckedContinuation
             // double resume 会 crash)。resolve 是 @MainActor 闭包,串行调 → flag 无竞态。
             var resolved = false
             // 答完(任一路径)→ resume continuation + 清高亮 + 复位 pet 模式 + 出队。
@@ -52,6 +52,12 @@ extension MinimalAppDelegate {
                 self?.chatCardWindowController?.agentSessionStore.highlightedItemId = nil
                 self?.permissionCardController?.returnToPet()
                 self?.chatCardWindowController?.agentSessionStore.removePending(id: reqId)
+            }
+            // timeout:agent 死(transport EOF)或用户久不答 → safeDefault(不永挂)。
+            // 600s 匹配现有 permissionCard 超时(+PermissionWiring);once-guard 保证 cont 只 resume 一次。
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 600_000_000_000)
+                resolve(req.safeDefaultOutcome)
             }
             let action = PendingAction(
                 id: reqId,
