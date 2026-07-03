@@ -22,6 +22,13 @@ extension MinimalAppDelegate {
         acp.onPermissionRequest = { [weak self] req in
             await self?.presentACPPermission(req) ?? req.safeDefaultOutcome
         }
+        // thought 展示(ACP-2 thought UI):agent_thought_chunk → pet「思考中」状态。
+        // @Sendable 同步闭包 → `Task { @MainActor }` hop 回主 actor 设 `cardState.isThinking`。
+        acp.onThought = { _ in
+            Task { @MainActor [weak self] in
+                self?.chatCardWindowController?.cardState.isThinking = true
+            }
+        }
     }
 
     /// 弹 pet 旁权限卡等用户处置 ACP 权限请求,返回 outcome。

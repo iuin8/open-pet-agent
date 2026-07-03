@@ -31,6 +31,9 @@ public final class ChatCardState: ObservableObject {
     @Published public var draft: String = ""
     /// 是否有一轮回答正在流式中（禁发送 + 显示打点）。
     @Published public var isSending: Bool = false
+    /// agent 思考中(ACP `agent_thought_chunk` 来时 true;流式 message 来时 false)。
+    /// ACP engine 专属(灵魂层无 thought);`isSending` 期间子状态,UI 显示「思考中」替代打点。
+    @Published public var isThinking: Bool = false
     /// 进场缩放锚点对应的边（由锚定结果驱动 spring transition）。
     @Published public var entranceEdge: ChatCardEdge = .above
     /// 是否已"放大就位"。controller 每次 show 先置 false 再 `withAnimation` 置 true →
@@ -89,5 +92,6 @@ public final class ChatCardState: ObservableObject {
         streamTask?.cancel()
         streamTask = nil
         isSending = false
+        isThinking = false
     }
 }

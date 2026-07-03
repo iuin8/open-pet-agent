@@ -25,7 +25,7 @@ struct PetChatTabContent: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if state.messages.isEmpty { emptyHint }
                     ForEach(state.messages) { row in
-                        ChatCardMessageRow(row: row)
+                        ChatCardMessageRow(row: row, isThinking: state.isThinking)
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }

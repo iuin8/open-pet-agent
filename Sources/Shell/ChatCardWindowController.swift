@@ -128,6 +128,7 @@ public final class ChatCardWindowController {
                 var lastUpdateAt = Date.distantPast
                 for try await delta in stream {
                     try Task.checkCancellation()
+                    state.isThinking = false   // message 来,清思考中(ACP thought UI)
                     full += delta
                     let now = Date()
                     if now.timeIntervalSince(lastUpdateAt) >= 0.032 {

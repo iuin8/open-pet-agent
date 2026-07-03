@@ -8,6 +8,8 @@ import SwiftUI
 /// 对话尖角，无需 Path（借鉴 AccountyCat (https://github.com/strjonas/AccountyCat) 的 ChatScrollView）。
 struct ChatCardMessageRow: View {
     let row: ChatCardRow
+    /// in-flight assistant row 思考中(text 空 + isThinking → 显示「思考中…」替代打点)。
+    var isThinking: Bool = false
 
     private var isUser: Bool { row.role == .user }
 
@@ -45,7 +47,13 @@ struct ChatCardMessageRow: View {
                 .foregroundStyle(ChatCardTheme.userBubbleText)
                 .textSelection(.enabled)
         } else if row.text.isEmpty {
-            TypingDots()
+            if isThinking {
+                Text("思考中…")
+                    .font(ChatCardTheme.body)
+                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
+            } else {
+                TypingDots()
+            }
         } else {
             MarkdownTextView(
                 content: row.text,

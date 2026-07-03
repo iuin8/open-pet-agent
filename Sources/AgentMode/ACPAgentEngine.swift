@@ -36,6 +36,10 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     /// 权限请求回调(ACP-2:App 注入显示 PermissionCard;nil → client 安全默认 reject_once)。
     public var onPermissionRequest: (@Sendable (ACPPermissionRequest) async -> ACPPermissionOutcome)?
 
+    /// 思考流回调(ACP-2 thought UI:`agent_thought_chunk` → App 显示「思考中」状态;nil → 忽略)。
+    /// @Sendable 同步(prompt callback 内直接调,非 async);App 注入闭包内 `Task { @MainActor }` hop。
+    public var onThought: (@Sendable (String) -> Void)?
+
     /// 复用的 client(首次 run 建,后续复用)。lock 保护(防并发首次建两次)。
     private var client: ACPClient?
     private let lock = NSLock()
@@ -95,12 +99,16 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
                     let sid = try await c.createSession(cwd: cwdPath, mcpServers: [])
                     await c.setSessionId(sid)
 
+                    let onThoughtHandler = onThought   // 捕获当前值(Sendable closure,run 时快照)
                     let stop = try await c.prompt(text: prompt) { update in
-                        // 只 yield 最终回复(agent_message_chunk);agent_thought_chunk(思考流)
-                        // 不 yield,免 pet 显示思考碎片。thought 展示留 ACP-2。
+                        // agent_message_chunk → yield text delta(最终回复)
+                        // agent_thought_chunk → onThought 回调(思考流 → App「思考中」状态;不 yield 免碎片)
                         if update.sessionUpdate == .agentMessageChunk,
                            let text = update.textContent, !text.isEmpty {
                             continuation.yield(text)
+                        } else if update.sessionUpdate == .agentThoughtChunk,
+                                  let text = update.textContent, !text.isEmpty {
+                            onThoughtHandler?(text)
                         }
                     }
                     _ = stop   // ACP-2 按类型做 pet 反应

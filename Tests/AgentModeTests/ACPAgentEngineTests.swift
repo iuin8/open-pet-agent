@@ -54,6 +54,31 @@ struct ACPAgentEngineTests {
         #expect(deltas == ["你好", "！"])
     }
 
+    @Test("ACPAgentEngine.onThought: thought_chunk → onThought 回调(不 yield)")
+    func thoughtChunkTriggersOnThought() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            thoughtChunk("The user wants a greeting"),
+            updateChunk("你好"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            transportFactory: { mock }
+        )
+        var thoughts: [String] = []
+        engine.onThought = { thoughts.append($0) }
+
+        var deltas: [String] = []
+        for try await delta in engine.run(prompt: "hi") {
+            deltas.append(delta)
+        }
+        #expect(deltas == ["你好"])  // thought 不 yield(只 message)
+        #expect(thoughts == ["The user wants a greeting"])  // thought → onThought 回调
+    }
+
     @Test("ACPAgentEngine: isAvailable=true 当 binaryPath 存在")
     func availableWhenBinaryExists() async {
         let engine = ACPAgentEngine(
