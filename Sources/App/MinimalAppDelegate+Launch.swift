@@ -99,6 +99,7 @@ extension MinimalAppDelegate {
         }
         self.agentModeRouter = router
         agentModeRouterHolder?.set(router)
+        if agentModeEnabled { wireACPPermissionHandler() }   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
     }
 
     /// Task B / P2 — OpenClaw 本地 gateway 探测 + 自动启动,作为**一等灵魂层
@@ -463,6 +464,7 @@ extension MinimalAppDelegate {
                 self.userDefaults.set(true, forKey: Self.agentModeEnabledKey)
                 self.userDefaults.set(engineId, forKey: AgentEngineKind.userDefaultsKey)
                 Self.applySelectedAgentEngine(to: self.agentModeRouter, defaults: self.userDefaults)
+                self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
             }
         }
         // 开卡片从 ConversationStore 恢复多轮历史（system 消息不展示）。

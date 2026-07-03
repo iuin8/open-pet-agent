@@ -184,8 +184,9 @@ extension MinimalAppDelegate {
     }
 
     /// 懒建 pet 旁权限侧卡控制器 + 接队列变化 → 同步侧卡 + 起 liveness 轮询。
+    /// `internal`(非 private):ACP-2 permission UI(`+ACPPermission.swift`)复用此控制器。
     @MainActor
-    private func ensurePermissionCardController(store: AgentSessionStore) {
+    func ensurePermissionCardController(store: AgentSessionStore) {
         guard permissionCardController == nil else { return }
         let ctrl = PermissionCardWindowController(store: store)
         // row 模式贴陪伴卡片旁 + 尖角对准消息行 → 需要陪伴卡片当前窗口 frame。

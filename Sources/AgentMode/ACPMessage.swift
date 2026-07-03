@@ -202,11 +202,23 @@ public struct ACPPermissionRequest: Sendable, Equatable {
     public let kind: String?
     public let options: [Option]
 
+    public init(toolCallId: String?, title: String?, kind: String?, options: [Option]) {
+        self.toolCallId = toolCallId
+        self.title = title
+        self.kind = kind
+        self.options = options
+    }
+
     public struct Option: Sendable, Equatable {
         public let optionId: String
         public let name: String
         /// allow_once / allow_always / reject_once / reject_always。
         public let kind: String
+        public init(optionId: String, name: String, kind: String) {
+            self.optionId = optionId
+            self.name = name
+            self.kind = kind
+        }
     }
 
     /// 从 session/request_permission 的 params 解出。
@@ -231,7 +243,7 @@ public struct ACPPermissionRequest: Sendable, Equatable {
 
     /// 安全默认(无 UI 回调时):找 reject_once 选项拒绝;无则 cancelled。
     /// 选 reject_once 而非 cancelled —— opencode 收 reject 可继续换方法,cancelled 整 turn 卡。
-    var safeDefaultOutcome: ACPPermissionOutcome {
+    public var safeDefaultOutcome: ACPPermissionOutcome {
         if let opt = options.first(where: { $0.kind == "reject_once" }) {
             return .selected(optionId: opt.optionId)
         }

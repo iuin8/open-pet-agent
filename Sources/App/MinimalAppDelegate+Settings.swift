@@ -230,6 +230,7 @@ extension MinimalAppDelegate {
                     to: self.agentModeRouter,
                     defaults: self.userDefaults
                 )
+                self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
             } else {
                 let none: ClaudeCodeEngine? = nil
                 self.agentModeRouter?.setEngine(none)
@@ -247,6 +248,7 @@ extension MinimalAppDelegate {
                     to: self.agentModeRouter,
                     defaults: self.userDefaults
                 )
+                self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
             }
         }
 

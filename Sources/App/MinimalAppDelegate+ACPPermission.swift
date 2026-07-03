@@ -1,0 +1,103 @@
+import AgentMode
+import AppKit
+import Shell
+
+// ACP-2 permission UI 接线:把 ACPAgentEngine 的 session/request_permission 回调接到
+// 现有 PermissionCard 管线(复用 AgentSensing 的 pet 旁侧卡 + PendingAction)。
+// agent 请求工具权限 → 弹卡 → 用户 allow/deny → outcome 回写 ACP client → agent 继续。
+// 非 ACP engine(Claude/Codex 本地子进程不经 ACP)→ wireACPPermissionHandler no-op(cast 失败)。
+
+extension MinimalAppDelegate {
+
+    /// engine 切换后调:给 ACPAgentEngine 注入 onPermissionRequest(若当前 engine 是 ACP)。
+    /// 非 ACP engine → no-op。在 `applySelectedAgentEngine` 后调(确保 `currentEngine` 已设)。
+    /// 时机:engine 创建后、首次 run 前 → ensureConnected 时透传给 ACPClient。
+    @MainActor
+    func wireACPPermissionHandler() {
+        guard let acp = agentModeRouter?.currentEngine as? ACPAgentEngine else { return }
+        // onPermissionRequest 是 @Sendable async 闭包(ACPClient actor 跨边界调)。
+        // 直接 `await self?.presentACPPermission`(presentACPPermission 是 @MainActor async,
+        // await 跨 actor hop 回主 actor)。@Sendable 闭包 [weak self] 在 Swift 5 是 warning
+        // (Swift 6 需 self Sendable 或经 holder)—— 当前可接受(appDelegate 是单例 @MainActor)。
+        acp.onPermissionRequest = { [weak self] req in
+            await self?.presentACPPermission(req) ?? req.safeDefaultOutcome
+        }
+    }
+
+    /// 弹 pet 旁权限卡等用户处置 ACP 权限请求,返回 outcome。
+    /// `.standard` 型(allow/deny 按钮):allow → `allow_*` optionId;deny → `reject_*` optionId 或 cancelled。
+    /// store 缺席 → safeDefaultOutcome(不卡 turn)。
+    ///
+    /// ⚠️ 留后:agent 死(transport EOF)时此 continuation 不会被 resume(ACPClient.handleEOF 不知
+    /// 此 cont)→ onPermissionRequest 永挂(内存泄漏 + 该请求不返回)。生产级需加 timeout / agent 死
+    /// cancel 补 cont.resume(safeDefault)。当前最小可行,边缘场景(agent 死在等权限时)。
+    @MainActor
+    func presentACPPermission(_ req: ACPPermissionRequest) async -> ACPPermissionOutcome {
+        guard let store = chatCardWindowController?.agentSessionStore else {
+            return req.safeDefaultOutcome
+        }
+        ensurePermissionCardController(store: store)
+        let reqId = "acp-\(UUID().uuidString)"
+        let model = Self.permissionCardModel(from: req)
+
+        return await withCheckedContinuation { (cont: CheckedContinuation<ACPPermissionOutcome, Never>) in
+            // once-guard:防 double resume(onAllow 后 onSuperseded 等并发触发 → CheckedContinuation
+            // double resume 会 crash)。resolve 是 @MainActor 闭包,串行调 → flag 无竞态。
+            var resolved = false
+            // 答完(任一路径)→ resume continuation + 清高亮 + 复位 pet 模式 + 出队。
+            let resolve: @MainActor (ACPPermissionOutcome) -> Void = { [weak self] outcome in
+                guard !resolved else { return }
+                resolved = true
+                cont.resume(returning: outcome)
+                self?.chatCardWindowController?.agentSessionStore.highlightedItemId = nil
+                self?.permissionCardController?.returnToPet()
+                self?.chatCardWindowController?.agentSessionStore.removePending(id: reqId)
+            }
+            let action = PendingAction(
+                id: reqId,
+                model: model,
+                onAllow: { resolve(Self.outcomeForAllow(req: req)) },
+                onDeny: { resolve(Self.outcomeForDeny(req: req)) },
+                onSelectOption: { idx in
+                    resolve(req.options.indices.contains(idx)
+                            ? .selected(optionId: req.options[idx].optionId)
+                            : req.safeDefaultOutcome)
+                },
+                onSubmit: { _ in resolve(req.safeDefaultOutcome) },
+                onSuperseded: { resolve(req.safeDefaultOutcome) },
+                onLocate: nil   // ACP 无 sessionId 定位(留后)
+            )
+            store.addPending(action)
+        }
+    }
+
+    // MARK: - 纯映射(可单测)
+
+    /// `ACPPermissionRequest` → `PermissionCardModel`(`.standard`:allow/deny 按钮)。
+    /// 简化:统一 standard 型(`allow_once` / `reject_once` 映射,直觉可用)。
+    /// 高级(`allow_always` / `reject_always`)留后(需 `PermissionCardModel` 扩型或专用 UI)。
+    nonisolated static func permissionCardModel(from req: ACPPermissionRequest) -> PermissionCardModel {
+        PermissionCardModel(
+            kind: .standard,
+            title: req.title ?? req.kind ?? "工具权限",
+            detail: nil,
+            project: nil
+        )
+    }
+
+    /// allow → `allow_*` optionId;无 allow option → safeDefault(不卡 turn)。
+    nonisolated static func outcomeForAllow(req: ACPPermissionRequest) -> ACPPermissionOutcome {
+        if let id = req.options.first(where: { $0.kind.hasPrefix("allow") })?.optionId {
+            return .selected(optionId: id)
+        }
+        return req.safeDefaultOutcome
+    }
+
+    /// deny → `reject_*` optionId;无 reject option → cancelled。
+    nonisolated static func outcomeForDeny(req: ACPPermissionRequest) -> ACPPermissionOutcome {
+        if let id = req.options.first(where: { $0.kind.hasPrefix("reject") })?.optionId {
+            return .selected(optionId: id)
+        }
+        return .cancelled
+    }
+}
