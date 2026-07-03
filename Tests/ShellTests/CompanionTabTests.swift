@@ -20,7 +20,7 @@ struct CompanionTabTests {
             #expect(!tab.displayName.isEmpty)
         }
         #expect(CompanionTab.petChat.displayName.contains("Pet Chat"))
-        #expect(CompanionTab.claudeCode.displayName.contains("Claude Code"))
+        #expect(CompanionTab.claudeCode.displayName.contains("Claude"))
         #expect(CompanionTab.codex.displayName.contains("Codex"))
     }
 

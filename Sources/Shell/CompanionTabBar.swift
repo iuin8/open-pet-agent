@@ -63,7 +63,7 @@ struct CompanionTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(tab.displayName)
+        .help(tab.helpText)
     }
 
     /// 选中态白底圆角；未选中透明。
