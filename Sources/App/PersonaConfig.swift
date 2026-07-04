@@ -48,6 +48,81 @@ public enum PersonaConfig {
         return soulMDURL
     }
 
+    // MARK: - IDENTITY.md(pet 名/emoji)+ USER.md(用户画像)—— P2c-2/3
+
+    /// IDENTITY.md 路径:`~/.open-pet-agent/workspace/IDENTITY.md`。
+    public static var identityMDURL: URL {
+        workspaceURL.appendingPathComponent("IDENTITY.md", isDirectory: false)
+    }
+    /// USER.md 路径:`~/.open-pet-agent/workspace/USER.md`。
+    public static var userMDURL: URL {
+        workspaceURL.appendingPathComponent("USER.md", isDirectory: false)
+    }
+
+    /// 读 IDENTITY.md(不存在 → nil)。
+    public static func readIdentity() -> String? {
+        guard let data = try? Data(contentsOf: identityMDURL) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    /// 读 USER.md(不存在 → nil)。
+    public static func readUser() -> String? {
+        guard let data = try? Data(contentsOf: userMDURL) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
+    public static func writeIdentity(_ content: String) throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try content.data(using: .utf8)?.write(to: identityMDURL, options: .atomic)
+        return identityMDURL
+    }
+    @discardableResult
+    public static func writeUser(_ content: String) throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try content.data(using: .utf8)?.write(to: userMDURL, options: .atomic)
+        return userMDURL
+    }
+
+    @discardableResult
+    public static func ensureDefaultIdentity() throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        guard !fm.fileExists(atPath: identityMDURL.path) else { return identityMDURL }
+        try defaultIdentityContent.data(using: .utf8)?.write(to: identityMDURL, options: .atomic)
+        return identityMDURL
+    }
+    @discardableResult
+    public static func ensureDefaultUser() throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        guard !fm.fileExists(atPath: userMDURL.path) else { return userMDURL }
+        try defaultUserContent.data(using: .utf8)?.write(to: userMDURL, options: .atomic)
+        return userMDURL
+    }
+
+    /// 读完整 persona 内容(SOUL.md + IDENTITY.md + USER.md 拼接,空跳过)。注入 system message。
+    public static func readPersonaContent() -> String? {
+        let parts = [readSoul(), readIdentity(), readUser()]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: "\n\n---\n\n")
+    }
+
+    public static let defaultIdentityContent = """
+# 身份
+
+- 名字:小弹
+- Emoji:🔮
+"""
+
+    public static let defaultUserContent = """
+# 用户画像
+
+(填你的名字/职业/偏好/工作内容,让 pet 更懂你。留空则不注入。)
+"""
+
     /// UserDefaults key(当前 persona 来源)。沿用 `tool.*` 命名。
     public static var personaSourceKey: String { "tool.persona.source" }
 

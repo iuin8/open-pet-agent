@@ -22,12 +22,38 @@ struct SettingsPersonaSection: View {
                     .foregroundStyle(.secondary)
                 TextEditor(text: $viewModel.soulText)
                     .font(.system(size: 12, design: .monospaced))
-                    .frame(minHeight: 220)
+                    .frame(minHeight: 160)
                 HStack {
                     Button("在 Finder 显示") { viewModel.revealSoulInFinder() }
                     Spacer()
                     Button("保存") { viewModel.saveSoul() }
                         .disabled(viewModel.soulText.isEmpty)
+                }
+
+                Divider().padding(.vertical, 4)
+
+                Text("IDENTITY.md · pet 身份(名/emoji,注入 system message)")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: $viewModel.identityText)
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(minHeight: 80)
+                HStack {
+                    Spacer()
+                    Button("保存") { viewModel.saveIdentity() }
+                        .disabled(viewModel.identityText.isEmpty)
+                }
+
+                Divider().padding(.vertical, 4)
+
+                Text("USER.md · 用户画像(让 pet 更懂你,注入 system message)")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: $viewModel.userText)
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(minHeight: 80)
+                HStack {
+                    Spacer()
+                    Button("保存") { viewModel.saveUser() }
+                        .disabled(viewModel.userText.isEmpty)
                 }
             }
             .padding(8)

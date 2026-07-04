@@ -465,9 +465,13 @@ extension MinimalAppDelegate {
             guard let self, let source = PersonaSource(rawValue: raw) else { return }
             PersonaConfig.setCurrentSource(source, defaults: self.userDefaults)
         }
+        controller.onCommitIdentity = { content in try? PersonaConfig.writeIdentity(content) }
+        controller.onCommitUser = { content in try? PersonaConfig.writeUser(content) }
         controller.configureSoulEditor(
             initialText: PersonaConfig.readSoul() ?? PersonaConfig.defaultSoulContent,
-            initialSource: PersonaConfig.resolveSource(from: userDefaults).rawValue
+            initialSource: PersonaConfig.resolveSource(from: userDefaults).rawValue,
+            initialIdentity: PersonaConfig.readIdentity() ?? PersonaConfig.defaultIdentityContent,
+            initialUser: PersonaConfig.readUser() ?? PersonaConfig.defaultUserContent
         )
 
         // MARK: - 系统权限 probe 注入(Task 4 + Task 6)

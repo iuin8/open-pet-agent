@@ -176,6 +176,14 @@ final class SettingsViewModel: ObservableObject {
     var onCommitPersonaSource: (String) -> Void = { _ in }
     func commitPersonaSource() { onCommitPersonaSource(personaSource) }
 
+    // P2c-2/3:IDENTITY.md(pet 名/emoji)+ USER.md(用户画像)编辑。
+    @Published var identityText: String = ""
+    var onCommitIdentity: (String) -> Void = { _ in }
+    func saveIdentity() { onCommitIdentity(identityText) }
+    @Published var userText: String = ""
+    var onCommitUser: (String) -> Void = { _ in }
+    func saveUser() { onCommitUser(userText) }
+
     /// 用 probe 灌一次四态(App 注入的 onRefreshPermissions 内部调本方法)。
     func refreshPermissions(using probe: SystemPermissionProbe) {
         var next: [SystemPermission: PermissionStatus] = [:]

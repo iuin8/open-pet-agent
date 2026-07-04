@@ -61,4 +61,35 @@ final class PersonaConfigTests: XCTestCase {
         PersonaConfig.setCurrentSource(.pet, defaults: defaults)
         XCTAssertEqual(PersonaConfig.resolveSource(from: defaults), .pet)
     }
+
+    func testWriteIdentityPersists() throws {
+        try PersonaConfig.writeIdentity("# 身份\n小弹")
+        XCTAssertEqual(PersonaConfig.readIdentity(), "# 身份\n小弹")
+    }
+
+    func testWriteUserPersists() throws {
+        try PersonaConfig.writeUser("# 用户\n开发者")
+        XCTAssertEqual(PersonaConfig.readUser(), "# 用户\n开发者")
+    }
+
+    func testReadPersonaContentConcatenatesAll() throws {
+        try PersonaConfig.writeSoul("SOUL 内容")
+        try PersonaConfig.writeIdentity("IDENTITY 内容")
+        try PersonaConfig.writeUser("USER 内容")
+        let content = PersonaConfig.readPersonaContent()
+        XCTAssertNotNil(content)
+        XCTAssertTrue(content?.contains("SOUL 内容") == true)
+        XCTAssertTrue(content?.contains("IDENTITY 内容") == true)
+        XCTAssertTrue(content?.contains("USER 内容") == true)
+    }
+
+    func testReadPersonaContentSkipsEmpty() throws {
+        try PersonaConfig.writeSoul("SOUL 内容")
+        try PersonaConfig.writeIdentity("")   // 空 → 跳过
+        try PersonaConfig.writeUser("USER 内容")
+        let content = PersonaConfig.readPersonaContent()
+        XCTAssertTrue(content?.contains("SOUL 内容") == true)
+        XCTAssertTrue(content?.contains("USER 内容") == true)
+        XCTAssertFalse(content?.contains("IDENTITY 内容") == true)
+    }
 }

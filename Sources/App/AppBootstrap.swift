@@ -460,16 +460,18 @@ public struct AppBootstrap: Sendable {
         let config = Self.resolveLLMConfig(userDefaults: userDefaults)
         let provider = Self.resolveLLMProvider(userDefaults: userDefaults)
         let box = LiveContextBox()
-        // P2a/P2c:ensure 默认 SOUL.md + persona 注入(来源可配,覆盖能力闸)。
+        // P2a/P2c:ensure 默认 SOUL.md + IDENTITY.md + USER.md + persona 注入(来源可配,覆盖能力闸)。
         // auto = 能力闸(nativePersona 不注入;云后端注入);pet = 强制注入;thirdParty = 强制不注入。
         try? PersonaConfig.ensureDefaultSoul()
+        try? PersonaConfig.ensureDefaultIdentity()
+        try? PersonaConfig.ensureDefaultUser()
         let hasNativePersona = SoulBackendRegistry.resolve(from: userDefaults)
             .capabilities.contains(.nativePersona)
         let personaSource = PersonaConfig.resolveSource(from: userDefaults)
         let personaResolver: (@Sendable () -> String?)? = {
             switch personaSource {
-            case .auto:       return hasNativePersona ? nil : PersonaConfig.readSoul()
-            case .pet:         return PersonaConfig.readSoul()
+            case .auto:       return hasNativePersona ? nil : PersonaConfig.readPersonaContent()
+            case .pet:         return PersonaConfig.readPersonaContent()
             case .thirdParty:  return nil
             }
         }
