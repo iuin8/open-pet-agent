@@ -14,12 +14,12 @@ struct CompanionTabTests {
         #expect(CompanionTab.allCases.first == .petChat)
     }
 
-    @Test("每个 tab 的 displayName 非空且含预期文案")
+    @Test("每个 tab 的 displayName 非空且含预期短名")
     func displayNamesNonEmpty() {
         for tab in CompanionTab.allCases {
             #expect(!tab.displayName.isEmpty)
         }
-        #expect(CompanionTab.petChat.displayName.contains("Pet Chat"))
+        #expect(CompanionTab.petChat.displayName.contains("Pet"))
         #expect(CompanionTab.claudeCode.displayName.contains("Claude"))
         #expect(CompanionTab.codex.displayName.contains("Codex"))
     }
@@ -29,6 +29,13 @@ struct CompanionTabTests {
         for tab in CompanionTab.allCases {
             #expect(!tab.systemImage.isEmpty)
         }
+    }
+
+    @Test("claudeCode/codex 有品牌 logo;petChat 无(走 SF Symbol)")
+    func brandLogos() {
+        #expect(CompanionTab.petChat.brandLogo == nil)
+        #expect(CompanionTab.claudeCode.brandLogo == .claude)
+        #expect(CompanionTab.codex.brandLogo == .codex)
     }
 
     @Test("TabBadge 默认 none 可构造", arguments: [TabBadge.none, .active, .awaiting])
