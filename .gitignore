@@ -29,3 +29,4 @@ Vendor/Cubism/
 # setup-cubism.sh 把 Core C 头拷进 CubismCore target(本地解析),那份拷贝也是 SDK 内容,不入库。
 Sources/CubismCore/include/Live2DCubismCore.h
 opencode.json
+.gitnexus
