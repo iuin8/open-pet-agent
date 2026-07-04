@@ -114,6 +114,9 @@ public final class SettingsWindowController {
     public var onProactiveSettingsPreview: @MainActor (ProactiveSettings) -> Void = { _ in }
     /// 主动协助 save（写 UD + 即时生效）。
     public var onSaveProactiveSettings: @MainActor (ProactiveSettings) -> Void = { _ in }
+    // P2b:SOUL.md 编辑(App 设外部闭包;viewModel.saveSoul/revealSoulInFinder 经此)。
+    public var onCommitSoul: @MainActor (String) -> Void = { _ in }
+    public var onRevealSoul: @MainActor () -> Void = {}
 
     /// PF6 桌宠大小 preview（拖滑杆立刻缩放桌宠，**不写 UD**）。
     public var onPetScalePreview: @MainActor (Double) -> Void = { _ in }
@@ -701,6 +704,14 @@ public final class SettingsWindowController {
         mutate(&s)
         viewModel.proactiveSettings = s
         viewModel.onProactiveSettingsPreview(s)
+    }
+
+    /// P2b:配置 SOUL.md 编辑器(初始文本 + 绑定 viewModel callback 到 controller callback)。
+    /// App 构造 controller 后调:先设 `onCommitSoul`/`onRevealSoul`(外部闭包)→ `configureSoulEditor`(绑定 viewModel)。
+    public func configureSoulEditor(initialText: String) {
+        viewModel.soulText = initialText
+        viewModel.onCommitSoul = { [weak self] in self?.onCommitSoul($0) }
+        viewModel.onRevealSoul = { [weak self] in self?.onRevealSoul() }
     }
 
     // MARK: - Private handlers

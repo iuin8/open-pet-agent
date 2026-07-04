@@ -454,6 +454,15 @@ extension MinimalAppDelegate {
             self?.saveProactiveSettings(settings)
         }
 
+        // P2b:SOUL.md 编辑(人格 section)—— 写文件 + Finder reveal。初始读 SOUL.md(无则默认人格)。
+        controller.onCommitSoul = { content in
+            try? PersonaConfig.writeSoul(content)
+        }
+        controller.onRevealSoul = {
+            NSWorkspace.shared.activateFileViewerSelecting([PersonaConfig.soulMDURL])
+        }
+        controller.configureSoulEditor(initialText: PersonaConfig.readSoul() ?? PersonaConfig.defaultSoulContent)
+
         // MARK: - 系统权限 probe 注入(Task 4 + Task 6)
 
         // AccessibilityBridge 查询辅助功能授权态 + 弹系统授权框。

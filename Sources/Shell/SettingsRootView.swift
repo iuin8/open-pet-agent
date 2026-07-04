@@ -20,11 +20,12 @@ struct SettingsRootView: View {
     @State private var showingLibrary = false
 
     enum Category: String, CaseIterable, Identifiable {
-        case backend, pet, weather, tool, proactive, debug, system, about
+        case backend, persona, pet, weather, tool, proactive, debug, system, about
         var id: String { rawValue }
         var label: String {
             switch self {
             case .backend:   return "AI 后端"
+            case .persona:   return "人格"
             case .pet:       return "桌宠"
             case .weather:   return "天气"
             case .tool:      return "外部 Agent"
@@ -37,6 +38,7 @@ struct SettingsRootView: View {
         var icon: String {
             switch self {
             case .backend:   return "cpu"
+            case .persona:   return "person.text.rectangle"
             case .pet:       return "pawprint.fill"
             case .weather:   return "cloud.sun.fill"
             case .tool:      return "wrench.and.screwdriver.fill"
@@ -49,6 +51,7 @@ struct SettingsRootView: View {
         var color: Color {
             switch self {
             case .backend:   return .blue
+            case .persona:   return .teal
             case .pet:       return .pink
             case .weather:   return .cyan
             case .tool:      return .orange
@@ -135,6 +138,7 @@ struct SettingsRootView: View {
                 Group {
                     switch selectedCategory {
                     case .backend:   SettingsBackendSection(viewModel: viewModel)
+                    case .persona:   SettingsPersonaSection(viewModel: viewModel)
                     case .pet:       SettingsPetSection(viewModel: viewModel, showingLibrary: $showingLibrary)
                     case .weather:   SettingsWeatherSection(viewModel: viewModel)
                     case .tool:      SettingsAgentSection(viewModel: viewModel)

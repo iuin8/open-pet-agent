@@ -26,6 +26,15 @@ public enum PersonaConfig {
         return String(data: data, encoding: .utf8)
     }
 
+    /// 写 SOUL.md(用户编辑后保存)。原子写,创建父目录。下次 reply 读新内容(热更新)。
+    @discardableResult
+    public static func writeSoul(_ content: String) throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try content.data(using: .utf8)?.write(to: soulMDURL, options: .atomic)
+        return soulMDURL
+    }
+
     /// 确保默认 SOUL.md 存在(幂等,已存在不覆盖)。app 启动调。
     @discardableResult
     public static func ensureDefaultSoul() throws -> URL {

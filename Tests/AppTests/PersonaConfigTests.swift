@@ -45,4 +45,9 @@ final class PersonaConfigTests: XCTestCase {
     func testSoulMDURLUnderWorkspace() {
         XCTAssertTrue(PersonaConfig.soulMDURL.path.hasSuffix(".open-pet-agent/workspace/SOUL.md"))
     }
+
+    func testWriteSoulPersistsAndReads() throws {
+        try PersonaConfig.writeSoul("# 自定义人格\n测试内容")
+        XCTAssertEqual(PersonaConfig.readSoul(), "# 自定义人格\n测试内容")
+    }
 }

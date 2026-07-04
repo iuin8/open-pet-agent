@@ -164,6 +164,13 @@ final class SettingsViewModel: ObservableObject {
     /// onAppear / 窗口重新激活 → 由 App 注入(刷新四态)。
     var onRefreshPermissions: () -> Void = {}
 
+    // P2b:SOUL.md 编辑(人格 section)—— textarea 绑定 soulText,保存触发 onCommitSoul(写文件)。
+    @Published var soulText: String = ""
+    var onCommitSoul: (String) -> Void = { _ in }
+    var onRevealSoul: () -> Void = {}
+    func saveSoul() { onCommitSoul(soulText) }
+    func revealSoulInFinder() { onRevealSoul() }
+
     /// 用 probe 灌一次四态(App 注入的 onRefreshPermissions 内部调本方法)。
     func refreshPermissions(using probe: SystemPermissionProbe) {
         var next: [SystemPermission: PermissionStatus] = [:]
