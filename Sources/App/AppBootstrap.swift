@@ -460,12 +460,21 @@ public struct AppBootstrap: Sendable {
         let config = Self.resolveLLMConfig(userDefaults: userDefaults)
         let provider = Self.resolveLLMProvider(userDefaults: userDefaults)
         let box = LiveContextBox()
+        // P2a:ensure 默认 SOUL.md(幂等,用户改保留)+ persona 注入(云后端读 SOUL.md;nativePersona 后端 openclaw 自管,不注入 —— 能力闸自动)。
+        try? PersonaConfig.ensureDefaultSoul()
+        let hasNativePersona = SoulBackendRegistry.resolve(from: userDefaults)
+            .capabilities.contains(.nativePersona)
+        let personaResolver: (@Sendable () -> String?)? = {
+            guard !hasNativePersona else { return nil }
+            return PersonaConfig.readSoul()
+        }
         self.orchestrator = CompanionOrchestrator(
             llmProvider: provider,
             agentModeBox: agentModeBox,
             conversationStore: store,
             liveContextBox: box,
-            modelName: config.model
+            modelName: config.model,
+            personaResolver: personaResolver
         )
         self.conversationStore = store
         self.liveContextBox = box

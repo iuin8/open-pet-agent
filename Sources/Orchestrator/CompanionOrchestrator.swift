@@ -31,6 +31,9 @@ public struct CompanionOrchestrator: Sendable {
     /// token budget. Nil → conservative default of 4096 tokens. Set by AppBootstrap
     /// via `resolveLLMConfig` (scheme C — orchestrator holds the resolved name).
     public let modelName: String?
+    /// P2a:persona 注入器(返回 SOUL.md 内容;nil → 用 base 硬编码)。App 注入:
+    /// 云后端读 SOUL.md;`nativePersona` 后端(openclaw)返回 nil(自管 SOUL,不注入 —— 能力闸自动)。
+    private let personaResolver: (@Sendable () -> String?)?
 
     public init(
         runtimeBridge: RuntimeBridgeService = RuntimeBridgeService(),
@@ -40,7 +43,8 @@ public struct CompanionOrchestrator: Sendable {
         agentModeBox: AgentModeBox = AgentModeBox(),
         conversationStore: ConversationStore? = nil,
         liveContextBox: LiveContextBox? = nil,
-        modelName: String? = nil
+        modelName: String? = nil,
+        personaResolver: (@Sendable () -> String?)? = nil
     ) {
         self.init(
             runtimeBridge: runtimeBridge,
@@ -50,7 +54,8 @@ public struct CompanionOrchestrator: Sendable {
             agentModeBox: agentModeBox,
             conversationStore: conversationStore,
             liveContextBox: liveContextBox,
-            modelName: modelName
+            modelName: modelName,
+            personaResolver: personaResolver
         )
     }
 
@@ -62,7 +67,8 @@ public struct CompanionOrchestrator: Sendable {
         agentModeBox: AgentModeBox = AgentModeBox(),
         conversationStore: ConversationStore? = nil,
         liveContextBox: LiveContextBox? = nil,
-        modelName: String? = nil
+        modelName: String? = nil,
+        personaResolver: (@Sendable () -> String?)? = nil
     ) {
         self.runtimeBridge = runtimeBridge
         self.presentationMapper = presentationMapper
@@ -72,6 +78,7 @@ public struct CompanionOrchestrator: Sendable {
         self.conversationStore = conversationStore
         self.liveContextBox = liveContextBox
         self.modelName = modelName
+        self.personaResolver = personaResolver
     }
 
     public func bootstrap(snapshot: DesktopSnapshot = .empty) async throws -> CompanionBootstrap {
@@ -316,11 +323,13 @@ public struct CompanionOrchestrator: Sendable {
             selfApplicationName: Self.ownApplicationName
         )
         let lastNonSelf = await liveContextBox?.lastNonSelfApplicationName
+        let soulContent = personaResolver?()  // P2a:云后端读 SOUL.md;nativePersona 后端 nil
         let systemPrompt = Self.buildSystemPrompt(
             snapshot: snapshot,
             petContext: petContext,
             selfApplicationName: Self.ownApplicationName,
-            lastNonSelfApplicationName: lastNonSelf
+            lastNonSelfApplicationName: lastNonSelf,
+            soulContent: soulContent
         )
         let contextWindow = Self.contextWindow(for: modelName)
         let history = await conversationStore?.truncatedMessages(
@@ -463,9 +472,11 @@ public struct CompanionOrchestrator: Sendable {
         now: Date = Date(),
         calendar: Calendar = .current,
         selfApplicationName: String? = nil,
-        lastNonSelfApplicationName: String? = nil
+        lastNonSelfApplicationName: String? = nil,
+        soulContent: String? = nil
     ) -> String {
-        let base = "You are OpenPetAgent, a friendly desktop AI companion living on the user's macOS desktop alongside a real-time snow simulation. Reply concisely in the user's language (default Chinese). Output ONLY the final answer — never show your reasoning, planning, or meta-narration (e.g. \"User asks…\", \"The assistant should…\", \"According to system…\"), never wrap thinking in <think> tags, and never restate the task in English."
+        // P2a:soulContent(SOUL.md)非 nil → 替代 base(云后端注入);nil → base 硬编码(向后兼容)。
+        let base = soulContent ?? "You are OpenPetAgent, a friendly desktop AI companion living on the user's macOS desktop alongside a real-time snow simulation. Reply concisely in the user's language (default Chinese). Output ONLY the final answer — never show your reasoning, planning, or meta-narration (e.g. \"User asks…\", \"The assistant should…\", \"According to system…\"), never wrap thinking in <think> tags, and never restate the task in English."
         guard let snapshot else { return base }
 
         var lines: [String] = ["[Desktop Context]"]

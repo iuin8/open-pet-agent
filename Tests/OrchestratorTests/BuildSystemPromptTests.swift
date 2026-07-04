@@ -138,6 +138,27 @@ struct BuildSystemPromptTests {
         #expect(!prompt.contains("雪景模式"))
     }
 
+    // MARK: P2a: soulContent(SOUL.md)替代 base
+
+    @Test("soulContent 非 nil → 替代 base 硬编码;nil → base")
+    func soulContentReplacesBase() {
+        let snapshot = makeSnapshot()
+
+        // nil → base 硬编码(向后兼容)
+        let promptNil = CompanionOrchestrator.buildSystemPrompt(
+            snapshot: snapshot, petContext: nil, soulContent: nil
+        )
+        #expect(promptNil.contains("friendly desktop AI companion"))
+
+        // 非 nil → SOUL.md 替代 base(base 字样不出现),仍有桌面上下文
+        let promptSoul = CompanionOrchestrator.buildSystemPrompt(
+            snapshot: snapshot, petContext: nil, soulContent: "# 我的 SOUL\n自定义人格文本"
+        )
+        #expect(promptSoul.contains("自定义人格文本"))
+        #expect(!promptSoul.contains("friendly desktop AI companion"))
+        #expect(promptSoul.contains("[Desktop Context]"))
+    }
+
     // MARK: 4. nil frontmost app → that line absent or shows fallback
 
     @Test("nil visibleApplicationName omits or shows fallback for app line")
