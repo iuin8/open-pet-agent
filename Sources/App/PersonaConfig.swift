@@ -1,6 +1,19 @@
 import Foundation
 import AgentMode
 
+/// Persona 来源(P2c:用户可配,覆盖能力闸自动)。
+/// `auto` = 能力闸(nativePersona 后端不注入;云后端注入);`pet` = 强制注入 SOUL.md;`thirdParty` = 强制不注入。
+public enum PersonaSource: String, CaseIterable, Sendable {
+    case auto, pet, thirdParty
+    public var displayName: String {
+        switch self {
+        case .auto:       return "自动(能力闸)"
+        case .pet:        return "Pet(SOUL.md)"
+        case .thirdParty: return "第三方(后端自带)"
+        }
+    }
+}
+
 /// PetAgent persona 配置(SOUL.md,pet 人格文件)。P2a:云后端注入 SOUL.md 到 system message。
 ///
 /// `~/.open-pet-agent/workspace/SOUL.md`(默认中文 pet 人格,app 启动 ensure 幂等,用户改保留)。
@@ -33,6 +46,21 @@ public enum PersonaConfig {
         try fm.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
         try content.data(using: .utf8)?.write(to: soulMDURL, options: .atomic)
         return soulMDURL
+    }
+
+    /// UserDefaults key(当前 persona 来源)。沿用 `tool.*` 命名。
+    public static var personaSourceKey: String { "tool.persona.source" }
+
+    /// 读当前 persona 来源(UD 缺失/值无效 → .auto 默认)。
+    public static func resolveSource(from defaults: UserDefaults = .standard) -> PersonaSource {
+        guard let raw = defaults.string(forKey: personaSourceKey),
+              let source = PersonaSource(rawValue: raw) else { return .auto }
+        return source
+    }
+
+    /// 设置 persona 来源。
+    public static func setCurrentSource(_ source: PersonaSource, defaults: UserDefaults = .standard) {
+        defaults.set(source.rawValue, forKey: personaSourceKey)
     }
 
     /// 确保默认 SOUL.md 存在(幂等,已存在不覆盖)。app 启动调。

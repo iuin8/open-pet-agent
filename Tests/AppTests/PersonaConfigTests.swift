@@ -50,4 +50,15 @@ final class PersonaConfigTests: XCTestCase {
         try PersonaConfig.writeSoul("# 自定义人格\n测试内容")
         XCTAssertEqual(PersonaConfig.readSoul(), "# 自定义人格\n测试内容")
     }
+
+    func testResolveSourceDefaultsAuto() {
+        let defaults = UserDefaults(suiteName: "PersonaConfigTests-\(UUID().uuidString)")!
+        XCTAssertEqual(PersonaConfig.resolveSource(from: defaults), .auto)
+    }
+
+    func testSetCurrentSourcePersists() {
+        let defaults = UserDefaults(suiteName: "PersonaConfigTests-\(UUID().uuidString)")!
+        PersonaConfig.setCurrentSource(.pet, defaults: defaults)
+        XCTAssertEqual(PersonaConfig.resolveSource(from: defaults), .pet)
+    }
 }

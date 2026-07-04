@@ -461,7 +461,14 @@ extension MinimalAppDelegate {
         controller.onRevealSoul = {
             NSWorkspace.shared.activateFileViewerSelecting([PersonaConfig.soulMDURL])
         }
-        controller.configureSoulEditor(initialText: PersonaConfig.readSoul() ?? PersonaConfig.defaultSoulContent)
+        controller.onCommitPersonaSource = { [weak self] raw in
+            guard let self, let source = PersonaSource(rawValue: raw) else { return }
+            PersonaConfig.setCurrentSource(source, defaults: self.userDefaults)
+        }
+        controller.configureSoulEditor(
+            initialText: PersonaConfig.readSoul() ?? PersonaConfig.defaultSoulContent,
+            initialSource: PersonaConfig.resolveSource(from: userDefaults).rawValue
+        )
 
         // MARK: - 系统权限 probe 注入(Task 4 + Task 6)
 

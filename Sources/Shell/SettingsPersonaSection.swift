@@ -11,6 +11,12 @@ struct SettingsPersonaSection: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 10) {
+                Picker("Persona 来源", selection: $viewModel.personaSource) {
+                    Text("自动(能力闸)").tag("auto")
+                    Text("Pet(SOUL.md)").tag("pet")
+                    Text("第三方(后端自带)").tag("thirdParty")
+                }
+                .onChange(of: viewModel.personaSource) { _ in viewModel.commitPersonaSource() }
                 Text("SOUL.md · pet 人格(云后端注入 system message;openclaw 自管不注入)")
                     .font(.caption)
                     .foregroundStyle(.secondary)

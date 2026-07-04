@@ -171,6 +171,11 @@ final class SettingsViewModel: ObservableObject {
     func saveSoul() { onCommitSoul(soulText) }
     func revealSoulInFinder() { onRevealSoul() }
 
+    // P2c:persona 来源(auto/pet/thirdParty,覆盖能力闸)。rawValue(String) — Shell 不依赖 App。
+    @Published var personaSource: String = "auto"
+    var onCommitPersonaSource: (String) -> Void = { _ in }
+    func commitPersonaSource() { onCommitPersonaSource(personaSource) }
+
     /// 用 probe 灌一次四态(App 注入的 onRefreshPermissions 内部调本方法)。
     func refreshPermissions(using probe: SystemPermissionProbe) {
         var next: [SystemPermission: PermissionStatus] = [:]
