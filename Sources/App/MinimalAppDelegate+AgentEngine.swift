@@ -24,11 +24,14 @@ extension MinimalAppDelegate {
     ) {
         guard let router else { return }
         let entry = AgentEngineRegistry.resolve(from: defaults)
-        // ACP engine(opencode):用默认项目 cwd + OPENCODE_CONFIG env
-        // (项目配置架构 P0:修问题 2 + agent 有 config + 产出有位置,详见 docs/project-config-architecture-design.md)
-        if entry.id == AgentEngineKind.openCode.rawValue,
-           let projectRoot = try? ProjectConfig.ensureDefaultProject() {
-            let opencodeConfigPath = ProjectConfig.defaultOpencodeConfig.path
+        // ACP engine(opencode):用 ProjectStore.current() 选中的项目(非写死 default)做 cwd + OPENCODE_CONFIG env
+        // (P1a 多项目数据地基;详见 docs/project-config-architecture-design.md)
+        // 首次启动 ensureDefaultProjectRegistered 幂等迁移;ensure 失败 fallback project.rootURL(P0 行为不变)。
+        if entry.id == AgentEngineKind.openCode.rawValue {
+            ProjectStore.ensureDefaultProjectRegistered(defaults: defaults)
+            let project = ProjectStore.current(defaults: defaults)
+            let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
+            let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
             router.setEngine(ACPAgentEngine(
                 command: ["opencode", "acp"],
                 cwd: projectRoot,
