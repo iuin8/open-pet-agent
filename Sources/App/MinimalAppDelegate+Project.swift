@@ -1,4 +1,5 @@
 import AppKit
+import AgentMode
 import Shell
 
 // MARK: - 项目配置(P1b 多项目 UI 接线 + P1c 外部项目/删除/重命名)

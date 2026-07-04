@@ -1,5 +1,5 @@
 import XCTest
-@testable import App
+@testable import AgentMode
 
 /// P1a 多项目数据地基测试。测试用 `homeDirectoryOverride` 隔离真 `~/.open-pet-agent/`,
 /// 用临时 HOME + 隔离 UserDefaults suite,绝不污染真环境。

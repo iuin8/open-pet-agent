@@ -10,9 +10,21 @@ import AgentMode
 struct ACPSmoke {
     static func main() async {
         let prompt = CommandLine.arguments.dropFirst().first ?? "用一句话说你好"
-        let cwd = FileManager.default.currentDirectoryPath
 
-        let real = ACPStdioTransport(command: ["opencode", "acp"], currentDirectoryURL: URL(fileURLWithPath: cwd))
+        // P1d:走 ProjectStore.current()(vs 之前 shell cwd)—— 与 applySelectedAgentEngine 同路径,
+        // 真互操作 verify 走 ProjectStore(冒烟工具对齐生产架构)。env 指向选中项目 opencode.json。
+        ProjectStore.ensureDefaultProjectRegistered()
+        let project = ProjectStore.current()
+        let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
+        let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
+        log("[project] id=\(project.id) root=\(projectRoot.path) config=\(opencodeConfigPath)")
+
+        let real = ACPStdioTransport(
+            command: ["opencode", "acp"],
+            processEnvironment: CLIProcessEnvironment.augmented()
+                .merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new },
+            currentDirectoryURL: projectRoot
+        )
         let transport: any ACPTransport = LoggingTransport(wrapping: real)
         let client = ACPClient(transport: transport)
         log("[dbg] transport type = \(String(describing: type(of: transport)))")
@@ -22,7 +34,7 @@ struct ACPSmoke {
             let caps = try await client.connect()
             log("[connect] protocolVersion=\(caps.protocolVersion) caps=\(caps.agentCapabilities.sorted())")
 
-            let sid = try await client.createSession(cwd: cwd, mcpServers: [])
+            let sid = try await client.createSession(cwd: projectRoot.path, mcpServers: [])
             await client.setSessionId(sid)
             log("[session] \(sid)")
 

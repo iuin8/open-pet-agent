@@ -1,37 +1,35 @@
 import Foundation
 
 /// PetAgent 项目配置(production-grade 架构,详见 `docs/project-config-architecture-design.md`)。
+/// 在 AgentMode target 供 App(`applySelectedAgentEngine`/`wireProjectConfiguration`)+ ACPSmoke 共用。
 ///
-/// P0:默认项目 `~/.open-pet-agent/projects/default/` + `.open-pet-agent/opencode.json`
-/// (model = 用户全局 provider 的第一个 model)。ACP engine 用此为 cwd + `OPENCODE_CONFIG` env,
-/// 解决「app cwd=/ 无 opencode.json → 默认 model `big-pickle` 卡」(问题 2)。
-///
-/// P1a:泛化到任意 `AgentProject`(`ensure(for:)` / `opencodeConfig(for:)`)。`ProjectStore.current()`
-/// 选中的项目做 cwd + env,而非写死 default。default 逻辑保留(P0 兼容 + current fallback)。
-///
-/// 后续(P1b+):外部项目(跟项目走)、persona 可配、current-project 检测。
-enum ProjectConfig {
+/// P0:默认项目 + `.open-pet-agent/opencode.json`(model=用户全局 provider)。ACP engine 用此为
+/// cwd + `OPENCODE_CONFIG` env,解决「app cwd=/ 无 opencode.json → big-pickle 卡」(问题 2)。
+/// P1a:泛化到任意 `AgentProject`(`ensure(for:)`/`opencodeConfig(for:)`)。`ProjectStore.current()`
+/// 选中的项目做 cwd + env,default 逻辑保留(P0 兼容 + current fallback)。
+public enum ProjectConfig {
 
     /// 测试钩子:覆盖 HOME 解析(nil → 真 `~`)。生产 nil,测试 setUp 设临时目录隔离,绝不污染真 `~/.open-pet-agent/`。
+    /// internal:仅 `@testable import AgentMode` 可访问(App 不用)。
     internal static var homeDirectoryOverride: URL?
 
     /// HOME 根(测试可 override)。
-    static var homeRoot: URL {
+    public static var homeRoot: URL {
         homeDirectoryOverride ?? FileManager.default.homeDirectoryForCurrentUser
     }
 
     /// 默认项目根:`~/.open-pet-agent/projects/default/`。
-    static var defaultProjectRoot: URL {
+    public static var defaultProjectRoot: URL {
         homeRoot.appendingPathComponent(".open-pet-agent/projects/default", isDirectory: true)
     }
 
     /// 默认项目 `.open-pet-agent/opencode.json` 路径(真源)。
-    static var defaultOpencodeConfig: URL {
+    public static var defaultOpencodeConfig: URL {
         defaultProjectRoot.appendingPathComponent(".open-pet-agent/opencode.json", isDirectory: false)
     }
 
     /// 默认项目(`AgentProject` 形态;id="default" 确定性,跨机器一致)。
-    static var defaultProject: AgentProject {
+    public static var defaultProject: AgentProject {
         AgentProject(
             id: "default",
             name: "默认项目",
@@ -42,20 +40,20 @@ enum ProjectConfig {
     }
 
     /// 指定项目 `.open-pet-agent/opencode.json` 路径。
-    static func opencodeConfig(for project: AgentProject) -> URL {
+    public static func opencodeConfig(for project: AgentProject) -> URL {
         project.rootURL.appendingPathComponent(".open-pet-agent/opencode.json", isDirectory: false)
     }
 
     /// 确保默认项目存在(创建目录 + opencode.json)。返回项目根 URL。幂等。
     /// P0 API,保留兼容;内部委托 `ensure(for:)`。
     @discardableResult
-    static func ensureDefaultProject() throws -> URL {
+    public static func ensureDefaultProject() throws -> URL {
         try ensure(for: defaultProject)
     }
 
     /// 确保指定项目的 `.open-pet-agent/` + opencode.json 存在。幂等(已存在不覆盖 opencode.json)。返回项目根。
     @discardableResult
-    static func ensure(for project: AgentProject) throws -> URL {
+    public static func ensure(for project: AgentProject) throws -> URL {
         let fm = FileManager.default
         let dotDir = project.rootURL.appendingPathComponent(".open-pet-agent", isDirectory: true)
         try fm.createDirectory(at: dotDir, withIntermediateDirectories: true)
@@ -67,7 +65,7 @@ enum ProjectConfig {
     }
 
     /// 生成默认 opencode.json:`{"model":"<provider>/<model>"}`(用户全局 provider 的第一个 model)。
-    /// 全局无 provider → fallback `opencode/big-pickle`(opencode 默认;用户需配全局 provider)。
+    /// 全局无 provider → fallback `opencode/big-pickle`。internal:`ensure(for:)` 内部用,不外暴露。
     static func makeDefaultOpencodeJSON() -> String {
         let globalConfig = homeRoot.appendingPathComponent(".config/opencode/opencode.json")
         guard let data = try? Data(contentsOf: globalConfig),
