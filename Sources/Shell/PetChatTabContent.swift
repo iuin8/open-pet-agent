@@ -61,8 +61,20 @@ struct PetChatTabContent: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
-            if !state.replyOptions.isEmpty {
-                ReplySourceBar(selected: replyTargetBinding, options: state.replyOptions)
+            if !state.replyOptions.isEmpty || state.currentProject != nil {
+                HStack(spacing: 6) {
+                    if !state.replyOptions.isEmpty {
+                        ReplySourceBar(selected: replyTargetBinding, options: state.replyOptions)
+                    }
+                    if let current = state.currentProject {
+                        ProjectMenu(
+                            current: current,
+                            projects: state.projects,
+                            onSelect: { state.commitProject($0) },
+                            onRequestCreateProject: { state.requestCreateProject() }
+                        )
+                    }
+                }
             }
             ChatCardComposer(draft: $state.draft, isSending: state.isSending) {
                 onSend(state.draft)

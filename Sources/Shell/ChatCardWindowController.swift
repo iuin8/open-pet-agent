@@ -52,6 +52,14 @@ public final class ChatCardWindowController {
     /// App 注入：用户切回复来源 → 写 UserDefaults + `router.setEngine` 即时生效。
     public var onCommitReplyTarget: (@MainActor (ReplyTarget) -> Void)?
 
+    /// App 注入:项目配置 provider(当前 project + 可选项)。每次开卡调,从 `ProjectStore` 派生
+    /// 最新值刷进 state → 驱动 `ProjectMenu`。nil → 不显示项目选择器。mirror `replyConfigurationProvider`。
+    public var projectProvider: (@MainActor () -> (current: ProjectOption, projects: [ProjectOption]))?
+    /// App 注入:用户切项目 → 写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply 即时生效。
+    public var onCommitProject: (@MainActor (String) -> Void)?
+    /// App 注入:用户点「新建项目」→ 弹 NSAlert 收名字 + `ProjectStore.create` + 刷新。
+    public var onRequestCreateProject: (@MainActor () -> Void)?
+
     // MARK: - Init
 
     public init(streamProvider: @escaping StreamProvider) {
@@ -154,6 +162,7 @@ public final class ChatCardWindowController {
     private func show(prefill: String?) {
         if panel == nil { createPanel() }
         syncReplyConfiguration()   // 开卡时从 UD 刷回复来源 segmented（同步设置面板的改动）
+        syncProjectConfiguration()  // 开卡时从 ProjectStore 刷项目 Menu（同步外部改动）
         if let prefill, !prefill.isEmpty { state.draft = prefill }
         // 先从 store 恢复历史（仅本会话尚无消息时），再定位 + spring 进场 → 卡片弹出即满载，
         // 不会"开卡时内容一闪而入"。历史读是 actor 快照（亚毫秒级），不会明显拖慢弹出。
@@ -175,6 +184,22 @@ public final class ChatCardWindowController {
             state.replyOptions = cfg.options
         }
         state.onCommitReplyTarget = onCommitReplyTarget
+    }
+
+    /// 从 App 注入的 provider 刷新项目配置到 state(开卡时 + 创建项目后调)+ 透传回调。
+    /// mirror `syncReplyConfiguration`。
+    private func syncProjectConfiguration() {
+        if let cfg = projectProvider?() {
+            state.currentProject = cfg.current
+            state.projects = cfg.projects
+        }
+        state.onCommitProject = onCommitProject
+        state.onRequestCreateProject = onRequestCreateProject
+    }
+
+    /// 刷新项目配置(public,App 创建项目后调,驱动 `ProjectMenu` 更新列表)。
+    @MainActor public func refreshProjectConfiguration() {
+        syncProjectConfiguration()
     }
 
     /// 锚定定位 + 弹出 + spring 进场。固定尺寸，不依赖历史。

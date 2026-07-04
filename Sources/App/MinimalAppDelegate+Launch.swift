@@ -467,6 +467,8 @@ extension MinimalAppDelegate {
                 self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
             }
         }
+        // 项目选择器 Menu(P1b 多项目):current/list 从 ProjectStore 派生;切项目重 apply engine;新建走 NSAlert。
+        wireProjectConfiguration(to: cardCtrl)
         // 开卡片从 ConversationStore 恢复多轮历史（system 消息不展示）。
         cardCtrl.historyProvider = { [weak self] in
             guard let store = self?.rootSystem.conversationStore else { return [] }

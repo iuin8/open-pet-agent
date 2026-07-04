@@ -63,6 +63,28 @@ public final class ChatCardState: ObservableObject {
         onCommitReplyTarget?(target)
     }
 
+    /// 当前 agent 工作项目(Composer 上方 `ProjectMenu` 的当前选中)。
+    /// App 注入(开卡时从 `ProjectStore.current()` 派生);切换经 `commitProject` 触发持久化 + 重 apply engine。
+    @Published public var currentProject: ProjectOption?
+    /// 可选项目列表(App 从 `ProjectStore.list()` 派生注入)。
+    @Published public var projects: [ProjectOption] = []
+    /// 切换项目回调(App 注入:写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply 即时生效)。
+    public var onCommitProject: (@MainActor (String) -> Void)?
+    /// 请求创建项目回调(App 注入:弹 NSAlert 收名字 + `ProjectStore.create` + 刷新)。
+    public var onRequestCreateProject: (@MainActor () -> Void)?
+
+    /// 切换项目 + 触发 `onCommitProject`(本地先更新 currentProject 乐观刷新 UI)。
+    public func commitProject(_ id: String) {
+        if let opt = projects.first(where: { $0.id == id }) {
+            currentProject = opt
+        }
+        onCommitProject?(id)
+    }
+    /// 请求创建项目(触发 `onRequestCreateProject`)。
+    public func requestCreateProject() {
+        onRequestCreateProject?()
+    }
+
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
     public var streamTask: Task<Void, Never>?
 
