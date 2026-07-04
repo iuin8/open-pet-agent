@@ -23,7 +23,28 @@ extension MinimalAppDelegate {
         defaults: UserDefaults
     ) {
         guard let router else { return }
-        router.setEngine(AgentEngineRegistry.resolve(from: defaults).makeEngine())
+        let entry = AgentEngineRegistry.resolve(from: defaults)
+        // ACP engine(opencode):用默认项目 cwd + OPENCODE_CONFIG env
+        // (项目配置架构 P0:修问题 2 + agent 有 config + 产出有位置,详见 docs/project-config-architecture-design.md)
+        if entry.id == AgentEngineKind.openCode.rawValue,
+           let projectRoot = try? ProjectConfig.ensureDefaultProject() {
+            let opencodeConfigPath = ProjectConfig.defaultOpencodeConfig.path
+            router.setEngine(ACPAgentEngine(
+                command: ["opencode", "acp"],
+                cwd: projectRoot,
+                transportFactory: {
+                    ACPStdioTransport(
+                        command: ["opencode", "acp"],
+                        processEnvironment: CLIProcessEnvironment.augmented()
+                            .merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new },
+                        currentDirectoryURL: projectRoot
+                    )
+                }
+            ))
+            return
+        }
+        // 其他 engine / fallback:registry makeEngine
+        router.setEngine(entry.makeEngine())
     }
 
     // MARK: - 回复来源 segmented 配置（聊天面板 Composer 上方，直觉可用性）

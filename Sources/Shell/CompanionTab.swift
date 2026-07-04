@@ -18,8 +18,8 @@ public enum CompanionTab: CaseIterable, Sendable {
     public var displayName: String {
         switch self {
         case .petChat:    return "🐾 Pet Chat"
-        case .claudeCode: return "📡 Claude 会话"
-        case .codex:      return "📡 Codex 会话"
+        case .claudeCode: return "📡 Claude"
+        case .codex:      return "📡 Codex"
         }
     }
 
