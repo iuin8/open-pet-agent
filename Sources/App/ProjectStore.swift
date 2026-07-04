@@ -50,13 +50,39 @@ enum ProjectStore {
         let id = UUID().uuidString
         let root = ProjectConfig.homeRoot
             .appendingPathComponent(".open-pet-agent/projects/\(id)", isDirectory: true)
-        let project = AgentProject(
-            id: id,
-            name: name,
-            rootURL: root,
-            isExternal: false,
-            createdAt: Date()
-        )
+        return try appendProject(AgentProject(id: id, name: name, rootURL: root, isExternal: false, createdAt: Date()))
+    }
+
+    /// 创建外部项目(跟项目走,VSCode 模式)。rootURL = 用户外部目录(如 `~/work/my-app/`)。
+    /// 建 rootURL/.open-pet-agent/ + opencode.json + 写入 projects.json。
+    @discardableResult
+    static func createExternal(name: String, rootURL: URL) throws -> AgentProject {
+        let id = UUID().uuidString
+        return try appendProject(AgentProject(id: id, name: name, rootURL: rootURL, isExternal: true, createdAt: Date()))
+    }
+
+    /// 重命名项目(改 projects.json 的 name;default 不可改名 — 系统项目)。
+    @discardableResult
+    static func rename(id: String, newName: String) throws {
+        guard id != ProjectConfig.defaultProject.id else { return }
+        var projects = list()
+        guard let idx = projects.firstIndex(where: { $0.id == id }) else { return }
+        projects[idx].name = newName
+        try writeList(projects)
+    }
+
+    /// 删除项目(从 projects.json 移除;default 不可删)。**不删文件**(托管项目 dir 留给
+    /// 用户手动清理;外部项目目录是用户的,绝不动)。调用方删后应 `setCurrent(default)`。
+    @discardableResult
+    static func delete(id: String) throws {
+        guard id != ProjectConfig.defaultProject.id else { return }
+        var projects = list()
+        projects.removeAll { $0.id == id }
+        try writeList(projects)
+    }
+
+    /// 内部:ensure 项目目录 + opencode.json + 追加到 projects.json(create/createExternal 共用,DRY)。
+    private static func appendProject(_ project: AgentProject) throws -> AgentProject {
         try ProjectConfig.ensure(for: project)
         var projects = list()
         projects.append(project)

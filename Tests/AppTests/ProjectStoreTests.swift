@@ -99,6 +99,45 @@ final class ProjectStoreTests: XCTestCase {
         XCTAssertEqual(project, decoded)
     }
 
+    // MARK: - createExternal / rename / delete
+
+    func testCreateExternalEnsuresOpencodeJSONAndPersists() throws {
+        let externalRoot = tmpHome.appendingPathComponent("external-app", isDirectory: true)
+        let project = try ProjectStore.createExternal(name: "外部项目", rootURL: externalRoot)
+        XCTAssertTrue(project.isExternal)
+        XCTAssertEqual(project.rootURL, externalRoot)
+        // .open-pet-agent/opencode.json 建在外部目录
+        let config = ProjectConfig.opencodeConfig(for: project)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: config.path))
+        // 写入 projects.json
+        XCTAssertTrue(ProjectStore.list().contains { $0.id == project.id })
+    }
+
+    func testRenameChangesName() throws {
+        let project = try ProjectStore.create(name: "旧名")
+        try ProjectStore.rename(id: project.id, newName: "新名")
+        let updated = ProjectStore.list().first { $0.id == project.id }
+        XCTAssertEqual(updated?.name, "新名")
+    }
+
+    func testRenameDefaultNoOp() throws {
+        // default 不可改名(系统项目)
+        try ProjectStore.rename(id: ProjectConfig.defaultProject.id, newName: "不该改")
+        XCTAssertEqual(ProjectStore.list().first { $0.id == "default" }?.name, "默认项目")
+    }
+
+    func testDeleteRemovesProject() throws {
+        let project = try ProjectStore.create(name: "待删")
+        try ProjectStore.delete(id: project.id)
+        XCTAssertFalse(ProjectStore.list().contains { $0.id == project.id })
+    }
+
+    func testDeleteDefaultNoOp() throws {
+        // default 不可删(系统项目)
+        try ProjectStore.delete(id: ProjectConfig.defaultProject.id)
+        XCTAssertTrue(ProjectStore.list().contains { $0.id == "default" })
+    }
+
     // MARK: - helpers
 
     private func makeIsolatedDefaults() -> UserDefaults {

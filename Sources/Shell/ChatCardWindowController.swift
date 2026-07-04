@@ -59,6 +59,12 @@ public final class ChatCardWindowController {
     public var onCommitProject: (@MainActor (String) -> Void)?
     /// App 注入:用户点「新建项目」→ 弹 NSAlert 收名字 + `ProjectStore.create` + 刷新。
     public var onRequestCreateProject: (@MainActor () -> Void)?
+    /// App 注入:用户点「添加外部项目」→ NSOpenPanel 选目录 + `ProjectStore.createExternal` + 刷新。
+    public var onRequestCreateExternal: (@MainActor () -> Void)?
+    /// App 注入:用户点「重命名当前项目」→ NSAlert 收新名 + `ProjectStore.rename` + 刷新。
+    public var onRequestRenameCurrent: (@MainActor () -> Void)?
+    /// App 注入:用户点「删除当前项目」→ NSAlert 确认 + `ProjectStore.delete` + setCurrent(default) + 刷新。
+    public var onRequestDeleteCurrent: (@MainActor () -> Void)?
 
     // MARK: - Init
 
@@ -195,6 +201,9 @@ public final class ChatCardWindowController {
         }
         state.onCommitProject = onCommitProject
         state.onRequestCreateProject = onRequestCreateProject
+        state.onRequestCreateExternal = onRequestCreateExternal
+        state.onRequestRenameCurrent = onRequestRenameCurrent
+        state.onRequestDeleteCurrent = onRequestDeleteCurrent
     }
 
     /// 刷新项目配置(public,App 创建项目后调,驱动 `ProjectMenu` 更新列表)。

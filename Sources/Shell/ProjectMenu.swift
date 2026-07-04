@@ -5,14 +5,17 @@ import SwiftUI
 /// 选当前 agent 工作项目(ACP engine 的 cwd + opencode config 来源)。跟 `ReplySourceBar`(engine)
 /// 横排:engine 选「用什么 brain」,project 选「在哪个项目工作」。两者独立。
 ///
-/// 「新建项目」入口 → `onRequestCreateProject` callback(App 层弹 NSAlert 收名字 + `ProjectStore.create`)。
-/// **Shell 不碰 sheet/dialog**(NSPanel 上 SwiftUI sheet 有坑),创建 flow 走 App 原生 NSAlert。
-/// 外部项目(NSOpenPanel)留 P1b 后续。
+/// Menu 入口:项目列表(切换)+ 新建项目(托管)+ 添加外部项目(NSOpenPanel)+ 重命名/删除当前
+/// (default 不可删改,disabled)。创建/重命名走 App 原生 NSAlert,外部走 NSOpenPanel —— **Shell 不碰
+/// sheet/dialog**(NSPanel 上 SwiftUI sheet 有坑)。详见 `docs/project-config-architecture-design.md`。
 struct ProjectMenu: View {
     let current: ProjectOption
     let projects: [ProjectOption]
     let onSelect: (String) -> Void
     let onRequestCreateProject: () -> Void
+    let onRequestCreateExternal: () -> Void
+    let onRequestRenameCurrent: () -> Void
+    let onRequestDeleteCurrent: () -> Void
 
     var body: some View {
         Menu {
@@ -29,6 +32,24 @@ struct ProjectMenu: View {
             } label: {
                 Label("新建项目", systemImage: "plus")
             }
+            Button {
+                onRequestCreateExternal()
+            } label: {
+                Label("添加外部项目…", systemImage: "folder.badge.plus")
+            }
+            Divider()
+            Button {
+                onRequestRenameCurrent()
+            } label: {
+                Label("重命名当前项目…", systemImage: "pencil")
+            }
+            .disabled(current.id == "default")
+            Button {
+                onRequestDeleteCurrent()
+            } label: {
+                Label("删除当前项目", systemImage: "trash")
+            }
+            .disabled(current.id == "default")
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "folder.fill")

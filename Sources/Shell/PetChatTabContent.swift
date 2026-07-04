@@ -71,7 +71,10 @@ struct PetChatTabContent: View {
                             current: current,
                             projects: state.projects,
                             onSelect: { state.commitProject($0) },
-                            onRequestCreateProject: { state.requestCreateProject() }
+                            onRequestCreateProject: { state.requestCreateProject() },
+                            onRequestCreateExternal: { state.requestCreateExternal() },
+                            onRequestRenameCurrent: { state.requestRenameCurrent() },
+                            onRequestDeleteCurrent: { state.requestDeleteCurrent() }
                         )
                     }
                 }

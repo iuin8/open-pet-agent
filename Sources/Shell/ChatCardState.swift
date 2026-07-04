@@ -84,6 +84,16 @@ public final class ChatCardState: ObservableObject {
     public func requestCreateProject() {
         onRequestCreateProject?()
     }
+    /// 请求添加外部项目(NSOpenPanel,触发 `onRequestCreateExternal`)。
+    public var onRequestCreateExternal: (@MainActor () -> Void)?
+    /// 请求重命名当前项目(NSAlert 收新名,触发 `onRequestRenameCurrent`)。
+    public var onRequestRenameCurrent: (@MainActor () -> Void)?
+    /// 请求删除当前项目(NSAlert 确认,触发 `onRequestDeleteCurrent`)。
+    public var onRequestDeleteCurrent: (@MainActor () -> Void)?
+
+    public func requestCreateExternal() { onRequestCreateExternal?() }
+    public func requestRenameCurrent() { onRequestRenameCurrent?() }
+    public func requestDeleteCurrent() { onRequestDeleteCurrent?() }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
     public var streamTask: Task<Void, Never>?

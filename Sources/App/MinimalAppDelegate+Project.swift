@@ -1,16 +1,15 @@
 import AppKit
 import Shell
 
-// MARK: - 项目配置(P1b 多项目 UI 接线)
+// MARK: - 项目配置(P1b 多项目 UI 接线 + P1c 外部项目/删除/重命名)
 
 extension MinimalAppDelegate {
 
-    /// 注入项目配置 provider + 切换/创建回调到 chat card(P1b 多项目 UI)。
+    /// 注入项目配置 provider + 切换/创建/删除回调到 chat card(P1b/P1c 多项目 UI)。
     ///
     /// mirror `replyConfiguration` 注入模式:`ProjectStore.current()` 派生 current + `list()` 派生列表,
-    /// 切项目 → 写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply + wireACPPermission;
-    /// 创建项目 → NSAlert 收名字 + `ProjectStore.create` + 刷新 Menu。
-    /// 详见 `docs/project-config-architecture-design.md` §9 留后(多项目系统 P1b)。
+    /// 切项目 → 写 UD + 重 apply engine;创建(托管/外部)→ NSAlert/NSOpenPanel + create + 刷新;
+    /// 重命名/删除 → NSAlert + rename/delete + 刷新。详见 `docs/project-config-architecture-design.md`。
     @MainActor func wireProjectConfiguration(to cardCtrl: ChatCardWindowController) {
         cardCtrl.projectProvider = { [weak self] in
             let defaults = self?.userDefaults ?? .standard
@@ -30,10 +29,18 @@ extension MinimalAppDelegate {
         cardCtrl.onRequestCreateProject = { [weak self, weak cardCtrl] in
             self?.promptForProjectNameAndCreate(refresh: { cardCtrl?.refreshProjectConfiguration() })
         }
+        cardCtrl.onRequestCreateExternal = { [weak self, weak cardCtrl] in
+            self?.promptForExternalProjectAndCreate(refresh: { cardCtrl?.refreshProjectConfiguration() })
+        }
+        cardCtrl.onRequestRenameCurrent = { [weak self, weak cardCtrl] in
+            self?.promptForRenameCurrentProject(refresh: { cardCtrl?.refreshProjectConfiguration() })
+        }
+        cardCtrl.onRequestDeleteCurrent = { [weak self, weak cardCtrl] in
+            self?.confirmDeleteCurrentProject(refresh: { cardCtrl?.refreshProjectConfiguration() })
+        }
     }
 
     /// 弹 NSAlert 收项目名 → 创建托管项目(`~/.open-pet-agent/projects/<id>/`)+ 刷新 chat card Menu。
-    /// 创建失败(磁盘满/权限)不致命,弹 alert 提示。外部项目(NSOpenPanel)留 P1b 后续。
     @MainActor func promptForProjectNameAndCreate(refresh: @escaping @MainActor () -> Void) {
         let alert = NSAlert()
         alert.messageText = "新建项目"
@@ -45,17 +52,81 @@ extension MinimalAppDelegate {
         input.placeholderString = "项目名"
         alert.accessoryView = input
         alert.window.initialFirstResponder = input
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn, !input.stringValue.isEmpty else { return }
+        guard alert.runModal() == .alertFirstButtonReturn, !input.stringValue.isEmpty else { return }
         do {
             try ProjectStore.create(name: input.stringValue)
             refresh()
         } catch {
-            let errAlert = NSAlert()
-            errAlert.messageText = "创建项目失败"
-            errAlert.informativeText = "\(error)"
-            errAlert.alertStyle = .warning
-            errAlert.runModal()
+            showProjectError(title: "创建项目失败", error: error)
         }
+    }
+
+    /// NSOpenPanel 选外部目录 → `createExternal`(name=目录名)+ 刷新。外部项目跟项目走(VSCode 模式)。
+    @MainActor func promptForExternalProjectAndCreate(refresh: @escaping @MainActor () -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "添加"
+        panel.message = "选一个目录作为 agent 工作项目(跟项目走,VSCode 模式)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try ProjectStore.createExternal(name: url.lastPathComponent, rootURL: url)
+            refresh()
+        } catch {
+            showProjectError(title: "添加外部项目失败", error: error)
+        }
+    }
+
+    /// NSAlert 收新名(默认当前名)→ `rename` + 刷新。default 不可改名(系统项目)。
+    @MainActor func promptForRenameCurrentProject(refresh: @escaping @MainActor () -> Void) {
+        let current = ProjectStore.current(defaults: userDefaults)
+        guard current.id != ProjectConfig.defaultProject.id else { return }
+        let alert = NSAlert()
+        alert.messageText = "重命名项目"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "重命名")
+        alert.addButton(withTitle: "取消")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        input.stringValue = current.name
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        guard alert.runModal() == .alertFirstButtonReturn, !input.stringValue.isEmpty else { return }
+        do {
+            try ProjectStore.rename(id: current.id, newName: input.stringValue)
+            refresh()
+        } catch {
+            showProjectError(title: "重命名失败", error: error)
+        }
+    }
+
+    /// NSAlert 确认 → `delete` + `setCurrent(default)` + 重 apply engine + 刷新。default 不可删。
+    @MainActor func confirmDeleteCurrentProject(refresh: @escaping @MainActor () -> Void) {
+        let current = ProjectStore.current(defaults: userDefaults)
+        guard current.id != ProjectConfig.defaultProject.id else { return }
+        let alert = NSAlert()
+        alert.messageText = "删除项目「\(current.name)」?"
+        alert.informativeText = "从项目列表移除(不删文件,托管项目目录留给你手动清理)。删除后切回默认项目。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            try ProjectStore.delete(id: current.id)
+            ProjectStore.setCurrent(ProjectConfig.defaultProject.id, defaults: userDefaults)
+            Self.applySelectedAgentEngine(to: agentModeRouter, defaults: userDefaults)
+            refresh()
+        } catch {
+            showProjectError(title: "删除失败", error: error)
+        }
+    }
+
+    /// 项目操作失败提示(创建/外部/重命名/删除 共用)。
+    @MainActor private func showProjectError(title: String, error: Error) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = "\(error)"
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }
