@@ -231,6 +231,8 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// 重启。Orchestrator 通过共享的 `AgentModeRouterHolder` 拿到引用,
     /// `replyStream` 优先路由到这里。
     var agentModeRouter: AgentModeRouter?
+    /// P3:前台 project 检测器(前台 app 切换 → cwd → 匹配 project → 自动切)。
+    var frontmostProjectDetector: FrontmostProjectDetector?
 
     /// N2.3: 由 `OpenPetAgentApp.launchReadyApp` 注入的 router holder。延迟到
     /// `applicationDidFinishLaunching` 才真正 `set(router)`, 因为那时才
@@ -721,6 +723,9 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
 
         // N2.3 / N2.4 — Tool mode router (UserDefaults-driven engine).
         setupAgentModeRouter()
+
+        // P3 — 前台 app 切换 → 检测 cwd → 自动切 project(didActivateApplication notification)。
+        setupFrontmostProjectDetector()
 
         // Task B — OpenClaw local gateway probe + auto-launch (best-effort).
         setupOpenClawBootstrap()

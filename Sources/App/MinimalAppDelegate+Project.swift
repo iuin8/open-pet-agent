@@ -6,6 +6,18 @@ import Shell
 
 extension MinimalAppDelegate {
 
+    /// P3:建前台 project 检测器 + NSWorkspace notification(前台 app 切换 → 检测 cwd → 自动切 project)。
+    @MainActor func setupFrontmostProjectDetector() {
+        let detector = FrontmostProjectDetector(defaults: userDefaults, router: agentModeRouter)
+        frontmostProjectDetector = detector
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in detector.detect() }
+        }
+    }
+
     /// 注入项目配置 provider + 切换/创建/删除回调到 chat card(P1b/P1c 多项目 UI)。
     ///
     /// mirror `replyConfiguration` 注入模式:`ProjectStore.current()` 派生 current + `list()` 派生列表,
@@ -26,6 +38,7 @@ extension MinimalAppDelegate {
             ProjectStore.setCurrent(id, defaults: self.userDefaults)
             Self.applySelectedAgentEngine(to: self.agentModeRouter, defaults: self.userDefaults)
             self.wireACPPermissionHandler()
+            self.frontmostProjectDetector?.reset()  // P3:手动切后 reset,避免 detector 切回
         }
         cardCtrl.onRequestCreateProject = { [weak self, weak cardCtrl] in
             self?.promptForProjectNameAndCreate(refresh: { cardCtrl?.refreshProjectConfiguration() })
