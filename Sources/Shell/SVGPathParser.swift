@@ -24,11 +24,48 @@ enum SVGPathParser {
 
         let tokens = tokenize(d)
         var i = 0
-        // 取下一个数字;遇到新的 .command 停(隐式命令复用上一个 cmd 时调用方先消费 command)
-        func next() -> Double {
+        // 用于 arc flag 的「从当前 number token 头部啃一个字符」 leftovers。
+        // 标准 SVG path 里 flag 0/1 常与后续坐标连写(如 "010.831"),而正则把它当成一个
+        // 数字；这里保留原始字符串,读到 flag 时只消费首字符,把剩余部分留到下一次读数字。
+        var pendingRaw: String? = nil
+
+        // 跳过 command token,取下一个原始 number 字符串(不消费)。
+        func peekRaw() -> String? {
+            if let p = pendingRaw, !p.isEmpty { return p }
+            pendingRaw = nil
             while i < tokens.count, case .command = tokens[i] { i += 1 }
-            if i < tokens.count, case .number(let v) = tokens[i] { i += 1; return v }
+            if i < tokens.count, case .number(_, let raw) = tokens[i] { return raw }
+            return nil
+        }
+        // 消费下一个数字。若 pendingRaw 非空,说明当前 token 已被 flag 拆分,这里消费
+        // 剩余部分并把下标推进(避免重复读同一 token)。
+        func next() -> Double {
+            if let p = pendingRaw {
+                pendingRaw = nil
+                i += 1
+                if !p.isEmpty { return Double(p) ?? 0 }
+            }
+            while i < tokens.count, case .command = tokens[i] { i += 1 }
+            if i < tokens.count, case .number(let v, _) = tokens[i] { i += 1; return v }
             return 0
+        }
+        // 消费 arc flag(0/1)。允许与后续坐标连写;若把当前 token 啃完则推进下标。
+        func nextFlag() -> Bool {
+            guard let raw = peekRaw() else { return false }
+            if let first = raw.first, first == "0" || first == "1" {
+                let rest = String(raw.dropFirst())
+                if rest.isEmpty {
+                    pendingRaw = nil
+                    i += 1
+                } else {
+                    pendingRaw = rest
+                }
+                return first == "1"
+            }
+            // 不是以 0/1 开头的 token,整体当布尔值消费(兼容空格分隔)。
+            pendingRaw = nil
+            i += 1
+            return (Double(raw) ?? 0) > 0.5
         }
         func pt(_ x: Double, _ y: Double, relative: Bool) -> CGPoint {
             relative ? CGPoint(x: p.x + x * sx, y: p.y + y * sy)
@@ -86,10 +123,11 @@ enum SVGPathParser {
                 prevQ = c; prevC = nil
             case "A", "a":
                 let rel = (cmd == "a")
-                let rx = next(), ry = next(), phi = next(), large = next(), sweep = next()
+                let rx = next(), ry = next(), phi = next()
+                let large = nextFlag(), sweep = nextFlag()
                 let end = pt(next(), next(), relative: rel)
                 appendArc(to: &path, from: p, end: end, rx: rx * sx, ry: ry * sy,
-                          phi: phi, large: large > 0.5, sweep: sweep > 0.5)
+                          phi: phi, large: large, sweep: sweep)
                 p = end
                 prevC = nil; prevQ = nil
             case "Z", "z":
@@ -165,7 +203,7 @@ enum SVGPathParser {
 
     // MARK: - tokenizer
 
-    private enum Token { case command(Character), number(Double) }
+    private enum Token { case command(Character), number(Double, raw: String) }
 
     private static func tokenize(_ d: String) -> [Token] {
         var tokens: [Token] = []
@@ -176,7 +214,7 @@ enum SVGPathParser {
             guard let m = m, let r = Range(m.range, in: d) else { return }
             let s = String(d[r])
             if let c = s.first, c.isLetter { tokens.append(.command(c)) }
-            else if let v = Double(s) { tokens.append(.number(v)) }
+            else if let v = Double(s) { tokens.append(.number(v, raw: s)) }
         }
         return tokens
     }

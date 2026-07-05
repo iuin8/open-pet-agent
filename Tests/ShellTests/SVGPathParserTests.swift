@@ -81,13 +81,29 @@ struct SVGPathParserTests {
         #expect(bb.height > 20)
     }
 
-    @Test("BrandLogoShape 渲染(15×15 rect 内非空)")
-    func shapeRenders() {
-        let shape = BrandLogoShape(logo: .claude)
-        let path = shape.path(in: CGRect(x: 0, y: 0, width: 15, height: 15))
+    @Test("Claude logo 渲染后 bounds 在 viewBox 内")
+    func claudeLogoBounds() {
+        let path = SVGPathParser.parse(BrandLogo.claude.pathData, in: CGRect(x: 0, y: 0, width: 24, height: 24))
+        let bb = path.boundingRect
+        #expect(bb.minX >= -0.5 && bb.maxX <= 24.5)
+        #expect(bb.minY >= -0.5 && bb.maxY <= 24.5)
+    }
+
+    @Test("Codex logo 渲染后 bounds 在 viewBox 内")
+    func codexLogoBounds() {
+        let path = SVGPathParser.parse(BrandLogo.codex.pathData, in: CGRect(x: 0, y: 0, width: 24, height: 24))
+        let bb = path.boundingRect
+        #expect(bb.minX >= -0.5 && bb.maxX <= 24.5)
+        #expect(bb.minY >= -0.5 && bb.maxY <= 24.5)
+    }
+
+    @Test("arc flag 与坐标连写(如 0010.831)能正确拆分")
+    func arcFlagsConcatenated() {
+        // "0 0010 10" = x-axis-rotation=0, large=0, sweep=0, end=(10,10)
+        let path = SVGPathParser.parse("M0 0 A5 5 0 0010 10", in: CGRect(x: 0, y: 0, width: 24, height: 24))
         #expect(path.isEmpty == false)
         let bb = path.boundingRect
-        #expect(bb.width > 12)
-        #expect(bb.height > 12)
+        #expect(bb.maxX >= 10)
+        #expect(bb.maxY >= 10)
     }
 }

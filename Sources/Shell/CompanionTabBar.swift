@@ -69,6 +69,7 @@ struct CompanionTabBar: View {
                 .fill(logo.defaultColor, style: logo.fillRule)
                 .opacity(isSelected ? 1.0 : 0.5)
                 .frame(width: 22, height: 22)
+                .clipped()
         } else {
             Image(systemName: tab.systemImage)
                 .font(.system(size: 22, weight: .semibold))
