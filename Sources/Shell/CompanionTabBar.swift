@@ -68,11 +68,11 @@ struct CompanionTabBar: View {
             BrandLogoShape(logo: logo)
                 .fill(logo.defaultColor, style: logo.fillRule)
                 .opacity(isSelected ? 1.0 : 0.5)
-                .frame(width: 22, height: 22)
+                .frame(width: 18, height: 18)
                 .clipped()
         } else {
             Image(systemName: tab.systemImage)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(isSelected ? ChatCardTheme.accent : ChatCardTheme.textPrimary.opacity(0.4))
         }
     }
