@@ -26,14 +26,17 @@ public struct ReplyOption: Equatable, Hashable, Sendable, Identifiable {
     public let target: ReplyTarget
     /// 紧凑展示名(segmented 上显示,如 "聊天"/"Claude"/"Codex"/"opencode")。
     public let label: String
-    /// SF Symbol 图标名。
+    /// SF Symbol 图标名(无品牌 logo 时 fallback 用)。
     public let systemImage: String
+    /// 品牌 logo(Claude/Codex 等),优先于 `systemImage` 渲染。
+    public let brandLogo: BrandLogo?
 
     public var id: ReplyTarget { target }
 
-    public init(target: ReplyTarget, label: String, systemImage: String) {
+    public init(target: ReplyTarget, label: String, systemImage: String, brandLogo: BrandLogo? = nil) {
         self.target = target
         self.label = label
         self.systemImage = systemImage
+        self.brandLogo = brandLogo
     }
 }

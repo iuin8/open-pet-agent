@@ -68,7 +68,7 @@ extension MinimalAppDelegate {
         options += AgentEngineRegistry.all.map { entry in
             // 短标签：取 displayName 首词（"Claude Code"→"Claude"，"opencode (ACP)"→"opencode"）。
             let short = entry.displayName.split(separator: " ").first.map(String.init) ?? entry.displayName
-            return ReplyOption(target: .agent(entry.id), label: short, systemImage: replyIcon(for: entry.id))
+            return ReplyOption(target: .agent(entry.id), label: short, systemImage: replyIcon(for: entry.id), brandLogo: replyBrandLogo(for: entry.id))
         }
         return (target, options)
     }
@@ -81,6 +81,15 @@ extension MinimalAppDelegate {
         case AgentEngineKind.codex.rawValue:      return "chevron.left.forwardslash.chevron.right"
         case AgentEngineKind.openCode.rawValue:   return "terminal.fill"
         default:                                  return "wrench.and.screwdriver"
+        }
+    }
+
+    /// engine id → 品牌 logo（segmented 真品牌图标;无匹配时 nil 走 `systemImage`）。
+    nonisolated private static func replyBrandLogo(for engineId: String) -> BrandLogo? {
+        switch engineId {
+        case AgentEngineKind.claudeCode.rawValue: return .claude
+        case AgentEngineKind.codex.rawValue:      return .codex
+        default:                                  return nil
         }
     }
 }

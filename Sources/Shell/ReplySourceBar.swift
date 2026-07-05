@@ -34,8 +34,7 @@ struct ReplySourceBar: View {
             selected = option.target
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: option.systemImage)
-                    .font(.system(size: 10, weight: .semibold))
+                segmentIcon(for: option, isSelected: isSelected)
                 Text(option.label)
                     .font(ChatCardTheme.chip)
             }
@@ -47,6 +46,20 @@ struct ReplySourceBar: View {
         }
         .buttonStyle(.plain)
         .help(option.target.isSoul ? "灵魂层 · 自然对话" : "Agent 层 · 让 pet 干活")
+    }
+
+    /// 品牌 logo 优先(Claude/Codex),否则 SF Symbol。尺寸与 10pt 文字对齐。
+    @ViewBuilder
+    private func segmentIcon(for option: ReplyOption, isSelected: Bool) -> some View {
+        if let logo = option.brandLogo {
+            BrandLogoShape(logo: logo)
+                .fill(logo.defaultColor.opacity(isSelected ? 1.0 : 0.5), style: logo.fillRule)
+                .frame(width: 12, height: 12)
+                .clipped()
+        } else {
+            Image(systemName: option.systemImage)
+                .font(.system(size: 10, weight: .semibold))
+        }
     }
 
     /// 选中:白底圆角 + 底部 accent 指示条 + 轻压深(呼应发送钮触感);未选中:透明。
