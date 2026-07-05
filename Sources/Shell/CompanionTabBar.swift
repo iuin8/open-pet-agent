@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// 卡片顶部 tab bar：三段 tab（Pet Chat / Claude Code / Codex）+ 尾部关闭按钮。
+/// 卡片顶部 tab bar：三段 tab（Pet / Claude / Codex，只显图标，文字走 tooltip）+ 尾部关闭按钮。
 ///
 /// 视觉走 `ChatCardTheme`/`ChatBubbleTheme` token（不硬编码）：
-/// - 选中 tab：白底 + accent 橙强调（文字 + 底部 accent 指示条），红点位预留（`TabBadge`，P3.1 暂全 `.none`）。
-/// - 未选中 tab：muted 深靛灰字，透明底。
+/// - 选中 tab：白底 + accent 橙强调（底部 accent 指示条），红点位预留（`TabBadge`，P3.1 暂全 `.none`）。
+/// - 未选中 tab：透明底，图标半透明。
 /// 关闭按钮沿用旧 header 的 `xmark`，保证现有「点 × 关卡」行为不丢。
 struct CompanionTabBar: View {
     @Binding var selectedTab: CompanionTab
@@ -49,18 +49,10 @@ struct CompanionTabBar: View {
         } label: {
             HStack(spacing: 4) {
                 tabIcon(for: tab, isSelected: isSelected)
-                Text(tab.displayName)
-                    .font(ChatCardTheme.chip)
-                    .foregroundStyle(
-                        isSelected
-                            ? ChatCardTheme.accent
-                            : ChatCardTheme.textPrimary.opacity(0.4)
-                    )
-                    .fixedSize(horizontal: true, vertical: false)   // 防换行(等价 CSS whitespace-nowrap,参考 cc-switch AppSwitcher)
                 badgeDot(for: tab)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
             .background(tabBackground(isSelected: isSelected))
             .contentShape(Rectangle())
         }
@@ -68,18 +60,18 @@ struct CompanionTabBar: View {
         .help(tab.helpText)
     }
 
-    /// tab 图标:`brandLogo` 优先(真品牌 SVG path,始终品牌色 + 选中全饱和/未选中半透),
-    /// 否则 SF Symbol(选中 accent / 未选中 muted)。参考 cc-switch AppSwitcher 图标为主设计。
+    /// tab 图标:`brandLogo` 优先(真 SVG 品牌 logo path,始终品牌色 + 选中全饱和/未选中半透),
+    /// 否则 SF Symbol。参考 cc-switch AppSwitcher compact 模式(只显图标,文字走 tooltip)。
     @ViewBuilder
     private func tabIcon(for tab: CompanionTab, isSelected: Bool) -> some View {
         if let logo = tab.brandLogo {
             BrandLogoShape(logo: logo)
-                .fill(logo.defaultColor)
+                .fill(logo.defaultColor, style: logo.fillRule)
                 .opacity(isSelected ? 1.0 : 0.5)
-                .frame(width: 14, height: 14)
+                .frame(width: 22, height: 22)
         } else {
             Image(systemName: tab.systemImage)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(isSelected ? ChatCardTheme.accent : ChatCardTheme.textPrimary.opacity(0.4))
         }
     }

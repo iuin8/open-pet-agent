@@ -27,6 +27,16 @@ public enum BrandLogo: Sendable, Equatable {
         }
     }
 
+    /// SVG 原始 fill-rule(Claude 用 nonzero,OpenAI 用 evenodd)。
+    /// SwiftUI `Path.fill` 默认 nonzero;渲染 OpenAI 花朵必须显式 `eoFill: true`,否则 self-intersecting
+    /// 路径填充会出现碎片/镂空异常。
+    public var fillRule: FillStyle {
+        switch self {
+        case .claude: return FillStyle(eoFill: false)   // fill-rule="nonzero"
+        case .codex:  return FillStyle(eoFill: true)    // fill-rule="evenodd"
+        }
+    }
+
     // MARK: - path data(cc-switch MIT 提取,viewBox 24×24)
 
     private static let claudePath = """
