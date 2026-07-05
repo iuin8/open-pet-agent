@@ -33,19 +33,15 @@ struct ReplySourceBar: View {
         return Button {
             selected = option.target
         } label: {
-            HStack(spacing: 4) {
-                segmentIcon(for: option, isSelected: isSelected)
-                Text(option.label)
-                    .font(ChatCardTheme.chip)
-            }
-            .foregroundStyle(isSelected ? ChatCardTheme.accent : ChatCardTheme.textPrimary.opacity(0.5))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 5)
-            .background(segmentBackground(isSelected: isSelected))
-            .contentShape(Rectangle())
+            segmentIcon(for: option, isSelected: isSelected)
+                .foregroundStyle(isSelected ? ChatCardTheme.accent : ChatCardTheme.textPrimary.opacity(0.5))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .background(segmentBackground(isSelected: isSelected))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(option.target.isSoul ? "灵魂层 · 自然对话" : "Agent 层 · 让 pet 干活")
+        .help("\(option.label) · \(option.target.isSoul ? "灵魂层 · 自然对话" : "Agent 层 · 让 pet 干活")")
     }
 
     /// 品牌 logo 优先(Claude/Codex),否则 SF Symbol。尺寸与 10pt 文字对齐。
