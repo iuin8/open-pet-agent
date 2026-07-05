@@ -10,30 +10,35 @@ public enum BrandLogo: Sendable, Equatable {
     case claude
     /// OpenAI 花朵 logo(Codex 用 OpenAI 品牌)。
     case codex
+    /// opencode 品牌 logo(来自 cc-switch MIT 提取的 SVG 简化)。
+    case opencode
 
-    /// SVG path data(24×24 viewBox)。
+    /// SVG path data(24×24 viewBox,opencode 除外也归一化到 24×24)。
     public var pathData: String {
         switch self {
-        case .claude: return Self.claudePath
-        case .codex:  return Self.codexPath
+        case .claude:   return Self.claudePath
+        case .codex:    return Self.codexPath
+        case .opencode: return Self.opencodePath
         }
     }
 
     /// 默认品牌色。
     public var defaultColor: Color {
         switch self {
-        case .claude: return Color(red: 0xD9/255, green: 0x77/255, blue: 0x57/255)  // #D97757 Claude 橙
-        case .codex:  return Color(red: 0x10/255, green: 0xA3/255, blue: 0x7F/255)  // #10A37F OpenAI 绿
+        case .claude:   return Color(red: 0xD9/255, green: 0x77/255, blue: 0x57/255)  // #D97757 Claude 橙
+        case .codex:    return Color(red: 0x10/255, green: 0xA3/255, blue: 0x7F/255)  // #10A37F OpenAI 绿
+        case .opencode: return Color(red: 0x21/255, green: 0x1E/255, blue: 0x1E/255)  // #211E1E opencode 黑
         }
     }
 
-    /// SVG 原始 fill-rule(Claude 用 nonzero,OpenAI 用 evenodd)。
+    /// SVG 原始 fill-rule(Claude 用 nonzero,OpenAI 用 evenodd,opencode 用 evenodd 做方框镂空)。
     /// SwiftUI `Path.fill` 默认 nonzero;渲染 OpenAI 花朵必须显式 `eoFill: true`,否则 self-intersecting
     /// 路径填充会出现碎片/镂空异常。
     public var fillRule: FillStyle {
         switch self {
-        case .claude: return FillStyle(eoFill: false)   // fill-rule="nonzero"
-        case .codex:  return FillStyle(eoFill: true)    // fill-rule="evenodd"
+        case .claude:   return FillStyle(eoFill: false)   // fill-rule="nonzero"
+        case .codex:    return FillStyle(eoFill: true)    // fill-rule="evenodd"
+        case .opencode: return FillStyle(eoFill: true)    // 方框镂空
         }
     }
 
@@ -45,6 +50,12 @@ M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.2
 
     private static let codexPath = """
 M21.55 10.004a5.416 5.416 0 00-.478-4.501c-1.217-2.09-3.662-3.166-6.05-2.66A5.59 5.59 0 0010.831 1C8.39.995 6.224 2.546 5.473 4.838A5.553 5.553 0 001.76 7.496a5.487 5.487 0 00.691 6.5 5.416 5.416 0 00.477 4.502c1.217 2.09 3.662 3.165 6.05 2.66A5.586 5.586 0 0013.168 23c2.443.006 4.61-1.546 5.361-3.84a5.553 5.553 0 003.715-2.66 5.488 5.488 0 00-.693-6.497v.001zm-8.381 11.558a4.199 4.199 0 01-2.675-.954c.034-.018.093-.05.132-.074l4.44-2.53a.71.71 0 00.364-.623v-6.176l1.877 1.069c.02.01.033.029.036.05v5.115c-.003 2.274-1.87 4.118-4.174 4.123zM4.192 17.78a4.059 4.059 0 01-.498-2.763c.032.02.09.055.131.078l4.44 2.53c.225.13.504.13.73 0l5.42-3.088v2.138a.068.068 0 01-.027.057L9.9 19.288c-1.999 1.136-4.552.46-5.707-1.51h-.001zM3.023 8.216A4.15 4.15 0 015.198 6.41l-.002.151v5.06a.711.711 0 00.364.624l5.42 3.087-1.876 1.07a.067.067 0 01-.063.005l-4.489-2.559c-1.995-1.14-2.679-3.658-1.53-5.63h.001zm15.417 3.54l-5.42-3.088L14.896 7.6a.067.067 0 01.063-.006l4.489 2.557c1.998 1.14 2.683 3.662 1.529 5.633a4.163 4.163 0 01-2.174 1.807V12.38a.71.71 0 00-.363-.623zm1.867-2.773a6.04 6.04 0 00-.132-.078l-4.44-2.53a.731.731 0 00-.729 0l-5.42 3.088V7.325a.068.068 0 01.027-.057L14.1 4.713c2-1.137 4.555-.46 5.707 1.513.487.833.664 1.809.499 2.757h.001zm-11.741 3.81l-1.877-1.068a.065.065 0 01-.036-.051V6.559c.001-2.277 1.873-4.122 4.181-4.12.976 0 1.92.338 2.671.954-.034.018-.092.05-.131.073l-4.44 2.53a.71.71 0 00-.365.623l-.003 6.173v.002zm1.02-2.168L12 9.25l2.414 1.375v2.75L12 14.75l-2.415-1.375v-2.75z
+"""
+
+    /// 简化自 cc-switch 的 opencode SVG:原图是 240×300 的深色方框镂空,
+    /// 这里归一化到 24×24 viewBox,保留「外框减内框」的 evenodd 镂空 silhouette。
+    private static let opencodePath = """
+M0 0 H24 V24 H0 Z M6 5 V19 H18 V5 Z
 """
 }
 

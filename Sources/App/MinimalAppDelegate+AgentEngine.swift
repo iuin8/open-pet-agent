@@ -89,6 +89,7 @@ extension MinimalAppDelegate {
         switch engineId {
         case AgentEngineKind.claudeCode.rawValue: return .claude
         case AgentEngineKind.codex.rawValue:      return .codex
+        case AgentEngineKind.openCode.rawValue:   return .opencode
         default:                                  return nil
         }
     }

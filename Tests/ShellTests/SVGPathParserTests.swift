@@ -106,4 +106,13 @@ struct SVGPathParserTests {
         #expect(bb.maxX >= 10)
         #expect(bb.maxY >= 10)
     }
+
+    @Test("opencode 品牌 logo path 渲染非空 + bounds 在 viewBox 内")
+    func opencodeLogoBounds() {
+        let path = SVGPathParser.parse(BrandLogo.opencode.pathData, in: CGRect(x: 0, y: 0, width: 24, height: 24))
+        #expect(path.isEmpty == false)
+        let bb = path.boundingRect
+        #expect(bb.minX >= -0.5 && bb.maxX <= 24.5)
+        #expect(bb.minY >= -0.5 && bb.maxY <= 24.5)
+    }
 }
