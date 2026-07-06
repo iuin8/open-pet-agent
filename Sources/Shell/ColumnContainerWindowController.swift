@@ -78,7 +78,7 @@ public final class ColumnContainerWindowController {
 
     private func createPanel() {
         let size = NSSize(width: 360, height: 480)   // 占位尺寸,首次 present 立即被 repositionBesideMain 覆盖
-        let p = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+        let p = ColumnContainerPanel(contentRect: NSRect(origin: .zero, size: size),
                         styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
         p.isOpaque = false
         p.backgroundColor = .clear
@@ -108,4 +108,13 @@ public final class ColumnContainerWindowController {
     private var panel: NSPanel?
     private var lastMainFrame: NSRect?
     private var lastScreen: NSRect = .zero
+}
+
+/// 列容器面板 —— `.nonactivatingPanel` 子类,override `canBecomeKey = true` 让侧卡
+/// 能接收 ⌘C 等编辑键(选中文字 → 复制);`canBecomeMain = false` 保持不抢 app 焦点
+/// (同 `ChatBubblePanel` 模式)。裸 `NSPanel` 默认 `canBecomeKey = false` → 侧卡选中
+/// 文字后 ⌘C 不路由(2026-06-27 用户反馈「侧卡选中内容无法复制」根因)。
+private final class ColumnContainerPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }

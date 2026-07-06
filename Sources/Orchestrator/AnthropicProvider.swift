@@ -197,7 +197,7 @@ public actor AnthropicProvider: LLMProvider {
         let capturedStreamClient = httpStreamClient
 
         return AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let request = try Self.buildStreamRequest(
                         apiKey: capturedApiKey,
@@ -220,6 +220,8 @@ public actor AnthropicProvider: LLMProvider {
                     continuation.finish(throwing: LLMProviderError.transportError(error.localizedDescription))
                 }
             }
+            // 消费方取消迭代时取消底层生产 Task,避免 orphan URLSession 连接苟到默认 timeout 才回收。
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -329,6 +331,8 @@ public actor AnthropicProvider: LLMProvider {
         let delimiter = Data([0x0A, 0x0A])
 
         for try await byte in byteStream {
+            // for-await 本是取消点;显式检查让取消在下一字节到达前即时传播。
+            try Task.checkCancellation()
             buffer.append(byte)
             while let boundary = buffer.range(of: delimiter) {
                 let eventData = buffer.subdata(in: buffer.startIndex..<boundary.lowerBound)
