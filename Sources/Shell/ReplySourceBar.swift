@@ -19,9 +19,9 @@ struct ReplySourceBar: View {
                 segmentButton(option)
             }
         }
-        .padding(3)
+        .padding(2)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(ChatCardTheme.inputFill.opacity(0.7))
         )
     }
@@ -58,19 +58,19 @@ struct ReplySourceBar: View {
         }
     }
 
-    /// 选中:白底圆角 + 底部 accent 指示条 + 轻压深(呼应发送钮触感);未选中:透明。
+    /// 选中:小圆角矩形 + 底部 accent 指示条(与 `CompanionTabBar.tabBackground` 风格对齐)。
+    /// 外层托盘圆角 10 / 内层 segment 圆角 6 / 段间 2pt:嵌套避双层圆角叠加成椭圆。
     @ViewBuilder
     private func segmentBackground(isSelected: Bool) -> some View {
         if isSelected {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius - 4, style: .continuous)
                 .fill(ChatCardTheme.cardBackground)
                 .overlay(alignment: .bottom) {
                     RoundedRectangle(cornerRadius: 1)
                         .fill(ChatCardTheme.accent)
                         .frame(height: 2)
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, 6)
                 }
-                .shadow(color: ChatCardTheme.accent.opacity(0.18), radius: 0, y: 1)
         } else {
             Color.clear
         }

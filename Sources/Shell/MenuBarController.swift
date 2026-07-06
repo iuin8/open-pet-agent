@@ -67,18 +67,24 @@ public final class MenuBarController: NSObject {
 
     // MARK: - 状态项生命周期
 
-    public func attachToSystemStatusBar(title: String = "❄") -> NSStatusItem {
+    /// 状态栏图标用 `pawprint.fill` SF Symbol —— 与 pet chat 顶部 tab 同源。
+    /// `NSStatusBarButton` 没法放 SwiftUI Shape,SF Symbol 路径最简。
+    public func attachToSystemStatusBar() -> NSStatusItem {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = title
+        let cfg = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        if let img = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "PetAgent")?
+            .withSymbolConfiguration(cfg) {
+            item.button?.image = img
+        }
         item.menu = actionMenu.menu
         statusItem = item
         return item
     }
 
     /// 显示 / 隐藏菜单栏状态项(由设置开关驱动,默认隐藏)。隐藏时彻底移除 NSStatusItem。
-    public func setStatusItemVisible(_ visible: Bool, title: String = "❄") {
+    public func setStatusItemVisible(_ visible: Bool) {
         if visible {
-            if statusItem == nil { _ = attachToSystemStatusBar(title: title) }
+            if statusItem == nil { _ = attachToSystemStatusBar() }
         } else if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
