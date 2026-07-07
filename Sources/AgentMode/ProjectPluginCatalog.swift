@@ -53,9 +53,19 @@ public struct ProjectPluginCatalog: Sendable {
     }
 
     public func validate(_ descriptor: ProjectPluginDescriptor) -> [ProjectConfigDiagnostic] {
-        descriptor.unknownCapabilities.map {
+        var diagnostics = descriptor.unknownCapabilities.map {
             ProjectConfigDiagnostic(severity: .warning, message: "Unknown plugin capability ignored: \($0)", path: descriptor.rootURL.path)
         }
+
+        for (kind, refs) in [("mcp", descriptor.mcp), ("skills", descriptor.skills)] {
+            var seen = Set<String>()
+            var reported = Set<String>()
+            for ref in refs where !seen.insert(ref).inserted && reported.insert(ref).inserted {
+                diagnostics.append(ProjectConfigDiagnostic(severity: .error, message: "Duplicate plugin \(kind) reference: \(ref)", path: descriptor.rootURL.path))
+            }
+        }
+
+        return diagnostics
     }
 
     private func readPlugin(at directory: URL) throws -> ProjectPluginDescriptor {

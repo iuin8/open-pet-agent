@@ -80,6 +80,43 @@ final class ProjectPluginCatalogTests: XCTestCase {
         XCTAssertEqual(plugin.executableCapabilities, ProjectExecutableCapabilities())
     }
 
+    func testListPluginsSkipsMaterializedDirectory() throws {
+        let materialized = ProjectConfig.pluginRoot(for: project).appendingPathComponent(".materialized", isDirectory: true)
+        try FileManager.default.createDirectory(at: materialized, withIntermediateDirectories: true)
+        try """
+        { "schemaVersion": 1, "id": ".materialized", "name": "Projected", "enabled": true, "capabilities": ["mcp"], "engines": {} }
+        """.data(using: .utf8)!.write(to: materialized.appendingPathComponent("plugin.json"), options: .atomic)
+        try writePlugin("normal", """
+        { "schemaVersion": 1, "id": "normal", "name": "Normal", "enabled": true, "capabilities": ["skills"], "engines": {} }
+        """)
+
+        let plugins = try ProjectPluginCatalog().listPlugins(for: project)
+
+        XCTAssertEqual(plugins.map(\.id), ["normal"])
+    }
+
+    func testValidateErrorsOnDuplicateMCPReferences() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#filesystem", "mcp/servers.json#filesystem"], "engines": {} }
+        """)
+
+        let plugin = try ProjectPluginCatalog().listPlugins(for: project).first!
+        let diagnostics = ProjectPluginCatalog().validate(plugin)
+
+        XCTAssertTrue(diagnostics.contains { $0.severity == .error && $0.message.contains("Duplicate") && $0.message.contains("mcp/servers.json#filesystem") })
+    }
+
+    func testValidateErrorsOnDuplicateSkillReferences() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["skills"], "skills": ["skills/code-review", "skills/code-review"], "engines": {} }
+        """)
+
+        let plugin = try ProjectPluginCatalog().listPlugins(for: project).first!
+        let diagnostics = ProjectPluginCatalog().validate(plugin)
+
+        XCTAssertTrue(diagnostics.contains { $0.severity == .error && $0.message.contains("Duplicate") && $0.message.contains("skills/code-review") })
+    }
+
     private func writePlugin(_ id: String, _ json: String) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
