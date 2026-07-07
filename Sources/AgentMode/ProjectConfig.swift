@@ -44,6 +44,44 @@ public enum ProjectConfig {
         project.rootURL.appendingPathComponent(".open-pet-agent/opencode.json", isDirectory: false)
     }
 
+    /// 指定项目 `.open-pet-agent/plugins/` 路径(project plugin canonical root)。
+    public static func pluginRoot(for project: AgentProject) -> URL {
+        project.rootURL.appendingPathComponent(".open-pet-agent/plugins", isDirectory: true)
+    }
+
+    /// 指定项目某个 plugin bundle 路径:`.open-pet-agent/plugins/<plugin-id>/`。
+    public static func pluginDirectory(for project: AgentProject, pluginID: String) -> URL {
+        pluginRoot(for: project).appendingPathComponent(pluginID, isDirectory: true)
+    }
+
+    public static func pluginMCPDirectory(for project: AgentProject, pluginID: String) -> URL {
+        pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("mcp", isDirectory: true)
+    }
+
+    public static func pluginSkillsDirectory(for project: AgentProject, pluginID: String) -> URL {
+        pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("skills", isDirectory: true)
+    }
+
+    public static func pluginPromptsDirectory(for project: AgentProject, pluginID: String) -> URL {
+        pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("prompts", isDirectory: true)
+    }
+
+    public static func pluginToolsDirectory(for project: AgentProject, pluginID: String) -> URL {
+        pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("tools", isDirectory: true)
+    }
+
+    public static func pluginAgentsDirectory(for project: AgentProject, pluginID: String) -> URL {
+        pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("agents", isDirectory: true)
+    }
+
+    public static func materializedPluginDirectory(for project: AgentProject, engineID: String, pluginID: String) -> URL {
+        pluginRoot(for: project)
+            .appendingPathComponent(".materialized", isDirectory: true)
+            .appendingPathComponent(engineID, isDirectory: true)
+            .appendingPathComponent("plugins", isDirectory: true)
+            .appendingPathComponent(pluginID, isDirectory: true)
+    }
+
     /// 确保默认项目存在(创建目录 + opencode.json)。返回项目根 URL。幂等。
     /// P0 API,保留兼容;内部委托 `ensure(for:)`。
     @discardableResult
@@ -57,6 +95,7 @@ public enum ProjectConfig {
         let fm = FileManager.default
         let dotDir = project.rootURL.appendingPathComponent(".open-pet-agent", isDirectory: true)
         try fm.createDirectory(at: dotDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: pluginRoot(for: project), withIntermediateDirectories: true)
         let configURL = opencodeConfig(for: project)
         guard !fm.fileExists(atPath: configURL.path) else { return project.rootURL }
         let json = makeDefaultOpencodeJSON()
