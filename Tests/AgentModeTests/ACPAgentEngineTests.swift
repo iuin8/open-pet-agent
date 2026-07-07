@@ -127,4 +127,31 @@ struct ACPAgentEngineTests {
         #expect(first == ["第一回"])
         #expect(second == ["第二回"])
     }
+
+    @Test("ACPAgentEngine.run: forwards injected mcpServers to session/new")
+    func forwardsInjectedMCPServers() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            updateChunk("ok"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        let server = ACPJSON.parse(#"{"type":"local","command":["npx","-y","server"]}"#)!
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            mcpServersProvider: { [server] },
+            transportFactory: { mock }
+        )
+
+        var deltas: [String] = []
+        for try await delta in engine.run(prompt: "hi") { deltas.append(delta) }
+
+        let sessionNew = mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .first { $0["method"]?.stringValue == "session/new" }
+        let mcpServers = sessionNew?["params"]?.objectValue?["mcpServers"]?.arrayValue ?? []
+        #expect(mcpServers.contains(server))
+        #expect(deltas == ["ok"])
+    }
 }

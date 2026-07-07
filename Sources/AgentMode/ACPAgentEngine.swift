@@ -30,6 +30,8 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     public let binaryPath: String?
     /// session 工作目录(nil = 进程 cwd)。
     public let cwd: URL?
+    /// 每轮 ACP session/new 携带的 MCP server 列表。默认空,保持旧调用方行为。
+    public let mcpServersProvider: @Sendable () -> [ACPJSON]
     /// transport 工厂(测试注入 mock;生产 `ACPStdioTransport`)。
     public let transportFactory: @Sendable () -> any ACPTransport
 
@@ -48,6 +50,7 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
         command: [String] = ["opencode", "acp"],
         binaryPath: String? = nil,
         cwd: URL? = nil,
+        mcpServersProvider: @escaping @Sendable () -> [ACPJSON] = { [] },
         transportFactory: @escaping @Sendable () -> any ACPTransport = {
             ACPStdioTransport(command: ["opencode", "acp"])
         }
@@ -55,6 +58,7 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
         self.command = command
         self.binaryPath = binaryPath
         self.cwd = cwd
+        self.mcpServersProvider = mcpServersProvider
         self.transportFactory = transportFactory
     }
 
@@ -96,7 +100,7 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
                 do {
                     let c = try await ensureConnected()
                     let cwdPath = cwd?.path ?? FileManager.default.currentDirectoryPath
-                    let sid = try await c.createSession(cwd: cwdPath, mcpServers: [])
+                    let sid = try await c.createSession(cwd: cwdPath, mcpServers: mcpServersProvider())
                     await c.setSessionId(sid)
 
                     let onThoughtHandler = onThought   // 捕获当前值(Sendable closure,run 时快照)

@@ -32,9 +32,13 @@ extension MinimalAppDelegate {
             let project = ProjectStore.current(defaults: defaults)
             let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
             let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
+            let mcpServersProvider: @Sendable () -> [ACPJSON] = {
+                (try? OpencodeProjectAdapter().loadMCPServers(for: project)) ?? []
+            }
             router.setEngine(ACPAgentEngine(
                 command: ["opencode", "acp"],
                 cwd: projectRoot,
+                mcpServersProvider: mcpServersProvider,
                 transportFactory: {
                     ACPStdioTransport(
                         command: ["opencode", "acp"],
