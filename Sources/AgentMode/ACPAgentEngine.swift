@@ -31,7 +31,7 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     /// session 工作目录(nil = 进程 cwd)。
     public let cwd: URL?
     /// 每轮 ACP session/new 携带的 MCP server 列表。默认空,保持旧调用方行为。
-    public let mcpServersProvider: @Sendable () -> [ACPJSON]
+    private let mcpServersProvider: @Sendable () -> [ACPJSON]
     /// transport 工厂(测试注入 mock;生产 `ACPStdioTransport`)。
     public let transportFactory: @Sendable () -> any ACPTransport
 

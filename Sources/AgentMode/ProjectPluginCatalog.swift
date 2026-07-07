@@ -83,7 +83,9 @@ public struct ProjectPluginCatalog: Sendable {
             else { unknown.append(capability) }
         }
 
-        let policies = (raw.engines ?? [:]).mapValues { $0.projection ?? .disabled }
+        let policies = (raw.engines ?? [:]).mapValues { policy in
+            policy.enabled == false ? .disabled : (policy.projection ?? .disabled)
+        }
         return ProjectPluginDescriptor(
             id: raw.id,
             name: raw.name,

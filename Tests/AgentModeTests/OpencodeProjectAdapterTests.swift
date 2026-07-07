@@ -24,10 +24,14 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         try writePlugin(id: "dev-toolkit", enabled: true)
         let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
         XCTAssertEqual(servers.count, 1)
-        let encoded = try JSONEncoder().encode(servers[0])
-        let text = String(decoding: encoded, as: UTF8.self)
-        XCTAssertTrue(text.contains("filesystem"))
-        XCTAssertTrue(text.contains("server-filesystem"))
+        let command = servers[0].objectValue?["command"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        XCTAssertEqual(command, ["npx", "-y", "@modelcontextprotocol/server-filesystem"])
+    }
+
+    func testLoadMCPServersAcceptsLowercaseOpencodePolicy() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, enginesJSON: #"{ "opencode": { "enabled": true, "projection": "plugin-dir" } }"#)
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+        XCTAssertEqual(servers.count, 1)
     }
 
     func testLoadMCPServersSkipsDisabledPlugin() throws {
@@ -36,18 +40,58 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         XCTAssertEqual(servers.count, 0)
     }
 
-    private func writePlugin(id: String, enabled: Bool) throws {
+    func testLoadMCPServersSkipsPluginWithoutOpencodePolicy() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, enginesJSON: "{}")
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+        XCTAssertEqual(servers.count, 0)
+    }
+
+    func testLoadMCPServersSkipsDisabledOpencodePolicy() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, enginesJSON: #"{ "openCode": { "enabled": true, "projection": "disabled" } }"#)
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+        XCTAssertEqual(servers.count, 0)
+    }
+
+    func testLoadMCPServersThrowsOnDuplicateServerNames() throws {
+        try writePlugin(id: "first", enabled: true)
+        try writePlugin(id: "second", enabled: true)
+        XCTAssertThrowsError(try OpencodeProjectAdapter().loadMCPServers(for: project)) { error in
+            XCTAssertTrue(String(describing: error).contains("filesystem"))
+        }
+    }
+
+    func testLoadMCPServersRejectsMCPRefOutsideMCPDirectory() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, mcpRefs: ["mcp/../outside.json#filesystem"])
+        let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+        try mcpServersJSON.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("outside.json"), options: .atomic)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().loadMCPServers(for: project)) { error in
+            XCTAssertTrue(String(describing: error).contains("越界"))
+        }
+    }
+
+    private func writePlugin(
+        id: String,
+        enabled: Bool,
+        mcpRefs: [String] = ["mcp/servers.json#filesystem"],
+        enginesJSON: String = #"{ "openCode": { "enabled": true, "projection": "plugin-dir" } }"#
+    ) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
+        let refsJSON = mcpRefs.map { "\"\($0)\"" }.joined(separator: ", ")
         try """
-        { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "enabled": \(enabled), "capabilities": ["mcp"], "mcp": ["mcp/servers.json#filesystem"], "engines": { "opencode": { "enabled": true, "projection": "plugin-dir" } } }
+        { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "enabled": \(enabled), "capabilities": ["mcp"], "mcp": [\(refsJSON)], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: dir.appendingPathComponent("plugin.json"), options: .atomic)
-        try """
+        try mcpServersJSON.data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
+    }
+
+    private var mcpServersJSON: String {
+        """
         {
           "mcpServers": {
             "filesystem": { "type": "local", "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"], "enabled": true }
           }
         }
-        """.data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
+        """
     }
 }

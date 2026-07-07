@@ -33,7 +33,12 @@ extension MinimalAppDelegate {
             let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
             let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
             let mcpServersProvider: @Sendable () -> [ACPJSON] = {
-                (try? OpencodeProjectAdapter().loadMCPServers(for: project)) ?? []
+                do {
+                    return try OpencodeProjectAdapter().loadMCPServers(for: project)
+                } catch {
+                    fputs("[ProjectConfig] opencode MCP projection failed: \(error)\n", stderr)
+                    return []
+                }
             }
             router.setEngine(ACPAgentEngine(
                 command: ["opencode", "acp"],

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import AgentMode
 
 // ACP-1a 冒烟:用真 ACPStdioTransport spawn `opencode acp`,验证自写 ACP client 真能跟
@@ -30,11 +31,12 @@ struct ACPSmoke {
         log("[dbg] transport type = \(String(describing: type(of: transport)))")
 
         log("[connect] initialize…")
+        var failed = false
         do {
             let caps = try await client.connect()
             log("[connect] protocolVersion=\(caps.protocolVersion) caps=\(caps.agentCapabilities.sorted())")
 
-            let mcpServers = (try? OpencodeProjectAdapter().loadMCPServers(for: project)) ?? []
+            let mcpServers = try OpencodeProjectAdapter().loadMCPServers(for: project)
             let sid = try await client.createSession(cwd: projectRoot.path, mcpServers: mcpServers)
             await client.setSessionId(sid)
             log("[session] \(sid)")
@@ -46,8 +48,10 @@ struct ACPSmoke {
             log("[stop] \(stop)")
         } catch {
             log("[err] \(error)")
+            failed = true
         }
         await client.shutdown()
+        if failed { Darwin.exit(1) }
     }
 }
 
