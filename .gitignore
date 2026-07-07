@@ -30,3 +30,5 @@ Vendor/Cubism/
 Sources/CubismCore/include/Live2DCubismCore.h
 opencode.json
 .gitnexus
+
+.open-pet-agent/
