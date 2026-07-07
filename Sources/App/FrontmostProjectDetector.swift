@@ -38,9 +38,19 @@ final class FrontmostProjectDetector {
     /// 嵌套项目取最深(如 ~/work/ 下有 my-app 和 my-app/sub,取 my-app/sub)。
     /// nonisolated:纯函数,不依赖 actor,测试可同步调。
     nonisolated static func matchProject(cwd: URL, in projects: [AgentProject]) -> AgentProject? {
-        let cwdPath = cwd.standardizedFileURL.path
+        let cwdPath = normalizedDirectoryPath(cwd)
         return projects
-            .filter { cwdPath.hasPrefix($0.rootURL.standardizedFileURL.path) }
-            .max(by: { $0.rootURL.path.count < $1.rootURL.path.count })
+            .filter { isPath(cwdPath, insideOrEqualTo: normalizedDirectoryPath($0.rootURL)) }
+            .max(by: { normalizedDirectoryPath($0.rootURL).count < normalizedDirectoryPath($1.rootURL).count })
+    }
+
+    private nonisolated static func normalizedDirectoryPath(_ url: URL) -> String {
+        var path = url.standardizedFileURL.path
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        return path
+    }
+
+    private nonisolated static func isPath(_ path: String, insideOrEqualTo root: String) -> Bool {
+        path == root || path.hasPrefix(root + "/")
     }
 }
