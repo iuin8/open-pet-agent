@@ -51,6 +51,6 @@ final class FrontmostProjectDetector {
     }
 
     private nonisolated static func isPath(_ path: String, insideOrEqualTo root: String) -> Bool {
-        path == root || path.hasPrefix(root + "/")
+        root == "/" || path == root || path.hasPrefix(root + "/")
     }
 }

@@ -24,6 +24,13 @@ final class FrontmostProjectDetectorTests: XCTestCase {
         XCTAssertEqual(matched?.id, "p1")
     }
 
+    func testFilesystemRootMatchesSubdirectory() {
+        let projects = [project("root", "/")]
+        let matched = FrontmostProjectDetector.matchProject(
+            cwd: URL(fileURLWithPath: "/Users/fa/work/app"), in: projects)
+        XCTAssertEqual(matched?.id, "root")
+    }
+
     func testNoMatchDifferentDir() {
         let projects = [project("p1", "/Users/fa/work/app")]
         let matched = FrontmostProjectDetector.matchProject(
