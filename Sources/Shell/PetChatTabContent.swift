@@ -75,18 +75,19 @@ struct PetChatTabContent: View {
                             onRequestCreateExternal: { state.requestCreateExternal() },
                             onRequestRenameCurrent: { state.requestRenameCurrent() },
                             onRequestDeleteCurrent: { state.requestDeleteCurrent() },
-                            onRequestSyncCodexProjection: { state.requestSyncCodexProjection() }
+                            onRequestSyncCodexProjection: { state.requestSyncCodexProjection() },
+                            onRequestSyncClaudeCodeProjection: { state.requestSyncClaudeCodeProjection() }
                         )
                     }
                 }
             }
             if let syncMessage = state.codexProjectionSyncMessage {
                 HStack(spacing: 4) {
-                    Image(systemName: syncMessage.hasPrefix("同步 Codex 配置失败") ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    Image(systemName: syncMessage.contains("失败") ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     Text(syncMessage).lineLimit(1)
                 }
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(syncMessage.hasPrefix("同步 Codex 配置失败") ? .red.opacity(0.75) : ChatCardTheme.accent.opacity(0.8))
+                .foregroundColor(syncMessage.contains("失败") ? .red.opacity(0.75) : ChatCardTheme.accent.opacity(0.8))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             ChatCardComposer(draft: $state.draft, isSending: state.isSending) {

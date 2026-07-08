@@ -68,7 +68,7 @@ public final class ChatCardState: ObservableObject {
     @Published public var currentProject: ProjectOption?
     /// 可选项目列表(App 从 `ProjectStore.list()` 派生注入)。
     @Published public var projects: [ProjectOption] = []
-    /// 最近一次 Codex projection 显式同步结果，仅用于当前卡片反馈。
+    /// 最近一次项目配置显式同步结果，仅用于当前卡片反馈。
     @Published public var codexProjectionSyncMessage: String?
     /// 切换项目回调(App 注入:写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply 即时生效)。
     public var onCommitProject: (@MainActor (String) -> Void)?
@@ -95,12 +95,17 @@ public final class ChatCardState: ObservableObject {
     public var onRequestDeleteCurrent: (@MainActor () -> Void)?
     /// 请求显式同步当前项目的 Codex projection（App 层执行落盘 + 返回提示文案）。
     public var onRequestSyncCodexProjection: (@MainActor () -> String)?
+    /// 请求显式同步当前项目的 Claude Code projection（App 层执行落盘 + 返回提示文案）。
+    public var onRequestSyncClaudeCodeProjection: (@MainActor () -> String)?
 
     public func requestCreateExternal() { onRequestCreateExternal?() }
     public func requestRenameCurrent() { onRequestRenameCurrent?() }
     public func requestDeleteCurrent() { onRequestDeleteCurrent?() }
     public func requestSyncCodexProjection() {
         codexProjectionSyncMessage = onRequestSyncCodexProjection?()
+    }
+    public func requestSyncClaudeCodeProjection() {
+        codexProjectionSyncMessage = onRequestSyncClaudeCodeProjection?()
     }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。

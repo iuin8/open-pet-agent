@@ -70,6 +70,32 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.codexProjectionSyncMessage == "Codex 配置已同步")
     }
 
+
+
+    @Test("refreshProjectConfiguration：同步 Claude Code projection 回调")
+    func refreshProjectConfigurationWiresClaudeCodeSync() {
+        let ctrl = ChatCardWindowController(streamProvider: { _ in
+            AsyncThrowingStream { $0.finish() }
+        })
+        var requested = false
+        ctrl.projectProvider = {
+            (
+                current: ProjectOption(id: "p", name: "P", isExternal: true),
+                projects: [ProjectOption(id: "p", name: "P", isExternal: true)]
+            )
+        }
+        ctrl.onRequestSyncClaudeCodeProjection = {
+            requested = true
+            return "Claude Code 配置已同步"
+        }
+
+        ctrl.refreshProjectConfiguration()
+        ctrl.cardState.requestSyncClaudeCodeProjection()
+
+        #expect(requested == true)
+        #expect(ctrl.cardState.codexProjectionSyncMessage == "Claude Code 配置已同步")
+    }
+
     @Test("refreshProjectConfiguration：项目变化时清掉旧 Codex 同步反馈")
     func refreshProjectConfigurationClearsCodexSyncFeedbackOnProjectChange() {
         let ctrl = ChatCardWindowController(streamProvider: { _ in
