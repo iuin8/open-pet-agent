@@ -45,4 +45,24 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.messages.last?.text.hasPrefix("❌") == true)
         #expect(ctrl.cardState.isSending == false)
     }
+
+    @Test("refreshProjectConfiguration：同步 Codex projection 回调")
+    func refreshProjectConfigurationWiresCodexSync() {
+        let ctrl = ChatCardWindowController(streamProvider: { _ in
+            AsyncThrowingStream { $0.finish() }
+        })
+        var requested = false
+        ctrl.projectProvider = {
+            (
+                current: ProjectOption(id: "p", name: "P", isExternal: true),
+                projects: [ProjectOption(id: "p", name: "P", isExternal: true)]
+            )
+        }
+        ctrl.onRequestSyncCodexProjection = { requested = true }
+
+        ctrl.refreshProjectConfiguration()
+        ctrl.cardState.requestSyncCodexProjection()
+
+        #expect(requested == true)
+    }
 }

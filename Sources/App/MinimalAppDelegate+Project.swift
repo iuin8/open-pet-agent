@@ -52,6 +52,9 @@ extension MinimalAppDelegate {
         cardCtrl.onRequestDeleteCurrent = { [weak self, weak cardCtrl] in
             self?.confirmDeleteCurrentProject(refresh: { cardCtrl?.refreshProjectConfiguration() })
         }
+        cardCtrl.onRequestSyncCodexProjection = { [weak self] in
+            self?.syncCodexProjectionForCurrentProject()
+        }
     }
 
     /// 弹 NSAlert 收项目名 → 创建托管项目(`~/.open-pet-agent/projects/<id>/`)+ 刷新 chat card Menu。
@@ -135,7 +138,19 @@ extension MinimalAppDelegate {
         }
     }
 
-    /// 项目操作失败提示(创建/外部/重命名/删除 共用)。
+    /// 显式把当前项目的 Codex projection 落盘。只响应用户点击,不在聊天时自动写项目文件。
+    @MainActor func syncCodexProjectionForCurrentProject() {
+        let project = ProjectStore.current(defaults: userDefaults)
+        do {
+            try ProjectConfig.ensure(for: project)
+            let plans = try CodexProjectAdapter().plans(for: project)
+            try CodexProjectionMaterializer().apply(plans)
+        } catch {
+            showProjectError(title: "同步 Codex 配置失败", error: error)
+        }
+    }
+
+    /// 项目操作失败提示(创建/外部/重命名/删除/Codex 同步 共用)。
     @MainActor private func showProjectError(title: String, error: Error) {
         let alert = NSAlert()
         alert.messageText = title

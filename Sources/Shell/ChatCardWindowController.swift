@@ -65,6 +65,8 @@ public final class ChatCardWindowController {
     public var onRequestRenameCurrent: (@MainActor () -> Void)?
     /// App 注入:用户点「删除当前项目」→ NSAlert 确认 + `ProjectStore.delete` + setCurrent(default) + 刷新。
     public var onRequestDeleteCurrent: (@MainActor () -> Void)?
+    /// App 注入:用户点「同步 Codex 配置」→ 显式 materialize 当前项目的 Codex projection。
+    public var onRequestSyncCodexProjection: (@MainActor () -> Void)?
 
     // MARK: - Init
 
@@ -204,6 +206,7 @@ public final class ChatCardWindowController {
         state.onRequestCreateExternal = onRequestCreateExternal
         state.onRequestRenameCurrent = onRequestRenameCurrent
         state.onRequestDeleteCurrent = onRequestDeleteCurrent
+        state.onRequestSyncCodexProjection = onRequestSyncCodexProjection
     }
 
     /// 刷新项目配置(public,App 创建项目后调,驱动 `ProjectMenu` 更新列表)。
