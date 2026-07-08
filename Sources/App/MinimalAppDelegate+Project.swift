@@ -58,6 +58,9 @@ extension MinimalAppDelegate {
         cardCtrl.onRequestSyncClaudeCodeProjection = { [weak self] in
             self?.syncClaudeCodeProjectionForCurrentProject() ?? "同步 Claude Code 配置失败：App 已释放"
         }
+        cardCtrl.onRequestSyncOpencodeProjection = { [weak self] in
+            self?.syncOpencodeProjectionForCurrentProject() ?? "同步 opencode 配置失败：App 已释放"
+        }
     }
 
     /// 弹 NSAlert 收项目名 → 创建托管项目(`~/.open-pet-agent/projects/<id>/`)+ 刷新 chat card Menu。
@@ -171,7 +174,23 @@ extension MinimalAppDelegate {
         }
     }
 
-    /// 项目操作失败提示(创建/外部/重命名/删除/Codex/Claude Code 同步 共用)。
+    /// 显式把当前项目的 opencode projection 落盘。只响应用户点击,不在聊天时自动写项目文件。
+    /// 只 materialize plugin/data 到 `.open-pet-agent/plugins/.materialized/openCode/`,不覆盖用户 opencode.json。
+    @MainActor func syncOpencodeProjectionForCurrentProject() -> String {
+        let project = ProjectStore.current(defaults: userDefaults)
+        do {
+            try ProjectConfig.ensure(for: project)
+            let plans = try OpencodeProjectAdapter().plans(for: project)
+            let operationCount = plans.reduce(0) { $0 + $1.operations.count }
+            try OpencodeProjectionMaterializer().apply(plans)
+            return operationCount == 0 ? "没有可同步的 opencode 配置" : "opencode 配置已同步"
+        } catch {
+            showProjectError(title: "同步 opencode 配置失败", error: error)
+            return "同步 opencode 配置失败：\(error)"
+        }
+    }
+
+    /// 项目操作失败提示(创建/外部/重命名/删除/Codex/Claude Code/opencode 同步 共用)。
     @MainActor private func showProjectError(title: String, error: Error) {
         let alert = NSAlert()
         alert.messageText = title

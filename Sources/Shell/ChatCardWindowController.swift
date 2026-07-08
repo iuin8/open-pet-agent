@@ -69,6 +69,8 @@ public final class ChatCardWindowController {
     public var onRequestSyncCodexProjection: (@MainActor () -> String)?
     /// App 注入:用户点「同步 Claude Code 配置」→ 显式 materialize 当前项目的 Claude Code projection，并返回状态文案。
     public var onRequestSyncClaudeCodeProjection: (@MainActor () -> String)?
+    /// App 注入:用户点「同步 opencode 配置」→ 显式 materialize 当前项目的 opencode projection，并返回状态文案。
+    public var onRequestSyncOpencodeProjection: (@MainActor () -> String)?
 
     // MARK: - Init
 
@@ -213,6 +215,7 @@ public final class ChatCardWindowController {
         state.onRequestDeleteCurrent = onRequestDeleteCurrent
         state.onRequestSyncCodexProjection = onRequestSyncCodexProjection
         state.onRequestSyncClaudeCodeProjection = onRequestSyncClaudeCodeProjection
+        state.onRequestSyncOpencodeProjection = onRequestSyncOpencodeProjection
     }
 
     /// 刷新项目配置(public,App 创建项目后调,驱动 `ProjectMenu` 更新列表)。

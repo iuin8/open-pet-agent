@@ -97,6 +97,8 @@ public final class ChatCardState: ObservableObject {
     public var onRequestSyncCodexProjection: (@MainActor () -> String)?
     /// 请求显式同步当前项目的 Claude Code projection（App 层执行落盘 + 返回提示文案）。
     public var onRequestSyncClaudeCodeProjection: (@MainActor () -> String)?
+    /// 请求显式同步当前项目的 opencode projection（App 层执行落盘 + 返回提示文案）。
+    public var onRequestSyncOpencodeProjection: (@MainActor () -> String)?
 
     public func requestCreateExternal() { onRequestCreateExternal?() }
     public func requestRenameCurrent() { onRequestRenameCurrent?() }
@@ -106,6 +108,9 @@ public final class ChatCardState: ObservableObject {
     }
     public func requestSyncClaudeCodeProjection() {
         codexProjectionSyncMessage = onRequestSyncClaudeCodeProjection?()
+    }
+    public func requestSyncOpencodeProjection() {
+        codexProjectionSyncMessage = onRequestSyncOpencodeProjection?()
     }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。

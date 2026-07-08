@@ -70,6 +70,69 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         }
     }
 
+    func testPlansCreateMaterializedPluginDirectoryForEnabledPlugin() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true)
+
+        let plans = try OpencodeProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertEqual(plans[0].engineID, AgentEngineKind.openCode.rawValue)
+        XCTAssertTrue(plans[0].operations.contains {
+            if case let .copyDirectory(source, destination) = $0 {
+                let expectedSource = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+                    .standardizedFileURL
+                    .resolvingSymlinksInPath()
+                    .path
+                return source.standardizedFileURL.resolvingSymlinksInPath().path == expectedSource
+                    && destination.path == ProjectConfig.materializedPluginDirectory(
+                        for: project,
+                        engineID: AgentEngineKind.openCode.rawValue,
+                        pluginID: "dev-toolkit"
+                    ).path
+            }
+            return false
+        })
+    }
+
+    func testPlansAcceptLowercaseOpencodePolicy() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, enginesJSON: #"{ "opencode": { "enabled": true, "projection": "plugin-dir" } }"#)
+
+        let plans = try OpencodeProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans.count, 1)
+    }
+
+    func testPlansSkipDisabledOrMissingPolicy() throws {
+        try writePlugin(id: "disabled", enabled: true, enginesJSON: #"{ "openCode": { "enabled": true, "projection": "disabled" } }"#)
+        try writePlugin(id: "missing", enabled: true, enginesJSON: "{}")
+
+        let plans = try OpencodeProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans, [])
+    }
+
+    func testPlansSkipSkillsAndMCPFilesPolicyUntilNativeTargetsAreVerified() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, enginesJSON: #"{ "openCode": { "enabled": true, "projection": "skills-and-mcp-files" } }"#)
+
+        let plans = try OpencodeProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans, [])
+    }
+
+    func testPlansRejectSymlinkedMCPRootOutsidePlugin() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true)
+        let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+        try FileManager.default.removeItem(at: pluginRoot.appendingPathComponent("mcp", isDirectory: true))
+        let externalMCP = tmpHome.appendingPathComponent("external-mcp", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalMCP, withIntermediateDirectories: true)
+        try mcpServersJSON.data(using: .utf8)!.write(to: externalMCP.appendingPathComponent("servers.json"), options: .atomic)
+        try FileManager.default.createSymbolicLink(at: pluginRoot.appendingPathComponent("mcp", isDirectory: true), withDestinationURL: externalMCP)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .mcpRefEscapesPlugin("mcp/servers.json#filesystem"))
+        }
+    }
+
     private func writePlugin(
         id: String,
         enabled: Bool,
