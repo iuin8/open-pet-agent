@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// 视觉与顶部 `CompanionTabBar`(内容视图)**层级区分**:本栏更紧凑(图标+短标签,
 /// 嵌在输入区上方圆角托盘内),tab bar 在顶部较粗 —— 两处同名(Claude Code/Codex)
-/// 时靠位置 + 视觉重量区分语义。选中态:accent 文字 + 卡底填充 + 底部 accent 指示条。
+/// 时靠位置 + 视觉重量区分语义。选中态:accent 图标 + 白底圆角 + 轻描边。
 struct ReplySourceBar: View {
     @Binding var selected: ReplyTarget
     let options: [ReplyOption]
@@ -58,18 +58,16 @@ struct ReplySourceBar: View {
         }
     }
 
-    /// 选中:小圆角矩形 + 底部 accent 指示条(与 `CompanionTabBar.tabBackground` 风格对齐)。
+    /// 选中:小圆角矩形 + 轻描边(与 `CompanionTabBar.tabBackground` 风格对齐)。
     /// 外层托盘圆角 10 / 内层 segment 圆角 6 / 段间 2pt:嵌套避双层圆角叠加成椭圆。
     @ViewBuilder
     private func segmentBackground(isSelected: Bool) -> some View {
         if isSelected {
             RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius - 4, style: .continuous)
                 .fill(ChatCardTheme.cardBackground)
-                .overlay(alignment: .bottom) {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(ChatCardTheme.accent)
-                        .frame(height: 2)
-                        .padding(.horizontal, 6)
+                .overlay {
+                    RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius - 4, style: .continuous)
+                        .stroke(ChatCardTheme.hairline, lineWidth: 0.5)
                 }
         } else {
             Color.clear

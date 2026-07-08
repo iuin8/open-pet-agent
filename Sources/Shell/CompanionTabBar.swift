@@ -3,7 +3,7 @@ import SwiftUI
 /// 卡片顶部 tab bar：三段 tab（Pet / Claude / Codex，只显图标，文字走 tooltip）+ 尾部关闭按钮。
 ///
 /// 视觉走 `ChatCardTheme`/`ChatBubbleTheme` token（不硬编码）：
-/// - 选中 tab：白底 + accent 橙强调（底部 accent 指示条），红点位预留（`TabBadge`，P3.1 暂全 `.none`）。
+/// - 选中 tab：白底圆角 + 轻描边 + icon 高亮，红点位预留（`TabBadge`，P3.1 暂全 `.none`）。
 /// - 未选中 tab：透明底，图标半透明。
 /// 关闭按钮沿用旧 header 的 `xmark`，保证现有「点 × 关卡」行为不丢。
 struct CompanionTabBar: View {
@@ -77,18 +77,15 @@ struct CompanionTabBar: View {
         }
     }
 
-    /// 选中态白底圆角；未选中透明。
+    /// 选中态白底圆角 + 轻描边；未选中透明。
     @ViewBuilder
     private func tabBackground(isSelected: Bool) -> some View {
         if isSelected {
             RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius - 4, style: .continuous)
                 .fill(ChatCardTheme.cardBackground)
-                .overlay(alignment: .bottom) {
-                    // 选中指示：底部 accent 橙细条。
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(ChatCardTheme.accent)
-                        .frame(height: 2)
-                        .padding(.horizontal, 6)
+                .overlay {
+                    RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius - 4, style: .continuous)
+                        .stroke(ChatCardTheme.hairline, lineWidth: 0.5)
                 }
         } else {
             Color.clear
