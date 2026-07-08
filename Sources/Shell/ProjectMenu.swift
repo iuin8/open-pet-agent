@@ -17,6 +17,7 @@ struct ProjectMenu: View {
     let onRequestRenameCurrent: () -> Void
     let onRequestDeleteCurrent: () -> Void
     let onRequestSyncCodexProjection: () -> Void
+    let onRequestSyncClaudeCodeProjection: () -> Void
 
     var body: some View {
         Menu {
@@ -43,6 +44,11 @@ struct ProjectMenu: View {
                 onRequestSyncCodexProjection()
             } label: {
                 Label("同步 Codex 配置", systemImage: "arrow.triangle.2.circlepath")
+            }
+            Button {
+                onRequestSyncClaudeCodeProjection()
+            } label: {
+                Label("同步 Claude Code 配置", systemImage: "arrow.triangle.2.circlepath")
             }
             Divider()
             Button {
