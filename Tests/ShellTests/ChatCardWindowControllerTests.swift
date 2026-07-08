@@ -120,12 +120,31 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.codexProjectionSyncMessage == "opencode 配置已同步")
     }
 
-    @Test("refreshProjectConfiguration：项目能力诊断回调")
+    @Test("refreshProjectConfiguration：项目能力诊断回调写入面板状态")
     func refreshProjectConfigurationWiresProjectCapabilityDiagnostics() {
         let ctrl = ChatCardWindowController(streamProvider: { _ in
             AsyncThrowingStream { $0.finish() }
         })
         var requested = false
+        let panel = ProjectCapabilityPanelState(
+            fullText: "Codex\n写入生成文件: /tmp/project/.codex/config.toml",
+            sections: [
+                ProjectCapabilityPanelState.Section(
+                    engineName: "Codex",
+                    status: .ready,
+                    ownership: "OpenPetAgent 生成内容",
+                    rows: [
+                        ProjectCapabilityPanelState.Row(
+                            kind: "写入生成文件",
+                            target: "/tmp/project/.codex/config.toml",
+                            detail: nil,
+                            copyText: "/tmp/project/.codex/config.toml"
+                        )
+                    ],
+                    diagnostics: []
+                )
+            ]
+        )
         ctrl.projectProvider = {
             (
                 current: ProjectOption(id: "p", name: "P", isExternal: true),
@@ -134,32 +153,41 @@ struct ChatCardWindowControllerTests {
         }
         ctrl.onRequestShowProjectCapabilityDiagnostics = {
             requested = true
-            return "项目能力诊断已显示"
+            return panel
         }
 
         ctrl.refreshProjectConfiguration()
         ctrl.cardState.requestShowProjectCapabilityDiagnostics()
 
         #expect(requested == true)
-        #expect(ctrl.cardState.codexProjectionSyncMessage == "项目能力诊断已显示")
+        #expect(ctrl.cardState.projectCapabilityPanel == panel)
+        #expect(ctrl.cardState.codexProjectionSyncMessage == nil)
     }
 
-    @Test("refreshProjectConfiguration：项目变化时清掉旧 Codex 同步反馈")
-    func refreshProjectConfigurationClearsCodexSyncFeedbackOnProjectChange() {
+    @Test("refreshProjectConfiguration：项目变化时清掉旧项目配置反馈")
+    func refreshProjectConfigurationClearsProjectFeedbackOnProjectChange() {
         let ctrl = ChatCardWindowController(streamProvider: { _ in
             AsyncThrowingStream { $0.finish() }
         })
+        let panel = ProjectCapabilityPanelState(
+            fullText: "Codex",
+            sections: [ProjectCapabilityPanelState.Section(engineName: "Codex", status: .empty, ownership: nil, rows: [], diagnostics: [])]
+        )
         var current = ProjectOption(id: "a", name: "A", isExternal: true)
         ctrl.projectProvider = { (current: current, projects: [current]) }
         ctrl.onRequestSyncCodexProjection = { "Codex 配置已同步" }
+        ctrl.onRequestShowProjectCapabilityDiagnostics = { panel }
 
         ctrl.refreshProjectConfiguration()
         ctrl.cardState.requestSyncCodexProjection()
-        #expect(ctrl.cardState.codexProjectionSyncMessage == "Codex 配置已同步")
+        ctrl.cardState.requestShowProjectCapabilityDiagnostics()
+        #expect(ctrl.cardState.codexProjectionSyncMessage == nil)
+        #expect(ctrl.cardState.projectCapabilityPanel == panel)
 
         current = ProjectOption(id: "b", name: "B", isExternal: true)
         ctrl.refreshProjectConfiguration()
 
         #expect(ctrl.cardState.codexProjectionSyncMessage == nil)
+        #expect(ctrl.cardState.projectCapabilityPanel == nil)
     }
 }
