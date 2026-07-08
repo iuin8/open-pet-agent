@@ -61,6 +61,9 @@ extension MinimalAppDelegate {
         cardCtrl.onRequestSyncOpencodeProjection = { [weak self] in
             self?.syncOpencodeProjectionForCurrentProject() ?? "同步 opencode 配置失败：App 已释放"
         }
+        cardCtrl.onRequestShowProjectCapabilityDiagnostics = { [weak self] in
+            self?.showProjectCapabilityDiagnosticsForCurrentProject() ?? "项目能力诊断失败：App 已释放"
+        }
     }
 
     /// 弹 NSAlert 收项目名 → 创建托管项目(`~/.open-pet-agent/projects/<id>/`)+ 刷新 chat card Menu。
@@ -187,6 +190,31 @@ extension MinimalAppDelegate {
         } catch {
             showProjectError(title: "同步 opencode 配置失败", error: error)
             return "同步 opencode 配置失败：\(error)"
+        }
+    }
+
+    /// 只读展示当前项目三路 projection dry-run:targets / diagnostics / plan 构建失败原因。
+    @MainActor func showProjectCapabilityDiagnosticsForCurrentProject() -> String {
+        let project = ProjectStore.current(defaults: userDefaults)
+        let sections = [
+            projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
+            projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
+            projectCapabilitySection(engineName: "Claude Code") { try ClaudeCodeProjectAdapter().plans(for: project) }
+        ]
+        let text = ProjectCapabilityDiagnostics.render(sections)
+        let alert = NSAlert()
+        alert.messageText = "项目能力诊断"
+        alert.informativeText = text
+        alert.alertStyle = sections.contains { $0.errorDescription != nil } ? .warning : .informational
+        alert.runModal()
+        return sections.contains { $0.errorDescription != nil } ? "项目能力诊断发现问题" : "项目能力诊断已显示"
+    }
+
+    private func projectCapabilitySection(engineName: String, load: () throws -> [ProjectionPlan]) -> ProjectCapabilityDiagnosticSection {
+        do {
+            return ProjectCapabilityDiagnosticSection(engineName: engineName, plans: try load())
+        } catch {
+            return ProjectCapabilityDiagnosticSection(engineName: engineName, plans: [], errorDescription: "\(error)")
         }
     }
 

@@ -120,6 +120,30 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.codexProjectionSyncMessage == "opencode 配置已同步")
     }
 
+    @Test("refreshProjectConfiguration：项目能力诊断回调")
+    func refreshProjectConfigurationWiresProjectCapabilityDiagnostics() {
+        let ctrl = ChatCardWindowController(streamProvider: { _ in
+            AsyncThrowingStream { $0.finish() }
+        })
+        var requested = false
+        ctrl.projectProvider = {
+            (
+                current: ProjectOption(id: "p", name: "P", isExternal: true),
+                projects: [ProjectOption(id: "p", name: "P", isExternal: true)]
+            )
+        }
+        ctrl.onRequestShowProjectCapabilityDiagnostics = {
+            requested = true
+            return "项目能力诊断已显示"
+        }
+
+        ctrl.refreshProjectConfiguration()
+        ctrl.cardState.requestShowProjectCapabilityDiagnostics()
+
+        #expect(requested == true)
+        #expect(ctrl.cardState.codexProjectionSyncMessage == "项目能力诊断已显示")
+    }
+
     @Test("refreshProjectConfiguration：项目变化时清掉旧 Codex 同步反馈")
     func refreshProjectConfigurationClearsCodexSyncFeedbackOnProjectChange() {
         let ctrl = ChatCardWindowController(streamProvider: { _ in

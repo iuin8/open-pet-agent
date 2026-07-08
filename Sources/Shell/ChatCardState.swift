@@ -99,6 +99,8 @@ public final class ChatCardState: ObservableObject {
     public var onRequestSyncClaudeCodeProjection: (@MainActor () -> String)?
     /// 请求显式同步当前项目的 opencode projection（App 层执行落盘 + 返回提示文案）。
     public var onRequestSyncOpencodeProjection: (@MainActor () -> String)?
+    /// 请求显示当前项目能力诊断（App 层只读 dry-run plans，不写项目文件）。
+    public var onRequestShowProjectCapabilityDiagnostics: (@MainActor () -> String)?
 
     public func requestCreateExternal() { onRequestCreateExternal?() }
     public func requestRenameCurrent() { onRequestRenameCurrent?() }
@@ -111,6 +113,9 @@ public final class ChatCardState: ObservableObject {
     }
     public func requestSyncOpencodeProjection() {
         codexProjectionSyncMessage = onRequestSyncOpencodeProjection?()
+    }
+    public func requestShowProjectCapabilityDiagnostics() {
+        codexProjectionSyncMessage = onRequestShowProjectCapabilityDiagnostics?()
     }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
