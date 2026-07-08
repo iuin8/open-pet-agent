@@ -13,6 +13,16 @@ struct PetChatTabContent: View {
     var body: some View {
         VStack(spacing: 0) {
             messageList
+            if let panel = state.projectCapabilityPanel {
+                ScrollView {
+                    ProjectCapabilityPanelView(panel: panel) {
+                        state.dismissProjectCapabilityPanel()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .frame(maxHeight: 190)
+            }
             composer
         }
     }

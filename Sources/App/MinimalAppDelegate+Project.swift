@@ -62,7 +62,16 @@ extension MinimalAppDelegate {
             self?.syncOpencodeProjectionForCurrentProject() ?? "同步 opencode 配置失败：App 已释放"
         }
         cardCtrl.onRequestShowProjectCapabilityDiagnostics = { [weak self] in
-            self?.showProjectCapabilityDiagnosticsForCurrentProject() ?? "项目能力诊断失败：App 已释放"
+            self?.projectCapabilityPanelForCurrentProject() ?? ProjectCapabilityPanelState(
+                fullText: "项目能力诊断失败：App 已释放",
+                sections: [ProjectCapabilityPanelState.Section(
+                    engineName: "项目能力诊断",
+                    status: .failed,
+                    ownership: nil,
+                    rows: [],
+                    diagnostics: [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: "App 已释放", path: nil)]
+                )]
+            )
         }
     }
 
@@ -193,21 +202,18 @@ extension MinimalAppDelegate {
         }
     }
 
-    /// 只读展示当前项目三路 projection dry-run:targets / diagnostics / plan 构建失败原因。
-    @MainActor func showProjectCapabilityDiagnosticsForCurrentProject() -> String {
+    /// 只读汇总当前项目三路 projection dry-run:targets / ownership / diagnostics / plan 构建失败原因。
+    @MainActor func projectCapabilityPanelForCurrentProject() -> ProjectCapabilityPanelState {
         let project = ProjectStore.current(defaults: userDefaults)
         let sections = [
             projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
             projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
             projectCapabilitySection(engineName: "Claude Code") { try ClaudeCodeProjectAdapter().plans(for: project) }
         ]
-        let text = ProjectCapabilityDiagnostics.render(sections)
-        let alert = NSAlert()
-        alert.messageText = "项目能力诊断"
-        alert.informativeText = text
-        alert.alertStyle = sections.contains { $0.errorDescription != nil } ? .warning : .informational
-        alert.runModal()
-        return sections.contains { $0.errorDescription != nil } ? "项目能力诊断发现问题" : "项目能力诊断已显示"
+        return ProjectCapabilityPanelState(
+            fullText: ProjectCapabilityDiagnostics.render(sections),
+            sections: sections.map(projectCapabilityPanelSection)
+        )
     }
 
     private func projectCapabilitySection(engineName: String, load: () throws -> [ProjectionPlan]) -> ProjectCapabilityDiagnosticSection {
@@ -215,6 +221,49 @@ extension MinimalAppDelegate {
             return ProjectCapabilityDiagnosticSection(engineName: engineName, plans: try load())
         } catch {
             return ProjectCapabilityDiagnosticSection(engineName: engineName, plans: [], errorDescription: "\(error)")
+        }
+    }
+
+    private func projectCapabilityPanelSection(_ section: ProjectCapabilityDiagnosticSection) -> ProjectCapabilityPanelState.Section {
+        if let errorDescription = section.errorDescription {
+            return ProjectCapabilityPanelState.Section(
+                engineName: section.engineName,
+                status: .failed,
+                ownership: nil,
+                rows: [],
+                diagnostics: [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: errorDescription, path: nil)]
+            )
+        }
+        let operations = section.plans.flatMap(\.operations)
+        let diagnostics = section.plans.flatMap(\.diagnostics)
+        let status: ProjectCapabilityPanelState.Section.Status
+        if operations.isEmpty && diagnostics.isEmpty { status = .empty }
+        else if diagnostics.contains(where: { $0.severity == .error }) { status = .failed }
+        else if !diagnostics.isEmpty { status = .warning }
+        else { status = .ready }
+        return ProjectCapabilityPanelState.Section(
+            engineName: section.engineName,
+            status: status,
+            ownership: operations.isEmpty ? nil : "OpenPetAgent 生成内容",
+            rows: operations.map(projectCapabilityPanelRow),
+            diagnostics: diagnostics.map { ProjectCapabilityPanelState.Diagnostic(
+                severity: $0.severity.rawValue,
+                message: $0.message,
+                path: $0.path
+            ) }
+        )
+    }
+
+    private func projectCapabilityPanelRow(_ operation: ProjectionOperation) -> ProjectCapabilityPanelState.Row {
+        switch operation {
+        case .writeFile(_, let destination):
+            return ProjectCapabilityPanelState.Row(kind: "写入生成文件", target: destination.path, detail: nil, copyText: destination.path)
+        case .copyDirectory(let source, let destination):
+            return ProjectCapabilityPanelState.Row(kind: "复制生成目录", target: destination.path, detail: "来源: \(source.path)", copyText: destination.path)
+        case .symlinkDirectory(let source, let destination):
+            return ProjectCapabilityPanelState.Row(kind: "链接生成目录", target: destination.path, detail: "来源: \(source.path)", copyText: destination.path)
+        case .removeGenerated(let url):
+            return ProjectCapabilityPanelState.Row(kind: "移除生成内容", target: url.path, detail: nil, copyText: url.path)
         }
     }
 

@@ -70,6 +70,8 @@ public final class ChatCardState: ObservableObject {
     @Published public var projects: [ProjectOption] = []
     /// 最近一次项目配置显式同步结果，仅用于当前卡片反馈。
     @Published public var codexProjectionSyncMessage: String?
+    /// 当前卡片内项目能力诊断面板。nil 表示隐藏。
+    @Published public var projectCapabilityPanel: ProjectCapabilityPanelState?
     /// 切换项目回调(App 注入:写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply 即时生效)。
     public var onCommitProject: (@MainActor (String) -> Void)?
     /// 请求创建项目回调(App 注入:弹 NSAlert 收名字 + `ProjectStore.create` + 刷新)。
@@ -81,6 +83,7 @@ public final class ChatCardState: ObservableObject {
             currentProject = opt
         }
         codexProjectionSyncMessage = nil
+        projectCapabilityPanel = nil
         onCommitProject?(id)
     }
     /// 请求创建项目(触发 `onRequestCreateProject`)。
@@ -100,22 +103,29 @@ public final class ChatCardState: ObservableObject {
     /// 请求显式同步当前项目的 opencode projection（App 层执行落盘 + 返回提示文案）。
     public var onRequestSyncOpencodeProjection: (@MainActor () -> String)?
     /// 请求显示当前项目能力诊断（App 层只读 dry-run plans，不写项目文件）。
-    public var onRequestShowProjectCapabilityDiagnostics: (@MainActor () -> String)?
+    public var onRequestShowProjectCapabilityDiagnostics: (@MainActor () -> ProjectCapabilityPanelState)?
 
     public func requestCreateExternal() { onRequestCreateExternal?() }
     public func requestRenameCurrent() { onRequestRenameCurrent?() }
     public func requestDeleteCurrent() { onRequestDeleteCurrent?() }
     public func requestSyncCodexProjection() {
+        projectCapabilityPanel = nil
         codexProjectionSyncMessage = onRequestSyncCodexProjection?()
     }
     public func requestSyncClaudeCodeProjection() {
+        projectCapabilityPanel = nil
         codexProjectionSyncMessage = onRequestSyncClaudeCodeProjection?()
     }
     public func requestSyncOpencodeProjection() {
+        projectCapabilityPanel = nil
         codexProjectionSyncMessage = onRequestSyncOpencodeProjection?()
     }
     public func requestShowProjectCapabilityDiagnostics() {
-        codexProjectionSyncMessage = onRequestShowProjectCapabilityDiagnostics?()
+        codexProjectionSyncMessage = nil
+        projectCapabilityPanel = onRequestShowProjectCapabilityDiagnostics?()
+    }
+    public func dismissProjectCapabilityPanel() {
+        projectCapabilityPanel = nil
     }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
