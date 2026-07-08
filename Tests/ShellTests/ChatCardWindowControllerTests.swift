@@ -190,4 +190,41 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.codexProjectionSyncMessage == nil)
         #expect(ctrl.cardState.projectCapabilityPanel == nil)
     }
+
+    @Test("refreshProjectConfiguration：项目能力管理 toggle 后保留当前 tab")
+    func projectCapabilityManagerTogglePreservesSelectedTab() {
+        let ctrl = ChatCardWindowController(streamProvider: { _ in
+            AsyncThrowingStream { $0.finish() }
+        })
+        let manager = ProjectCapabilityCardState(
+            selectedTab: .mcp,
+            items: [ProjectCapabilityCardState.Item(
+                id: "mcp:dev-toolkit:filesystem",
+                kind: .mcp,
+                name: "filesystem",
+                pluginID: "dev-toolkit",
+                sourcePath: "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/mcp/servers.json#filesystem",
+                targetPaths: [],
+                isEnabled: true,
+                status: .enabled,
+                diagnostics: []
+            )]
+        )
+        ctrl.projectProvider = {
+            (
+                current: ProjectOption(id: "p", name: "P", isExternal: true),
+                projects: [ProjectOption(id: "p", name: "P", isExternal: true)]
+            )
+        }
+        ctrl.onRequestShowProjectCapabilityManager = { manager }
+        ctrl.onRequestSetProjectPluginEnabled = { _, _ in
+            ProjectCapabilityCardState(selectedTab: .skills, items: manager.items)
+        }
+
+        ctrl.refreshProjectConfiguration()
+        ctrl.cardState.requestShowProjectCapabilityManager()
+        ctrl.cardState.setProjectPluginEnabled(pluginID: "dev-toolkit", enabled: false)
+
+        #expect(ctrl.cardState.projectCapabilityManager?.selectedTab == .mcp)
+    }
 }

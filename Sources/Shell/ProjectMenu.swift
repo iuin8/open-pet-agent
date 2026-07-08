@@ -20,6 +20,7 @@ struct ProjectMenu: View {
     let onRequestSyncClaudeCodeProjection: () -> Void
     let onRequestSyncOpencodeProjection: () -> Void
     let onRequestShowProjectCapabilityDiagnostics: () -> Void
+    let onRequestShowProjectCapabilityManager: () -> Void
 
     var body: some View {
         Menu {
@@ -42,6 +43,11 @@ struct ProjectMenu: View {
                 Label("添加外部项目…", systemImage: "folder.badge.plus")
             }
             Divider()
+            Button {
+                onRequestShowProjectCapabilityManager()
+            } label: {
+                Label("管理项目能力", systemImage: "shippingbox.fill")
+            }
             Button {
                 onRequestShowProjectCapabilityDiagnostics()
             } label: {

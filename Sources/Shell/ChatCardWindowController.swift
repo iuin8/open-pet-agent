@@ -73,6 +73,10 @@ public final class ChatCardWindowController {
     public var onRequestSyncOpencodeProjection: (@MainActor () -> String)?
     /// App 注入:用户点「项目能力诊断」→ 只读汇总 projection targets / diagnostics，并返回面板状态。
     public var onRequestShowProjectCapabilityDiagnostics: (@MainActor () -> ProjectCapabilityPanelState)?
+    /// App 注入:用户点「管理项目能力」→ 只读汇总 catalog + projection 状态，并返回管理卡片状态。
+    public var onRequestShowProjectCapabilityManager: (@MainActor () -> ProjectCapabilityCardState)?
+    /// App 注入:用户在「管理项目能力」启用/禁用 plugin → 只改 canonical plugin manifest。
+    public var onRequestSetProjectPluginEnabled: (@MainActor (String, Bool) -> ProjectCapabilityCardState)?
 
     // MARK: - Init
 
@@ -207,6 +211,7 @@ public final class ChatCardWindowController {
             if state.currentProject?.id != cfg.current.id {
                 state.codexProjectionSyncMessage = nil
                 state.projectCapabilityPanel = nil
+                state.projectCapabilityManager = nil
             }
             state.currentProject = cfg.current
             state.projects = cfg.projects
@@ -220,6 +225,8 @@ public final class ChatCardWindowController {
         state.onRequestSyncClaudeCodeProjection = onRequestSyncClaudeCodeProjection
         state.onRequestSyncOpencodeProjection = onRequestSyncOpencodeProjection
         state.onRequestShowProjectCapabilityDiagnostics = onRequestShowProjectCapabilityDiagnostics
+        state.onRequestShowProjectCapabilityManager = onRequestShowProjectCapabilityManager
+        state.onRequestSetProjectPluginEnabled = onRequestSetProjectPluginEnabled
     }
 
     /// 刷新项目配置(public,App 创建项目后调,驱动 `ProjectMenu` 更新列表)。
