@@ -53,7 +53,7 @@ extension MinimalAppDelegate {
             self?.confirmDeleteCurrentProject(refresh: { cardCtrl?.refreshProjectConfiguration() })
         }
         cardCtrl.onRequestSyncCodexProjection = { [weak self] in
-            self?.syncCodexProjectionForCurrentProject()
+            self?.syncCodexProjectionForCurrentProject() ?? "同步 Codex 配置失败：App 已释放"
         }
     }
 
@@ -139,14 +139,17 @@ extension MinimalAppDelegate {
     }
 
     /// 显式把当前项目的 Codex projection 落盘。只响应用户点击,不在聊天时自动写项目文件。
-    @MainActor func syncCodexProjectionForCurrentProject() {
+    @MainActor func syncCodexProjectionForCurrentProject() -> String {
         let project = ProjectStore.current(defaults: userDefaults)
         do {
             try ProjectConfig.ensure(for: project)
             let plans = try CodexProjectAdapter().plans(for: project)
+            let operationCount = plans.reduce(0) { $0 + $1.operations.count }
             try CodexProjectionMaterializer().apply(plans)
+            return operationCount == 0 ? "没有可同步的 Codex 配置" : "Codex 配置已同步"
         } catch {
             showProjectError(title: "同步 Codex 配置失败", error: error)
+            return "同步 Codex 配置失败：\(error)"
         }
     }
 

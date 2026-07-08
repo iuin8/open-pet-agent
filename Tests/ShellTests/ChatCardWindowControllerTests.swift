@@ -58,11 +58,34 @@ struct ChatCardWindowControllerTests {
                 projects: [ProjectOption(id: "p", name: "P", isExternal: true)]
             )
         }
-        ctrl.onRequestSyncCodexProjection = { requested = true }
+        ctrl.onRequestSyncCodexProjection = {
+            requested = true
+            return "Codex 配置已同步"
+        }
 
         ctrl.refreshProjectConfiguration()
         ctrl.cardState.requestSyncCodexProjection()
 
         #expect(requested == true)
+        #expect(ctrl.cardState.codexProjectionSyncMessage == "Codex 配置已同步")
+    }
+
+    @Test("refreshProjectConfiguration：项目变化时清掉旧 Codex 同步反馈")
+    func refreshProjectConfigurationClearsCodexSyncFeedbackOnProjectChange() {
+        let ctrl = ChatCardWindowController(streamProvider: { _ in
+            AsyncThrowingStream { $0.finish() }
+        })
+        var current = ProjectOption(id: "a", name: "A", isExternal: true)
+        ctrl.projectProvider = { (current: current, projects: [current]) }
+        ctrl.onRequestSyncCodexProjection = { "Codex 配置已同步" }
+
+        ctrl.refreshProjectConfiguration()
+        ctrl.cardState.requestSyncCodexProjection()
+        #expect(ctrl.cardState.codexProjectionSyncMessage == "Codex 配置已同步")
+
+        current = ProjectOption(id: "b", name: "B", isExternal: true)
+        ctrl.refreshProjectConfiguration()
+
+        #expect(ctrl.cardState.codexProjectionSyncMessage == nil)
     }
 }
