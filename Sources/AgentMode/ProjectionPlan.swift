@@ -17,7 +17,7 @@ public struct ProjectionPlan: Sendable, Equatable {
 }
 
 public enum ProjectionOperation: Sendable, Equatable {
-    case writeFile(sourceDescription: String, destination: URL)
+    case writeFile(contents: String, destination: URL)
     case copyDirectory(source: URL, destination: URL)
     case symlinkDirectory(source: URL, destination: URL)
     case removeGenerated(URL)

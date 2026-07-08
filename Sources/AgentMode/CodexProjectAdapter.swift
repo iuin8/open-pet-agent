@@ -11,23 +11,19 @@ public struct CodexProjectAdapter: Sendable {
         let plugins = try catalog.listPlugins(for: project)
         var operations: [ProjectionOperation] = []
         var diagnostics: [ProjectConfigDiagnostic] = []
-        var mcpDescriptions: [String] = []
+        var mcpServers: [(name: String, value: ACPJSON)] = []
         var seenMCPServers = Set<String>()
 
         for plugin in plugins where supportsCodexProjection(plugin) {
             diagnostics.append(contentsOf: catalog.validate(plugin))
 
             if plugin.capabilities.contains(.mcp) {
-                var serverNames: [String] = []
                 for ref in plugin.mcp {
-                    let name = try resolveMCPRef(ref, plugin: plugin)
+                    let (name, value) = try resolveMCPRef(ref, plugin: plugin)
                     guard seenMCPServers.insert(name).inserted else {
                         throw CodexProjectAdapterError.duplicateMCPServer(name)
                     }
-                    serverNames.append(name)
-                }
-                if !serverNames.isEmpty {
-                    mcpDescriptions.append("\(plugin.id): \(serverNames.sorted().joined(separator: ", "))")
+                    mcpServers.append((name: name, value: value))
                 }
             }
 
@@ -39,9 +35,9 @@ public struct CodexProjectAdapter: Sendable {
             }
         }
 
-        if !mcpDescriptions.isEmpty {
+        if !mcpServers.isEmpty {
             operations.insert(.writeFile(
-                sourceDescription: "Codex MCP servers: \(mcpDescriptions.joined(separator: "; "))",
+                contents: try renderCodexConfig(mcpServers),
                 destination: project.rootURL.appendingPathComponent(".codex/config.toml", isDirectory: false)
             ), at: 0)
         }
@@ -64,7 +60,7 @@ public struct CodexProjectAdapter: Sendable {
         return false
     }
 
-    private func resolveMCPRef(_ ref: String, plugin: ProjectPluginDescriptor) throws -> String {
+    private func resolveMCPRef(_ ref: String, plugin: ProjectPluginDescriptor) throws -> (String, ACPJSON) {
         let parts = ref.split(separator: "#", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { throw CodexProjectAdapterError.invalidMCPRef(ref) }
         let fileURL = try containedURL(
@@ -85,7 +81,7 @@ public struct CodexProjectAdapter: Sendable {
         guard server.objectValue != nil else {
             throw CodexProjectAdapterError.invalidMCPServer(serverName)
         }
-        return serverName
+        return (serverName, server)
     }
 
     private func resolveSkillRef(_ ref: String, plugin: ProjectPluginDescriptor, project: AgentProject) throws -> (URL, URL) {
@@ -116,6 +112,73 @@ public struct CodexProjectAdapter: Sendable {
             .appendingPathComponent("skills", isDirectory: true)
             .appendingPathComponent("\(plugin.id)-\(skillName)", isDirectory: true)
         return (source, destination)
+    }
+
+    private func renderCodexConfig(_ servers: [(name: String, value: ACPJSON)]) throws -> String {
+        var lines: [String] = []
+        for server in servers.sorted(by: { $0.name < $1.name }) {
+            guard let object = server.value.objectValue else {
+                throw CodexProjectAdapterError.invalidMCPServer(server.name)
+            }
+            let command = try commandParts(for: object, serverName: server.name)
+            lines.append("[mcp_servers.\(tomlKey(server.name))]")
+            lines.append("command = \"\(tomlString(command[0]))\"")
+            if command.count > 1 {
+                let args = command.dropFirst().map { "\"\(tomlString($0))\"" }.joined(separator: ", ")
+                lines.append("args = [\(args)]")
+            }
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func commandParts(for object: [String: ACPJSON], serverName: String) throws -> [String] {
+        var parts: [String]
+        if let command = object["command"]?.stringValue, !command.isEmpty {
+            parts = [command]
+        } else if let command = object["command"]?.arrayValue {
+            parts = command.compactMap(\.stringValue)
+            guard parts.count == command.count, !parts.isEmpty else {
+                throw CodexProjectAdapterError.invalidMCPServer(serverName)
+            }
+        } else {
+            throw CodexProjectAdapterError.invalidMCPServer(serverName)
+        }
+
+        if let args = object["args"]?.arrayValue {
+            let values = args.compactMap(\.stringValue)
+            guard values.count == args.count else {
+                throw CodexProjectAdapterError.invalidMCPServer(serverName)
+            }
+            parts.append(contentsOf: values)
+        }
+        return parts
+    }
+
+    private func tomlKey(_ key: String) -> String {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        if key.unicodeScalars.allSatisfy({ allowed.contains($0) }) { return key }
+        return "\"\(tomlString(key))\""
+    }
+
+    private func tomlString(_ value: String) -> String {
+        var escaped = ""
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\\": escaped += "\\\\"
+            case "\"": escaped += "\\\""
+            case "\n": escaped += "\\n"
+            case "\r": escaped += "\\r"
+            case "\t": escaped += "\\t"
+            default:
+                if scalar.value < 0x20 {
+                    escaped += String(format: "\\u%04X", scalar.value)
+                } else {
+                    escaped.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return escaped
     }
 
     private func containedURL(
