@@ -76,7 +76,8 @@ struct PetChatTabContent: View {
                             onRequestRenameCurrent: { state.requestRenameCurrent() },
                             onRequestDeleteCurrent: { state.requestDeleteCurrent() },
                             onRequestSyncCodexProjection: { state.requestSyncCodexProjection() },
-                            onRequestSyncClaudeCodeProjection: { state.requestSyncClaudeCodeProjection() }
+                            onRequestSyncClaudeCodeProjection: { state.requestSyncClaudeCodeProjection() },
+                            onRequestSyncOpencodeProjection: { state.requestSyncOpencodeProjection() }
                         )
                     }
                 }

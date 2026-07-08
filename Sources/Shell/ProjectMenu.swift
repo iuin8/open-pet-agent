@@ -18,6 +18,7 @@ struct ProjectMenu: View {
     let onRequestDeleteCurrent: () -> Void
     let onRequestSyncCodexProjection: () -> Void
     let onRequestSyncClaudeCodeProjection: () -> Void
+    let onRequestSyncOpencodeProjection: () -> Void
 
     var body: some View {
         Menu {
@@ -49,6 +50,11 @@ struct ProjectMenu: View {
                 onRequestSyncClaudeCodeProjection()
             } label: {
                 Label("同步 Claude Code 配置", systemImage: "arrow.triangle.2.circlepath")
+            }
+            Button {
+                onRequestSyncOpencodeProjection()
+            } label: {
+                Label("同步 opencode 配置", systemImage: "arrow.triangle.2.circlepath")
             }
             Divider()
             Button {

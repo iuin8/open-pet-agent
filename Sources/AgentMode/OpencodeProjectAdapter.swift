@@ -2,48 +2,82 @@ import Foundation
 
 public struct OpencodeProjectAdapter: Sendable {
     private static let engineIDs = [AgentEngineKind.openCode.rawValue, "opencode"]
+    private static let planID = "opencode"
 
     public init() {}
 
+    public func plans(for project: AgentProject) throws -> [ProjectionPlan] {
+        let catalog = ProjectPluginCatalog()
+        let plugins = try catalog.listPlugins(for: project)
+        var operations: [ProjectionOperation] = []
+        var diagnostics: [ProjectConfigDiagnostic] = []
+        var seenMCPServers = Set<String>()
+
+        for plugin in plugins where supportsOpencodeProjection(plugin) {
+            diagnostics.append(contentsOf: catalog.validate(plugin))
+            if plugin.capabilities.contains(.mcp) {
+                try collectMCPServers(from: plugin, seenNames: &seenMCPServers).forEach { _ in }
+            }
+            operations.append(.copyDirectory(
+                source: plugin.rootURL,
+                destination: ProjectConfig.materializedPluginDirectory(
+                    for: project,
+                    engineID: AgentEngineKind.openCode.rawValue,
+                    pluginID: plugin.id
+                )
+            ))
+        }
+
+        guard !operations.isEmpty || !diagnostics.isEmpty else { return [] }
+        return [ProjectionPlan(
+            projectID: project.id,
+            engineID: AgentEngineKind.openCode.rawValue,
+            pluginID: Self.planID,
+            operations: operations,
+            diagnostics: diagnostics
+        )]
+    }
+
     public func loadMCPServers(for project: AgentProject) throws -> [ACPJSON] {
         let plugins = try ProjectPluginCatalog().listPlugins(for: project)
-        var servers: [ACPJSON] = []
         var seenNames = Set<String>()
+        return try plugins
+            .filter(supportsOpencodeMCP)
+            .flatMap { try collectMCPServers(from: $0, seenNames: &seenNames) }
+    }
 
-        for plugin in plugins where supportsOpencodeMCP(plugin) {
-            for ref in plugin.mcp {
-                let (name, value) = try resolveMCPRef(ref, plugin: plugin)
-                guard seenNames.insert(name).inserted else {
-                    throw OpencodeProjectAdapterError.duplicateMCPServer(name)
-                }
-                servers.append(value)
-            }
+    private func supportsOpencodeProjection(_ plugin: ProjectPluginDescriptor) -> Bool {
+        guard plugin.enabled else { return false }
+        for engineID in Self.engineIDs {
+            if let policy = plugin.enginePolicies[engineID] { return policy == .pluginDir }
         }
-        return servers
+        return false
     }
 
     private func supportsOpencodeMCP(_ plugin: ProjectPluginDescriptor) -> Bool {
-        guard plugin.enabled, plugin.capabilities.contains(.mcp) else { return false }
-        for engineID in Self.engineIDs {
-            if let policy = plugin.enginePolicies[engineID] { return policy != .disabled }
+        supportsOpencodeProjection(plugin) && plugin.capabilities.contains(.mcp)
+    }
+
+    private func collectMCPServers(from plugin: ProjectPluginDescriptor, seenNames: inout Set<String>) throws -> [ACPJSON] {
+        try plugin.mcp.map { ref in
+            let (name, value) = try resolveMCPRef(ref, plugin: plugin)
+            guard seenNames.insert(name).inserted else {
+                throw OpencodeProjectAdapterError.duplicateMCPServer(name)
+            }
+            return value
         }
-        return false
     }
 
     private func resolveMCPRef(_ ref: String, plugin: ProjectPluginDescriptor) throws -> (String, ACPJSON) {
         let parts = ref.split(separator: "#", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { throw OpencodeProjectAdapterError.invalidMCPRef(ref) }
-        let fileURL = plugin.rootURL
-            .appendingPathComponent(parts[0], isDirectory: false)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-        let mcpRoot = plugin.rootURL
-            .appendingPathComponent("mcp", isDirectory: true)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-        guard ProjectionTrust.isPath(fileURL, inside: mcpRoot) else {
-            throw OpencodeProjectAdapterError.mcpRefEscapesPlugin(ref)
-        }
+        let fileURL = try containedURL(
+            ref: parts[0],
+            subdirectory: "mcp",
+            plugin: plugin,
+            isDirectory: false,
+            escape: { OpencodeProjectAdapterError.mcpRefEscapesPlugin(ref) }
+        )
         let serverName = parts[1]
         let data = try Data(contentsOf: fileURL)
         guard let object = try JSONDecoder().decode(ACPJSON.self, from: data).objectValue,
@@ -55,6 +89,30 @@ public struct OpencodeProjectAdapter: Sendable {
             throw OpencodeProjectAdapterError.invalidMCPServer(serverName)
         }
         return (serverName, server)
+    }
+
+    private func containedURL(
+        ref: String,
+        subdirectory: String,
+        plugin: ProjectPluginDescriptor,
+        isDirectory: Bool,
+        escape: () -> OpencodeProjectAdapterError
+    ) throws -> URL {
+        let pluginRoot = plugin.rootURL.standardizedFileURL.resolvingSymlinksInPath()
+        let lexicalRoot = plugin.rootURL
+            .appendingPathComponent(subdirectory, isDirectory: true)
+            .standardizedFileURL
+        let lexicalURL = plugin.rootURL
+            .appendingPathComponent(ref, isDirectory: isDirectory)
+            .standardizedFileURL
+        guard ProjectionTrust.isPath(lexicalURL, inside: lexicalRoot) else { throw escape() }
+
+        let resolvedRoot = lexicalRoot.resolvingSymlinksInPath()
+        guard ProjectionTrust.isPath(resolvedRoot, inside: pluginRoot) else { throw escape() }
+
+        let resolvedURL = lexicalURL.resolvingSymlinksInPath()
+        guard ProjectionTrust.isPath(resolvedURL, inside: resolvedRoot) else { throw escape() }
+        return resolvedURL
     }
 }
 
