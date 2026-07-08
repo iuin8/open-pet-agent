@@ -65,8 +65,8 @@ public final class ChatCardWindowController {
     public var onRequestRenameCurrent: (@MainActor () -> Void)?
     /// App 注入:用户点「删除当前项目」→ NSAlert 确认 + `ProjectStore.delete` + setCurrent(default) + 刷新。
     public var onRequestDeleteCurrent: (@MainActor () -> Void)?
-    /// App 注入:用户点「同步 Codex 配置」→ 显式 materialize 当前项目的 Codex projection。
-    public var onRequestSyncCodexProjection: (@MainActor () -> Void)?
+    /// App 注入:用户点「同步 Codex 配置」→ 显式 materialize 当前项目的 Codex projection，并返回状态文案。
+    public var onRequestSyncCodexProjection: (@MainActor () -> String)?
 
     // MARK: - Init
 
@@ -198,6 +198,9 @@ public final class ChatCardWindowController {
     /// mirror `syncReplyConfiguration`。
     private func syncProjectConfiguration() {
         if let cfg = projectProvider?() {
+            if state.currentProject?.id != cfg.current.id {
+                state.codexProjectionSyncMessage = nil
+            }
             state.currentProject = cfg.current
             state.projects = cfg.projects
         }

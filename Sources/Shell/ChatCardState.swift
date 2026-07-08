@@ -68,6 +68,8 @@ public final class ChatCardState: ObservableObject {
     @Published public var currentProject: ProjectOption?
     /// 可选项目列表(App 从 `ProjectStore.list()` 派生注入)。
     @Published public var projects: [ProjectOption] = []
+    /// 最近一次 Codex projection 显式同步结果，仅用于当前卡片反馈。
+    @Published public var codexProjectionSyncMessage: String?
     /// 切换项目回调(App 注入:写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply 即时生效)。
     public var onCommitProject: (@MainActor (String) -> Void)?
     /// 请求创建项目回调(App 注入:弹 NSAlert 收名字 + `ProjectStore.create` + 刷新)。
@@ -78,6 +80,7 @@ public final class ChatCardState: ObservableObject {
         if let opt = projects.first(where: { $0.id == id }) {
             currentProject = opt
         }
+        codexProjectionSyncMessage = nil
         onCommitProject?(id)
     }
     /// 请求创建项目(触发 `onRequestCreateProject`)。
@@ -90,13 +93,15 @@ public final class ChatCardState: ObservableObject {
     public var onRequestRenameCurrent: (@MainActor () -> Void)?
     /// 请求删除当前项目(NSAlert 确认,触发 `onRequestDeleteCurrent`)。
     public var onRequestDeleteCurrent: (@MainActor () -> Void)?
-    /// 请求显式同步当前项目的 Codex projection（App 层执行落盘 + 错误提示）。
-    public var onRequestSyncCodexProjection: (@MainActor () -> Void)?
+    /// 请求显式同步当前项目的 Codex projection（App 层执行落盘 + 返回提示文案）。
+    public var onRequestSyncCodexProjection: (@MainActor () -> String)?
 
     public func requestCreateExternal() { onRequestCreateExternal?() }
     public func requestRenameCurrent() { onRequestRenameCurrent?() }
     public func requestDeleteCurrent() { onRequestDeleteCurrent?() }
-    public func requestSyncCodexProjection() { onRequestSyncCodexProjection?() }
+    public func requestSyncCodexProjection() {
+        codexProjectionSyncMessage = onRequestSyncCodexProjection?()
+    }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
     public var streamTask: Task<Void, Never>?
