@@ -1,0 +1,207 @@
+import AppKit
+import SwiftUI
+
+struct ProjectCapabilityManagerView: View {
+    let state: ProjectCapabilityCardState
+    let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
+    let onSetEnabled: (String, Bool) -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            tabBar
+            if state.visibleItems.isEmpty {
+                emptyState
+            } else {
+                ForEach(state.visibleItems) { item in
+                    itemView(item)
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius, style: .continuous)
+                .fill(ChatCardTheme.petBubbleFill.opacity(0.95))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius, style: .continuous)
+                .stroke(ChatCardTheme.petBubbleStroke, lineWidth: 1)
+        )
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "shippingbox.fill")
+                .foregroundStyle(ChatCardTheme.accent)
+            Text("项目能力")
+                .font(ChatCardTheme.chip)
+                .foregroundStyle(ChatCardTheme.textPrimary)
+            Spacer()
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .help("关闭项目能力管理")
+        }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 4) {
+            tabButton(.skills, title: "Skills", icon: "sparkles")
+            tabButton(.mcp, title: "MCP", icon: "point.3.connected.trianglepath.dotted")
+            tabButton(.profiles, title: "Profiles", icon: "square.stack.3d.up")
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(ChatCardTheme.inputFill.opacity(0.65))
+        )
+    }
+
+    private func tabButton(_ tab: ProjectCapabilityCardState.Tab, title: String, icon: String) -> some View {
+        Button { onSelectTab(tab) } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                Text(title).fixedSize(horizontal: true, vertical: false)
+            }
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(state.selectedTab == tab ? ChatCardTheme.textPrimary : ChatCardTheme.textPrimary.opacity(0.55))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(state.selectedTab == tab ? Color.white.opacity(0.85) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var emptyState: some View {
+        Text(state.selectedTab == .profiles ? "Profiles 还是预留位：后续用于项目模板组合。" : "当前项目没有这一类能力。")
+            .font(.system(size: 10, design: .rounded))
+            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.55))
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.52)))
+    }
+
+    private func itemView(_ item: ProjectCapabilityCardState.Item) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon(for: item.kind))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color(for: item.status))
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(item.name)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ChatCardTheme.textPrimary)
+                    Text(item.pluginID)
+                        .font(.system(size: 8, weight: .medium, design: .rounded))
+                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
+                    statusBadge(item.status)
+                }
+                Text(item.sourcePath)
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.52))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                ForEach(item.targetPaths, id: \.self) { target in
+                    Text("→ \(target)")
+                        .font(.system(size: 8.5, design: .monospaced))
+                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.45))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                ForEach(item.diagnostics.indices, id: \.self) { index in
+                    let diagnostic = item.diagnostics[index]
+                    Text("\(diagnostic.severity): \(diagnostic.message)")
+                        .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(diagnostic.severity == "error" ? Color.red.opacity(0.75) : ChatCardTheme.accent.opacity(0.8))
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 4)
+            VStack(spacing: 5) {
+                Button {
+                    onSetEnabled(item.pluginID, item.nextEnabledValue)
+                } label: {
+                    Image(systemName: item.isEnabled ? "power.circle.fill" : "power.circle")
+                }
+                .buttonStyle(.plain)
+                .help(item.isEnabled ? "禁用 plugin" : "启用 plugin")
+                Button {
+                    openInFinder(item.sourcePath)
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .buttonStyle(.plain)
+                .help("在 Finder 打开 source")
+                Button {
+                    copy(item.copyText)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.plain)
+                .help("复制 source → destination")
+            }
+            .font(.system(size: 10))
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.52)))
+    }
+
+    private func statusBadge(_ status: ProjectCapabilityCardState.Item.Status) -> some View {
+        Text(label(for: status))
+            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .foregroundStyle(color(for: status))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(color(for: status).opacity(0.12)))
+    }
+
+    private func icon(for kind: ProjectCapabilityCardState.Item.Kind) -> String {
+        switch kind {
+        case .skill: return "sparkles"
+        case .mcp: return "point.3.connected.trianglepath.dotted"
+        case .profile: return "square.stack.3d.up"
+        }
+    }
+
+    private func label(for status: ProjectCapabilityCardState.Item.Status) -> String {
+        switch status {
+        case .enabled: return "已启用"
+        case .disabled: return "未启用"
+        case .warning: return "警告"
+        case .failed: return "失败"
+        }
+    }
+
+    private func color(for status: ProjectCapabilityCardState.Item.Status) -> Color {
+        switch status {
+        case .enabled: return ChatCardTheme.activeGreen
+        case .disabled: return ChatCardTheme.textPrimary.opacity(0.35)
+        case .warning: return ChatCardTheme.accent
+        case .failed: return .red.opacity(0.75)
+        }
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func openInFinder(_ path: String) {
+        var cleanPath = path
+        if let hashIndex = cleanPath.firstIndex(of: "#") {
+            cleanPath = String(cleanPath[..<hashIndex])
+        }
+        var url = URL(fileURLWithPath: cleanPath)
+        while !FileManager.default.fileExists(atPath: url.path), url.path != "/" {
+            url.deleteLastPathComponent()
+        }
+        guard url.path != "/" else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+}

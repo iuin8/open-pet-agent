@@ -2,6 +2,18 @@ import AppKit
 import AgentMode
 import Shell
 
+enum ProjectCapabilityManagerError: Error, Equatable, CustomStringConvertible {
+    case invalidPluginID(String)
+    case invalidManifest(String)
+
+    var description: String {
+        switch self {
+        case .invalidPluginID(let pluginID): return "无效项目能力 plugin id: \(pluginID)"
+        case .invalidManifest(let pluginID): return "无效项目能力 manifest: \(pluginID)"
+        }
+    }
+}
+
 // MARK: - 项目配置(P1b 多项目 UI 接线 + P1c 外部项目/删除/重命名)
 
 extension MinimalAppDelegate {
@@ -72,6 +84,18 @@ extension MinimalAppDelegate {
                     diagnostics: [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: "App 已释放", path: nil)]
                 )]
             )
+        }
+        cardCtrl.onRequestShowProjectCapabilityManager = { [weak self] in
+            self?.projectCapabilityCardForCurrentProject() ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
+        }
+        cardCtrl.onRequestSetProjectPluginEnabled = { [weak self] pluginID, enabled in
+            guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
+            do {
+                try Self.setProjectPluginEnabled(project: ProjectStore.current(defaults: self.userDefaults), pluginID: pluginID, enabled: enabled)
+            } catch {
+                self.showProjectError(title: "更新项目能力失败", error: error)
+            }
+            return self.projectCapabilityCardForCurrentProject()
         }
     }
 
@@ -202,13 +226,142 @@ extension MinimalAppDelegate {
         }
     }
 
+    /// 只读汇总当前项目的项目能力管理卡片:catalog + dry-run projection targets,不执行 materializer。
+    @MainActor func projectCapabilityCardForCurrentProject() -> ProjectCapabilityCardState {
+        (try? Self.projectCapabilityCard(for: ProjectStore.current(defaults: userDefaults), selectedTab: .skills)) ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
+    }
+
+    static func projectCapabilityCard(for project: AgentProject, selectedTab: ProjectCapabilityCardState.Tab) throws -> ProjectCapabilityCardState {
+        let catalog = ProjectPluginCatalog()
+        let plugins = try catalog.listPlugins(for: project)
+        let sections = [
+            Self.projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Claude Code") { try ClaudeCodeProjectAdapter().plans(for: project) }
+        ]
+        let targetsBySource = projectionTargetsBySource(sections)
+        let mcpTargets = projectionConfigTargets(sections)
+        let diagnostics = sections.flatMap { section -> [ProjectCapabilityPanelState.Diagnostic] in
+            if let error = section.errorDescription {
+                return [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: error, path: nil)]
+            }
+            return section.plans.flatMap(\.diagnostics).map { ProjectCapabilityPanelState.Diagnostic(
+                severity: $0.severity.rawValue,
+                message: $0.message,
+                path: $0.path
+            ) }
+        }
+        let items = plugins.flatMap { plugin in
+            capabilityItems(for: plugin, diagnostics: catalog.validate(plugin), projectionDiagnostics: diagnostics, targetsBySource: targetsBySource, mcpTargets: mcpTargets)
+        }
+        return ProjectCapabilityCardState(selectedTab: selectedTab, items: items)
+    }
+
+    static func setProjectPluginEnabled(project: AgentProject, pluginID: String, enabled: Bool) throws {
+        guard !pluginID.isEmpty, !pluginID.contains("/"), pluginID != ".", pluginID != ".." else {
+            throw ProjectCapabilityManagerError.invalidPluginID(pluginID)
+        }
+        let manifestURL = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("plugin.json")
+        let pluginRoot = ProjectConfig.pluginRoot(for: project)
+        guard ProjectionTrust.isPath(manifestURL, inside: pluginRoot),
+              ProjectionTrust.isPath(manifestURL.resolvingSymlinksInPath(), inside: pluginRoot.resolvingSymlinksInPath()) else {
+            throw ProjectCapabilityManagerError.invalidPluginID(pluginID)
+        }
+        let data = try Data(contentsOf: manifestURL)
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ProjectCapabilityManagerError.invalidManifest(pluginID)
+        }
+        guard object["id"] as? String == pluginID else {
+            throw ProjectCapabilityManagerError.invalidManifest(pluginID)
+        }
+        object["enabled"] = enabled
+        let output = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try output.write(to: manifestURL, options: .atomic)
+    }
+
+    private static func projectionTargetsBySource(_ sections: [ProjectCapabilityDiagnosticSection]) -> [String: [String]] {
+        var result: [String: [String]] = [:]
+        for operation in sections.flatMap(\.plans).flatMap(\.operations) {
+            switch operation {
+            case .copyDirectory(let source, let destination), .symlinkDirectory(let source, let destination):
+                result[source.path, default: []].append(destination.path)
+            case .writeFile, .removeGenerated:
+                continue
+            }
+        }
+        return result
+    }
+
+    private static func projectionConfigTargets(_ sections: [ProjectCapabilityDiagnosticSection]) -> [String] {
+        sections
+            .flatMap(\.plans)
+            .flatMap(\.operations)
+            .compactMap { operation -> String? in
+                if case let .writeFile(_, destination) = operation { return destination.path }
+                return nil
+            }
+    }
+
+    private static func capabilityItems(
+        for plugin: ProjectPluginDescriptor,
+        diagnostics: [ProjectConfigDiagnostic],
+        projectionDiagnostics: [ProjectCapabilityPanelState.Diagnostic],
+        targetsBySource: [String: [String]],
+        mcpTargets: [String]
+    ) -> [ProjectCapabilityCardState.Item] {
+        let itemDiagnostics = diagnostics.map { ProjectCapabilityPanelState.Diagnostic(
+            severity: $0.severity.rawValue,
+            message: $0.message,
+            path: $0.path
+        ) } + projectionDiagnostics
+        let status = capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics)
+        let skillItems = plugin.skills.map { ref in
+            let source = plugin.rootURL.appendingPathComponent(ref, isDirectory: true).path
+            return ProjectCapabilityCardState.Item(
+                id: "skill:\(plugin.id):\(source)",
+                kind: .skill,
+                name: URL(fileURLWithPath: ref).lastPathComponent,
+                pluginID: plugin.id,
+                sourcePath: source,
+                targetPaths: targetsBySource[source] ?? [],
+                isEnabled: plugin.enabled,
+                status: status,
+                diagnostics: itemDiagnostics
+            )
+        }
+        let mcpItems = plugin.mcp.map { ref in
+            let parts = ref.split(separator: "#", maxSplits: 1).map(String.init)
+            let file = parts.first ?? ref
+            let name = parts.count == 2 ? parts[1] : ref
+            let source = plugin.rootURL.appendingPathComponent(file, isDirectory: false).path + (parts.count == 2 ? "#\(name)" : "")
+            return ProjectCapabilityCardState.Item(
+                id: "mcp:\(plugin.id):\(name)",
+                kind: .mcp,
+                name: name,
+                pluginID: plugin.id,
+                sourcePath: source,
+                targetPaths: mcpTargets,
+                isEnabled: plugin.enabled,
+                status: status,
+                diagnostics: itemDiagnostics
+            )
+        }
+        return skillItems + mcpItems
+    }
+
+    private static func capabilityStatus(enabled: Bool, diagnostics: [ProjectCapabilityPanelState.Diagnostic]) -> ProjectCapabilityCardState.Item.Status {
+        if diagnostics.contains(where: { $0.severity == "error" }) { return .failed }
+        if diagnostics.contains(where: { $0.severity == "warning" }) { return .warning }
+        return enabled ? .enabled : .disabled
+    }
+
     /// 只读汇总当前项目三路 projection dry-run:targets / ownership / diagnostics / plan 构建失败原因。
     @MainActor func projectCapabilityPanelForCurrentProject() -> ProjectCapabilityPanelState {
         let project = ProjectStore.current(defaults: userDefaults)
         let sections = [
-            projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
-            projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
-            projectCapabilitySection(engineName: "Claude Code") { try ClaudeCodeProjectAdapter().plans(for: project) }
+            Self.projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Claude Code") { try ClaudeCodeProjectAdapter().plans(for: project) }
         ]
         return ProjectCapabilityPanelState(
             fullText: ProjectCapabilityDiagnostics.render(sections),
@@ -216,7 +369,7 @@ extension MinimalAppDelegate {
         )
     }
 
-    private func projectCapabilitySection(engineName: String, load: () throws -> [ProjectionPlan]) -> ProjectCapabilityDiagnosticSection {
+    private static func projectCapabilitySection(engineName: String, load: () throws -> [ProjectionPlan]) -> ProjectCapabilityDiagnosticSection {
         do {
             return ProjectCapabilityDiagnosticSection(engineName: engineName, plans: try load())
         } catch {
