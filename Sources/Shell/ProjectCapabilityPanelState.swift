@@ -29,12 +29,16 @@ public struct ProjectCapabilityPanelState: Sendable, Equatable {
         public let target: String
         public let detail: String?
         public let copyText: String
+        public let source: String?
+        public let pluginID: String?
 
-        public init(kind: String, target: String, detail: String?, copyText: String) {
+        public init(kind: String, target: String, detail: String? = nil, copyText: String? = nil, source: String? = nil, pluginID: String? = nil) {
             self.kind = kind
             self.target = target
             self.detail = detail
-            self.copyText = copyText
+            self.source = source
+            self.pluginID = pluginID
+            self.copyText = copyText ?? source.map { "\($0) → \(target)" } ?? target
         }
     }
 

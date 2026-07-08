@@ -245,7 +245,9 @@ extension MinimalAppDelegate {
             engineName: section.engineName,
             status: status,
             ownership: operations.isEmpty ? nil : "OpenPetAgent 生成内容",
-            rows: operations.map(projectCapabilityPanelRow),
+            rows: section.plans.flatMap { plan in
+                plan.operations.map(projectCapabilityPanelRow)
+            },
             diagnostics: diagnostics.map { ProjectCapabilityPanelState.Diagnostic(
                 severity: $0.severity.rawValue,
                 message: $0.message,
@@ -257,14 +259,21 @@ extension MinimalAppDelegate {
     private func projectCapabilityPanelRow(_ operation: ProjectionOperation) -> ProjectCapabilityPanelState.Row {
         switch operation {
         case .writeFile(_, let destination):
-            return ProjectCapabilityPanelState.Row(kind: "写入生成文件", target: destination.path, detail: nil, copyText: destination.path)
+            return ProjectCapabilityPanelState.Row(kind: "写入生成文件", target: destination.path)
         case .copyDirectory(let source, let destination):
-            return ProjectCapabilityPanelState.Row(kind: "复制生成目录", target: destination.path, detail: "来源: \(source.path)", copyText: destination.path)
+            return ProjectCapabilityPanelState.Row(kind: "复制生成目录", target: destination.path, detail: "来源: \(source.path)", source: source.path, pluginID: pluginID(from: source))
         case .symlinkDirectory(let source, let destination):
-            return ProjectCapabilityPanelState.Row(kind: "链接生成目录", target: destination.path, detail: "来源: \(source.path)", copyText: destination.path)
+            return ProjectCapabilityPanelState.Row(kind: "链接生成目录", target: destination.path, detail: "来源: \(source.path)", source: source.path, pluginID: pluginID(from: source))
         case .removeGenerated(let url):
-            return ProjectCapabilityPanelState.Row(kind: "移除生成内容", target: url.path, detail: nil, copyText: url.path)
+            return ProjectCapabilityPanelState.Row(kind: "移除生成内容", target: url.path)
         }
+    }
+
+    private func pluginID(from source: URL) -> String? {
+        let parts = source.standardizedFileURL.pathComponents
+        guard let pluginsIndex = parts.lastIndex(of: "plugins"), parts.indices.contains(pluginsIndex + 1) else { return nil }
+        let candidate = parts[pluginsIndex + 1]
+        return candidate == ".materialized" ? nil : candidate
     }
 
     /// 项目操作失败提示(创建/外部/重命名/删除/Codex/Claude Code/opencode 同步 共用)。

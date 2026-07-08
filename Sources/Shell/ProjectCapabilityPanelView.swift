@@ -83,9 +83,17 @@ struct ProjectCapabilityPanelView: View {
     private func rowView(_ row: ProjectCapabilityPanelState.Row) -> some View {
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.kind)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(ChatCardTheme.accent.opacity(0.8))
+                HStack(spacing: 4) {
+                    Text(row.kind)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ChatCardTheme.accent.opacity(0.8))
+                    if let pluginID = row.pluginID {
+                        Text(pluginID)
+                            .font(.system(size: 8, weight: .medium, design: .rounded))
+                            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
+                            .lineLimit(1)
+                    }
+                }
                 Text(row.target)
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.78))
@@ -101,12 +109,19 @@ struct ProjectCapabilityPanelView: View {
             }
             Spacer(minLength: 4)
             Button {
+                openInFinder(row.target)
+            } label: {
+                Image(systemName: "folder")
+            }
+            .buttonStyle(.plain)
+            .help("在 Finder 打开 target")
+            Button {
                 copy(row.copyText)
             } label: {
                 Image(systemName: "doc.on.doc")
             }
             .buttonStyle(.plain)
-            .help("复制 target")
+            .help(row.source == nil ? "复制 target" : "复制 source → destination")
         }
     }
 
@@ -146,5 +161,14 @@ struct ProjectCapabilityPanelView: View {
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func openInFinder(_ path: String) {
+        var url = URL(fileURLWithPath: path)
+        while !FileManager.default.fileExists(atPath: url.path), url.path != "/" {
+            url.deleteLastPathComponent()
+        }
+        guard url.path != "/" else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }
