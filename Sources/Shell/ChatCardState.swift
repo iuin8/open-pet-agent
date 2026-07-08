@@ -90,10 +90,13 @@ public final class ChatCardState: ObservableObject {
     public var onRequestRenameCurrent: (@MainActor () -> Void)?
     /// 请求删除当前项目(NSAlert 确认,触发 `onRequestDeleteCurrent`)。
     public var onRequestDeleteCurrent: (@MainActor () -> Void)?
+    /// 请求显式同步当前项目的 Codex projection（App 层执行落盘 + 错误提示）。
+    public var onRequestSyncCodexProjection: (@MainActor () -> Void)?
 
     public func requestCreateExternal() { onRequestCreateExternal?() }
     public func requestRenameCurrent() { onRequestRenameCurrent?() }
     public func requestDeleteCurrent() { onRequestDeleteCurrent?() }
+    public func requestSyncCodexProjection() { onRequestSyncCodexProjection?() }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
     public var streamTask: Task<Void, Never>?

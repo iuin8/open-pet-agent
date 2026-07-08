@@ -16,6 +16,7 @@ struct ProjectMenu: View {
     let onRequestCreateExternal: () -> Void
     let onRequestRenameCurrent: () -> Void
     let onRequestDeleteCurrent: () -> Void
+    let onRequestSyncCodexProjection: () -> Void
 
     var body: some View {
         Menu {
@@ -36,6 +37,12 @@ struct ProjectMenu: View {
                 onRequestCreateExternal()
             } label: {
                 Label("添加外部项目…", systemImage: "folder.badge.plus")
+            }
+            Divider()
+            Button {
+                onRequestSyncCodexProjection()
+            } label: {
+                Label("同步 Codex 配置", systemImage: "arrow.triangle.2.circlepath")
             }
             Divider()
             Button {

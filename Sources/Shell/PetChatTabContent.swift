@@ -74,7 +74,8 @@ struct PetChatTabContent: View {
                             onRequestCreateProject: { state.requestCreateProject() },
                             onRequestCreateExternal: { state.requestCreateExternal() },
                             onRequestRenameCurrent: { state.requestRenameCurrent() },
-                            onRequestDeleteCurrent: { state.requestDeleteCurrent() }
+                            onRequestDeleteCurrent: { state.requestDeleteCurrent() },
+                            onRequestSyncCodexProjection: { state.requestSyncCodexProjection() }
                         )
                     }
                 }
