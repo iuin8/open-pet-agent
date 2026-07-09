@@ -16,9 +16,6 @@ struct ProjectMenu: View {
     let onRequestCreateExternal: () -> Void
     let onRequestRenameCurrent: () -> Void
     let onRequestDeleteCurrent: () -> Void
-    let onRequestSyncCodexProjection: () -> Void
-    let onRequestSyncClaudeCodeProjection: () -> Void
-    let onRequestSyncOpencodeProjection: () -> Void
     let onRequestShowProjectCapabilityDiagnostics: () -> Void
     let onRequestShowProjectCapabilityManager: () -> Void
 
@@ -52,21 +49,6 @@ struct ProjectMenu: View {
                 onRequestShowProjectCapabilityDiagnostics()
             } label: {
                 Label("项目能力诊断", systemImage: "checklist")
-            }
-            Button {
-                onRequestSyncCodexProjection()
-            } label: {
-                Label("同步 Codex 配置", systemImage: "arrow.triangle.2.circlepath")
-            }
-            Button {
-                onRequestSyncClaudeCodeProjection()
-            } label: {
-                Label("同步 Claude Code 配置", systemImage: "arrow.triangle.2.circlepath")
-            }
-            Button {
-                onRequestSyncOpencodeProjection()
-            } label: {
-                Label("同步 opencode 配置", systemImage: "arrow.triangle.2.circlepath")
             }
             Divider()
             Button {

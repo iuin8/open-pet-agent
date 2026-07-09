@@ -3,16 +3,29 @@ import SwiftUI
 
 struct ProjectCapabilityManagerView: View {
     let state: ProjectCapabilityCardState
+    let syncMessages: [String]
     let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
     let onSetEnabled: (String, Bool) -> Void
-    let onCreatePlugin: () -> Void
-    let onAddSkill: () -> Void
-    let onAddMCP: () -> Void
+    let onCreatePlugin: (String, String) -> Void
+    let onAddSkill: (String, String) -> Void
+    let onAddMCP: (String, String, [String]) -> Void
+    let onSyncCodex: () -> Void
+    let onSyncClaudeCode: () -> Void
+    let onSyncOpencode: () -> Void
     let onClose: () -> Void
+
+    @State private var pluginID = "dev-toolkit"
+    @State private var pluginName = "Dev Toolkit"
+    @State private var skillName = "code-review"
+    @State private var mcpServerName = "filesystem"
+    @State private var mcpCommand = "npx -y @modelcontextprotocol/server-filesystem"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+            authoringControls
+            syncControls
+            if !syncMessages.isEmpty { syncMessageList }
             tabBar
             if state.visibleItems.isEmpty {
                 emptyState
@@ -41,27 +54,75 @@ struct ProjectCapabilityManagerView: View {
                 .font(ChatCardTheme.chip)
                 .foregroundStyle(ChatCardTheme.textPrimary)
             Spacer()
-            Button(action: onCreatePlugin) {
-                Image(systemName: "plus.square")
-            }
-            .buttonStyle(.plain)
-            .help("创建最小 plugin")
-            Button(action: onAddSkill) {
-                Image(systemName: "sparkles")
-            }
-            .buttonStyle(.plain)
-            .help("添加示例 Skill")
-            Button(action: onAddMCP) {
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-            }
-            .buttonStyle(.plain)
-            .help("添加示例 MCP")
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
             .help("关闭项目能力管理")
         }
+    }
+
+    private var authoringControls: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                compactField("plugin id", text: $pluginID)
+                compactField("name", text: $pluginName)
+                Button("创建") { onCreatePlugin(pluginID, pluginName) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundStyle(ChatCardTheme.accent)
+            }
+            HStack(spacing: 5) {
+                compactField("skill", text: $skillName)
+                Button("加 Skill") { onAddSkill(pluginID, skillName) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundStyle(ChatCardTheme.accent)
+            }
+            HStack(spacing: 5) {
+                compactField("mcp", text: $mcpServerName)
+                compactField("command", text: $mcpCommand)
+                Button("加 MCP") { onAddMCP(pluginID, mcpServerName, mcpCommand.split(separator: " ").map(String.init)) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundStyle(ChatCardTheme.accent)
+            }
+        }
+        .padding(7)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.45)))
+    }
+
+    private func compactField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .font(.system(size: 9, design: .rounded))
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
+    }
+
+    private var syncControls: some View {
+        HStack(spacing: 5) {
+            Button("同步 Codex") { onSyncCodex() }
+            Button("同步 Claude") { onSyncClaudeCode() }
+            Button("同步 opencode") { onSyncOpencode() }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 9, weight: .semibold, design: .rounded))
+        .foregroundStyle(ChatCardTheme.accent)
+    }
+
+    private var syncMessageList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(syncMessages.suffix(3).enumerated()), id: \.offset) { _, message in
+                HStack(spacing: 4) {
+                    Image(systemName: message.contains("失败") ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    Text(message).lineLimit(1)
+                }
+                .foregroundStyle(message.contains("失败") ? Color.red.opacity(0.75) : ChatCardTheme.activeGreen)
+            }
+        }
+        .font(.system(size: 9, weight: .medium, design: .rounded))
     }
 
     private var tabBar: some View {
