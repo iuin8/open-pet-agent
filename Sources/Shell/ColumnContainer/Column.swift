@@ -9,6 +9,8 @@ public enum ColumnKind {
     case detail(item: ConversationItem)
     /// 图片列：用户行图片全图。
     case image(data: Data)
+    /// 项目能力管理 root 列：P0 先复用现有 card state/actions，后续再拆成 root/detail/edit/import 多列。
+    case projectCapabilityManager(ProjectCapabilityColumnState)
 }
 
 /// 列视图里的一列。`selectedRowId` = 本列哪行被 drill-in（高亮 + 紧邻右列是它的展开）。

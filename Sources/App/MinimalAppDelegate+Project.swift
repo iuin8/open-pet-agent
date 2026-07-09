@@ -172,8 +172,8 @@ extension MinimalAppDelegate {
     }
 
     /// 显式把当前项目的 Codex projection 落盘。只响应用户点击,不在聊天时自动写项目文件。
-    @MainActor func syncCodexProjectionForCurrentProject() -> String {
-        let project = ProjectStore.current(defaults: userDefaults)
+    @MainActor func syncCodexProjectionForCurrentProject(project: AgentProject? = nil) -> String {
+        let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
             try ProjectConfig.ensure(for: project)
             let plans = try CodexProjectAdapter().plans(for: project)
@@ -187,8 +187,8 @@ extension MinimalAppDelegate {
     }
 
     /// 显式把当前项目的 Claude Code projection 落盘。只响应用户点击,不在聊天时自动写项目文件。
-    @MainActor func syncClaudeCodeProjectionForCurrentProject() -> String {
-        let project = ProjectStore.current(defaults: userDefaults)
+    @MainActor func syncClaudeCodeProjectionForCurrentProject(project: AgentProject? = nil) -> String {
+        let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
             try ProjectConfig.ensure(for: project)
             let plans = try ClaudeCodeProjectAdapter().plans(for: project)
@@ -203,8 +203,8 @@ extension MinimalAppDelegate {
 
     /// 显式把当前项目的 opencode projection 落盘。只响应用户点击,不在聊天时自动写项目文件。
     /// 只 materialize plugin/data 到 `.open-pet-agent/plugins/.materialized/openCode/`,不覆盖用户 opencode.json。
-    @MainActor func syncOpencodeProjectionForCurrentProject() -> String {
-        let project = ProjectStore.current(defaults: userDefaults)
+    @MainActor func syncOpencodeProjectionForCurrentProject(project: AgentProject? = nil) -> String {
+        let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
             try ProjectConfig.ensure(for: project)
             let plans = try OpencodeProjectAdapter().plans(for: project)
@@ -217,14 +217,12 @@ extension MinimalAppDelegate {
         }
     }
 
-    @MainActor func showProjectCapabilityManagerCard() {
-        let controller = projectCapabilityCardWindowController ?? ProjectCapabilityCardWindowController()
-        projectCapabilityCardWindowController = controller
-        let project = ProjectStore.current(defaults: userDefaults)
-        controller.show(
-            card: projectCapabilityCardForCurrentProject(),
-            petRect: shellController?.windowSet.petWindow.frame ?? .zero,
-            screen: currentScreenFrame(),
+    @MainActor func projectCapabilityColumnState(for project: AgentProject) -> ProjectCapabilityColumnState {
+        func card(for project: AgentProject) -> ProjectCapabilityCardState {
+            (try? Self.projectCapabilityCard(for: project, selectedTab: .skills)) ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
+        }
+        return ProjectCapabilityColumnState(
+            card: card(for: project),
             onSetEnabled: { [weak self] pluginID, enabled in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
                 do {
@@ -232,7 +230,7 @@ extension MinimalAppDelegate {
                 } catch {
                     self.showProjectError(title: "更新项目能力失败", error: error)
                 }
-                return self.projectCapabilityCardForCurrentProject()
+                return card(for: project)
             },
             onCreatePlugin: { [weak self] pluginID, name in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
@@ -241,7 +239,7 @@ extension MinimalAppDelegate {
                 } catch {
                     self.showProjectError(title: "创建项目能力失败", error: error)
                 }
-                return self.projectCapabilityCardForCurrentProject()
+                return card(for: project)
             },
             onAddSkill: { [weak self] pluginID, skillName in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
@@ -250,7 +248,7 @@ extension MinimalAppDelegate {
                 } catch {
                     self.showProjectError(title: "添加 Skill 失败", error: error)
                 }
-                return self.projectCapabilityCardForCurrentProject()
+                return card(for: project)
             },
             onAddMCP: { [weak self] pluginID, serverName, command in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .mcp, items: []) }
@@ -259,11 +257,23 @@ extension MinimalAppDelegate {
                 } catch {
                     self.showProjectError(title: "添加 MCP 失败", error: error)
                 }
-                return self.projectCapabilityCardForCurrentProject()
+                return card(for: project)
             },
-            onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject() ?? "同步 Codex 配置失败：App 已释放" },
-            onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject() ?? "同步 Claude Code 配置失败：App 已释放" },
-            onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject() ?? "同步 opencode 配置失败：App 已释放" }
+            onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
+            onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
+            onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject(project: project) ?? "同步 opencode 配置失败：App 已释放" }
+        )
+    }
+
+    @MainActor func showProjectCapabilityManagerCard() {
+        projectCapabilityCardWindowController?.hide()
+        let project = ProjectStore.current(defaults: userDefaults)
+        let model = projectCapabilityColumnState(for: project)
+        columnContainerWindowController.openRoot(
+            .projectCapabilityManager(model),
+            sourceKey: "project-capability-manager",
+            besideMain: mainCardFrame(),
+            screen: currentScreenFrame()
         )
     }
 

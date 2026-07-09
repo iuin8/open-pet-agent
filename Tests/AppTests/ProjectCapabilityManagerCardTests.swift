@@ -1,5 +1,9 @@
 import Foundation
 import Testing
+import Context
+import Orchestrator
+import Rendering
+import RuntimeBridge
 @testable import AgentMode
 @testable import App
 @testable import Shell
@@ -54,8 +58,7 @@ struct ProjectCapabilityManagerCardTests {
 
         try MinimalAppDelegate.setProjectPluginEnabled(project: fixture.project, pluginID: "dev-toolkit", enabled: false)
 
-        let data = try Data(contentsOf: fixture.pluginRoot.appendingPathComponent("plugin.json"))
-        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let json = try fixture.manifestJSON()
         #expect(json["enabled"] as? Bool == false)
         let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
         #expect(state.visibleItems.first?.status == .disabled)
@@ -81,6 +84,62 @@ struct ProjectCapabilityManagerCardTests {
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(json["enabled"] as? Bool == true)
     }
+
+    @Test("column：项目能力列操作绑定打开时项目，不被 current project 后续切换影响")
+    func columnStateMutatesOpenedProjectAfterCurrentProjectChanges() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProjectCapabilityManagerCardTests-home-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suite = "ProjectCapabilityManagerCardTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        ProjectConfig.homeDirectoryOverride = root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let projectA = try ProjectStore.createExternal(name: "A", rootURL: root.appendingPathComponent("A/repo", isDirectory: true))
+        let projectB = try ProjectStore.createExternal(name: "B", rootURL: root.appendingPathComponent("B/repo", isDirectory: true))
+        let fixtureA = ProjectCapabilityManagerFixture(project: projectA)
+        let fixtureB = ProjectCapabilityManagerFixture(project: projectB)
+        try fixtureA.writePlugin(enabled: true)
+        try fixtureB.writePlugin(enabled: true)
+        ProjectStore.setCurrent(projectA.id, defaults: defaults)
+        let delegate = MinimalAppDelegate(rootSystem: .testSystem(), userDefaults: defaults, startFrameLoop: { _ in nil }, showShellWindows: { _ in })
+        let model = delegate.projectCapabilityColumnState(for: projectA)
+        ProjectStore.setCurrent(projectB.id, defaults: defaults)
+
+        model.setPluginEnabled(pluginID: "dev-toolkit", enabled: false)
+
+        #expect(try fixtureA.manifestJSON()["enabled"] as? Bool == false)
+        #expect(try fixtureB.manifestJSON()["enabled"] as? Bool == true)
+    }
+}
+
+private extension AppRootSystem {
+    static func testSystem() -> AppRootSystem {
+        AppRootSystem(
+            snapshot: DesktopSnapshot(),
+            windowGraph: .bootstrap,
+            companionBootstrap: CompanionBootstrap(
+                capabilities: RuntimeCapabilities(),
+                initialRenderState: RenderState(
+                    petPositionX: 100,
+                    petPositionY: 100,
+                    petRotation: 0,
+                    particleCount: 0,
+                    particles: [],
+                    contactCount: 0,
+                    isSnowEnabled: false
+                )
+            ),
+            runtimeTicker: RuntimeTicker { previousState, _, _ in
+                RuntimeTickResult(renderState: previousState, snapshot: DesktopSnapshot())
+            },
+            conversationResponder: ConversationResponder { _ in "" }
+        )
+    }
 }
 
 private struct ProjectCapabilityManagerFixture {
@@ -88,18 +147,24 @@ private struct ProjectCapabilityManagerFixture {
     let project: AgentProject
     let pluginRoot: URL
 
-    init() throws {
+    init(prefix: String = "P") throws {
         root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ProjectCapabilityManagerCardTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ProjectCapabilityManagerCardTests-\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         project = AgentProject(
-            id: "p",
-            name: "P",
+            id: "p-\(prefix)",
+            name: prefix,
             rootURL: root.appendingPathComponent("repo", isDirectory: true),
             isExternal: true,
             createdAt: Date(timeIntervalSince1970: 0)
         )
         pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+    }
+
+    init(project: AgentProject) {
+        self.root = project.rootURL.deletingLastPathComponent()
+        self.project = project
+        self.pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
     }
 
     func writePlugin(enabled: Bool, mcpRef: String = "mcp/servers.json#filesystem") throws {
@@ -111,5 +176,13 @@ private struct ProjectCapabilityManagerFixture {
         try """
         { "mcpServers": { "filesystem": { "type": "local", "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"], "enabled": true } } }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("mcp/servers.json"), options: .atomic)
+    }
+
+    func manifestJSON() throws -> [String: Any] {
+        let data = try Data(contentsOf: pluginRoot.appendingPathComponent("plugin.json"))
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return json
     }
 }

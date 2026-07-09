@@ -39,19 +39,22 @@ struct ColumnPaneView: View {
         case .list:   return 360
         case .detail: return DetailPaneContent.width   // 520
         case .image:  return 460
+        case .projectCapabilityManager: return 380
         }
     }
 
-    private var isListKind: Bool {
-        if case .list = column.kind { return true }
-        return false
+    private var showsColumnHeader: Bool {
+        switch column.kind {
+        case .list, .projectCapabilityManager: return true
+        case .detail, .image: return false
+        }
     }
 
     // MARK: - Body
 
     var body: some View {
         VStack(spacing: 0) {
-            if isListKind {
+            if showsColumnHeader {
                 listHeader
                 Rectangle()
                     .fill(ChatCardTheme.hairline)
@@ -62,8 +65,8 @@ struct ColumnPaneView: View {
         .frame(width: Self.width(for: column.kind))
         .background(ChatCardTheme.cardBackground)
         .overlay(alignment: .topTrailing) {
-            // detail/image 根列无列头 → 右上悬浮置顶 + 关闭（list 根列的在列头内）。
-            if isRoot, !isListKind {
+            // detail/image 根列无列头 → 右上悬浮置顶 + 关闭（list / 项目能力列的在列头内）。
+            if isRoot, !showsColumnHeader {
                 HStack(spacing: 4) {
                     floatingPinButton
                     floatingCloseButton
@@ -76,34 +79,43 @@ struct ColumnPaneView: View {
     // MARK: - list 列头（tinted 底，与主卡 headerBar / detail 头同一视觉体系）
 
     @ViewBuilder private var listHeader: some View {
-        if case .list(_, _, let glyph, let title, let subtitle) = column.kind {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: glyph)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(ChatCardTheme.accent)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(ChatCardTheme.textPrimary.opacity(0.9))
+        switch column.kind {
+        case .list(_, _, let glyph, let title, let subtitle):
+            columnHeader(glyph: glyph, title: title, subtitle: subtitle)
+        case .projectCapabilityManager:
+            columnHeader(glyph: "shippingbox.fill", title: "项目能力", subtitle: "Skills / MCP / Profiles")
+        case .detail, .image:
+            EmptyView()
+        }
+    }
+
+    private func columnHeader(glyph: String, title: String, subtitle: String) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: glyph)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(ChatCardTheme.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(ChatCardTheme.textPrimary.opacity(0.9))
+                    .lineLimit(1)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                        .foregroundColor(ChatCardTheme.textPrimary.opacity(0.5))
                         .lineLimit(1)
-                    if !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                            .foregroundColor(ChatCardTheme.textPrimary.opacity(0.5))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-                Spacer(minLength: 4)
-                if isRoot {
-                    CardPinButton(isPinned: isPinned) { onTogglePin?() }   // 置顶(同主卡/浏览 sheet)
-                    closeButton
+                        .truncationMode(.middle)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(ChatCardTheme.accent.opacity(0.05))
+            Spacer(minLength: 4)
+            if isRoot {
+                CardPinButton(isPinned: isPinned) { onTogglePin?() }   // 置顶(同主卡/浏览 sheet)
+                closeButton
+            }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(ChatCardTheme.accent.opacity(0.05))
     }
 
     /// list 列头内关闭按钮（root 列）。
@@ -166,6 +178,34 @@ struct ColumnPaneView: View {
             DetailPaneContent(item: item)
         case .image(let data):
             ImagePaneContent(data: data)
+        case .projectCapabilityManager(let model):
+            ProjectCapabilityManagerColumnView(model: model, onClose: onClose)
+        }
+    }
+}
+
+private struct ProjectCapabilityManagerColumnView: View {
+    @ObservedObject var model: ProjectCapabilityColumnState
+    let onClose: () -> Void
+
+    var body: some View {
+        ScrollView {
+            ProjectCapabilityManagerView(
+                state: model.card,
+                syncMessages: model.syncMessages,
+                onSelectTab: { model.selectTab($0) },
+                onSetEnabled: { model.setPluginEnabled(pluginID: $0, enabled: $1) },
+                onCreatePlugin: { model.createPlugin(pluginID: $0, name: $1) },
+                onAddSkill: { model.addSkill(pluginID: $0, skillName: $1) },
+                onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, command: $2) },
+                onSyncCodex: { model.syncCodex() },
+                onSyncClaudeCode: { model.syncClaudeCode() },
+                onSyncOpencode: { model.syncOpencode() },
+                onClose: onClose,
+                showsHeader: false,
+                usesCardChrome: false
+            )
+            .padding(6)
         }
     }
 }

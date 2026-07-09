@@ -191,7 +191,7 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.projectCapabilityPanel == nil)
     }
 
-    @Test("refreshProjectConfiguration：项目能力管理触发独立窗口入口")
+    @Test("refreshProjectConfiguration：项目能力管理触发管理入口")
     func refreshProjectConfigurationWiresProjectCapabilityManagerOpenAction() {
         let ctrl = ChatCardWindowController(streamProvider: { _ in
             AsyncThrowingStream { $0.finish() }
