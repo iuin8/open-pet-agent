@@ -66,6 +66,18 @@ struct ProjectCapabilityManagerCardTests {
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
     }
 
+    @Test("build：typed validator 诊断会显示在能力卡片")
+    func typedValidatorDiagnosticsBecomeCardDiagnostics() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(enabled: true)
+        try FileManager.default.removeItem(at: fixture.pluginRoot.appendingPathComponent("skills/code-review/SKILL.md"))
+
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+
+        #expect(state.visibleItems.first?.status == .failed)
+        #expect(state.visibleItems.first?.diagnostics.contains { $0.severity == "error" && $0.message.contains("Missing skill") } == true)
+    }
+
     @Test("toggle：拒绝 symlink plugin 写出项目 plugins root")
     func rejectsSymlinkedPluginManifestOutsideProject() throws {
         let fixture = try ProjectCapabilityManagerFixture()
@@ -169,7 +181,9 @@ private struct ProjectCapabilityManagerFixture {
 
     func writePlugin(enabled: Bool, mcpRef: String = "mcp/servers.json#filesystem") throws {
         try FileManager.default.createDirectory(at: pluginRoot.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: pluginRoot.appendingPathComponent("skills/code-review", isDirectory: true), withIntermediateDirectories: true)
+        let skillRoot = pluginRoot.appendingPathComponent("skills/code-review", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
+        try "# code-review\n\nReview staged diffs.\n".data(using: .utf8)!.write(to: skillRoot.appendingPathComponent("SKILL.md"), options: .atomic)
         try """
         { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "enabled": \(enabled), "capabilities": ["mcp", "skills"], "mcp": ["\(mcpRef)"], "skills": ["skills/code-review"], "engines": { "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } } }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("plugin.json"), options: .atomic)

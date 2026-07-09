@@ -285,6 +285,10 @@ extension MinimalAppDelegate {
     static func projectCapabilityCard(for project: AgentProject, selectedTab: ProjectCapabilityCardState.Tab) throws -> ProjectCapabilityCardState {
         let catalog = ProjectPluginCatalog()
         let plugins = try catalog.listPlugins(for: project)
+        let modelDiagnostics = try ProjectCapabilityValidator().validate(project: project, catalog: catalog)
+        let diagnosticsByPlugin = Dictionary(grouping: modelDiagnostics) { diagnostic in
+            diagnostic.path.flatMap { pluginID(fromPath: $0) } ?? ""
+        }
         let sections = [
             Self.projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
             Self.projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
@@ -303,7 +307,13 @@ extension MinimalAppDelegate {
             ) }
         }
         let items = plugins.flatMap { plugin in
-            capabilityItems(for: plugin, diagnostics: catalog.validate(plugin), projectionDiagnostics: diagnostics, targetsBySource: targetsBySource, mcpTargets: mcpTargets)
+            capabilityItems(
+                for: plugin,
+                diagnostics: diagnosticsByPlugin[plugin.id] ?? catalog.validate(plugin),
+                projectionDiagnostics: diagnostics,
+                targetsBySource: targetsBySource,
+                mcpTargets: mcpTargets
+            )
         }
         return ProjectCapabilityCardState(selectedTab: selectedTab, items: items)
     }
@@ -582,11 +592,15 @@ extension MinimalAppDelegate {
         }
     }
 
-    private func pluginID(from source: URL) -> String? {
-        let parts = source.standardizedFileURL.pathComponents
+    private static func pluginID(fromPath path: String) -> String? {
+        let parts = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
         guard let pluginsIndex = parts.lastIndex(of: "plugins"), parts.indices.contains(pluginsIndex + 1) else { return nil }
         let candidate = parts[pluginsIndex + 1]
         return candidate == ".materialized" ? nil : candidate
+    }
+
+    private func pluginID(from source: URL) -> String? {
+        Self.pluginID(fromPath: source.path)
     }
 
     /// 项目操作失败提示(创建/外部/重命名/删除/Codex/Claude Code/opencode 同步 共用)。
