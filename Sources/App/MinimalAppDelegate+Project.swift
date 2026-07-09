@@ -85,17 +85,8 @@ extension MinimalAppDelegate {
                 )]
             )
         }
-        cardCtrl.onRequestShowProjectCapabilityManager = { [weak self] in
-            self?.projectCapabilityCardForCurrentProject() ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
-        }
-        cardCtrl.onRequestSetProjectPluginEnabled = { [weak self] pluginID, enabled in
-            guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
-            do {
-                try Self.setProjectPluginEnabled(project: ProjectStore.current(defaults: self.userDefaults), pluginID: pluginID, enabled: enabled)
-            } catch {
-                self.showProjectError(title: "更新项目能力失败", error: error)
-            }
-            return self.projectCapabilityCardForCurrentProject()
+        cardCtrl.onRequestOpenProjectCapabilityManager = { [weak self] in
+            self?.showProjectCapabilityManagerCard()
         }
     }
 
@@ -226,6 +217,53 @@ extension MinimalAppDelegate {
         }
     }
 
+    @MainActor func showProjectCapabilityManagerCard() {
+        let controller = projectCapabilityCardWindowController ?? ProjectCapabilityCardWindowController()
+        projectCapabilityCardWindowController = controller
+        let project = ProjectStore.current(defaults: userDefaults)
+        controller.show(
+            card: projectCapabilityCardForCurrentProject(),
+            petRect: shellController?.windowSet.petWindow.frame ?? .zero,
+            screen: currentScreenFrame(),
+            onSetEnabled: { [weak self] pluginID, enabled in
+                guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
+                do {
+                    try Self.setProjectPluginEnabled(project: project, pluginID: pluginID, enabled: enabled)
+                } catch {
+                    self.showProjectError(title: "更新项目能力失败", error: error)
+                }
+                return self.projectCapabilityCardForCurrentProject()
+            },
+            onCreatePlugin: { [weak self] in
+                guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
+                do {
+                    try Self.createProjectCapabilityPlugin(project: project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+                } catch {
+                    self.showProjectError(title: "创建项目能力失败", error: error)
+                }
+                return self.projectCapabilityCardForCurrentProject()
+            },
+            onAddSkill: { [weak self] in
+                guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
+                do {
+                    try Self.addProjectCapabilitySkill(project: project, pluginID: "dev-toolkit", skillName: "code-review")
+                } catch {
+                    self.showProjectError(title: "添加 Skill 失败", error: error)
+                }
+                return self.projectCapabilityCardForCurrentProject()
+            },
+            onAddMCP: { [weak self] in
+                guard let self else { return ProjectCapabilityCardState(selectedTab: .mcp, items: []) }
+                do {
+                    try Self.addProjectCapabilityMCP(project: project, pluginID: "dev-toolkit", serverName: "filesystem")
+                } catch {
+                    self.showProjectError(title: "添加 MCP 失败", error: error)
+                }
+                return self.projectCapabilityCardForCurrentProject()
+            }
+        )
+    }
+
     /// 只读汇总当前项目的项目能力管理卡片:catalog + dry-run projection targets,不执行 materializer。
     @MainActor func projectCapabilityCardForCurrentProject() -> ProjectCapabilityCardState {
         (try? Self.projectCapabilityCard(for: ProjectStore.current(defaults: userDefaults), selectedTab: .skills)) ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
@@ -255,6 +293,115 @@ extension MinimalAppDelegate {
             capabilityItems(for: plugin, diagnostics: catalog.validate(plugin), projectionDiagnostics: diagnostics, targetsBySource: targetsBySource, mcpTargets: mcpTargets)
         }
         return ProjectCapabilityCardState(selectedTab: selectedTab, items: items)
+    }
+
+    static func createProjectCapabilityPlugin(project: AgentProject, pluginID: String, name: String) throws {
+        try validateProjectCapabilityPluginID(pluginID)
+        let pluginDirectory = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID)
+        let pluginRoot = ProjectConfig.pluginRoot(for: project)
+        guard ProjectionTrust.isPath(pluginDirectory, inside: pluginRoot),
+              (!FileManager.default.fileExists(atPath: pluginDirectory.path) || ProjectionTrust.isPath(pluginDirectory.resolvingSymlinksInPath(), inside: pluginRoot.resolvingSymlinksInPath())) else {
+            throw ProjectCapabilityManagerError.invalidPluginID(pluginID)
+        }
+        try FileManager.default.createDirectory(at: pluginDirectory, withIntermediateDirectories: true)
+        let manifestURL = pluginDirectory.appendingPathComponent("plugin.json")
+        guard !FileManager.default.fileExists(atPath: manifestURL.path) else { return }
+        let object: [String: Any] = [
+            "schemaVersion": 1,
+            "id": pluginID,
+            "name": name,
+            "enabled": true,
+            "capabilities": [],
+            "engines": [
+                AgentEngineKind.codex.rawValue: ["enabled": true, "projection": ProjectionPolicy.skillsAndMCPFiles.rawValue],
+                "claude-code": ["enabled": true, "projection": ProjectionPolicy.skillsAndMCPFiles.rawValue]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: manifestURL, options: .atomic)
+    }
+
+    static func addProjectCapabilitySkill(project: AgentProject, pluginID: String, skillName: String) throws {
+        try createProjectCapabilityPlugin(project: project, pluginID: pluginID, name: pluginID)
+        let safeSkill = sanitizedCapabilityName(skillName)
+        let skillRef = "skills/\(safeSkill)"
+        let dir = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent(skillRef, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let skillFile = dir.appendingPathComponent("SKILL.md", isDirectory: false)
+        if !FileManager.default.fileExists(atPath: skillFile.path) {
+            try "# \(safeSkill)\n\n项目级 Skill，占位内容。\n".data(using: .utf8)!.write(to: skillFile, options: .atomic)
+        }
+        try updateProjectCapabilityManifest(project: project, pluginID: pluginID) { manifest in
+            var capabilities = manifest["capabilities"] as? [String] ?? []
+            if !capabilities.contains(ProjectPluginCapability.skills.rawValue) { capabilities.append(ProjectPluginCapability.skills.rawValue) }
+            manifest["capabilities"] = capabilities
+            var skills = manifest["skills"] as? [String] ?? []
+            if !skills.contains(skillRef) { skills.append(skillRef) }
+            manifest["skills"] = skills
+        }
+    }
+
+    static func addProjectCapabilityMCP(project: AgentProject, pluginID: String, serverName: String) throws {
+        try createProjectCapabilityPlugin(project: project, pluginID: pluginID, name: pluginID)
+        let safeServer = sanitizedCapabilityName(serverName)
+        let mcpDir = ProjectConfig.pluginMCPDirectory(for: project, pluginID: pluginID)
+        try FileManager.default.createDirectory(at: mcpDir, withIntermediateDirectories: true)
+        let mcpURL = mcpDir.appendingPathComponent("servers.json", isDirectory: false)
+        let object: [String: Any] = [
+            "mcpServers": [
+                safeServer: [
+                    "type": "local",
+                    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+                    "enabled": true
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: mcpURL, options: .atomic)
+        try updateProjectCapabilityManifest(project: project, pluginID: pluginID) { manifest in
+            var capabilities = manifest["capabilities"] as? [String] ?? []
+            if !capabilities.contains(ProjectPluginCapability.mcp.rawValue) { capabilities.append(ProjectPluginCapability.mcp.rawValue) }
+            manifest["capabilities"] = capabilities
+            let ref = "mcp/servers.json#\(safeServer)"
+            var mcp = manifest["mcp"] as? [String] ?? []
+            if !mcp.contains(ref) { mcp.append(ref) }
+            manifest["mcp"] = mcp
+        }
+    }
+
+    private static func updateProjectCapabilityManifest(project: AgentProject, pluginID: String, mutate: (inout [String: Any]) -> Void) throws {
+        let manifestURL = try projectCapabilityManifestURL(project: project, pluginID: pluginID)
+        let data = try Data(contentsOf: manifestURL)
+        guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any], object["id"] as? String == pluginID else {
+            throw ProjectCapabilityManagerError.invalidManifest(pluginID)
+        }
+        mutate(&object)
+        let output = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        try output.write(to: manifestURL, options: .atomic)
+    }
+
+    private static func projectCapabilityManifestURL(project: AgentProject, pluginID: String) throws -> URL {
+        try validateProjectCapabilityPluginID(pluginID)
+        let manifestURL = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("plugin.json")
+        let pluginRoot = ProjectConfig.pluginRoot(for: project)
+        guard ProjectionTrust.isPath(manifestURL, inside: pluginRoot),
+              ProjectionTrust.isPath(manifestURL.resolvingSymlinksInPath(), inside: pluginRoot.resolvingSymlinksInPath()) else {
+            throw ProjectCapabilityManagerError.invalidPluginID(pluginID)
+        }
+        return manifestURL
+    }
+
+    private static func validateProjectCapabilityPluginID(_ pluginID: String) throws {
+        guard !pluginID.isEmpty, !pluginID.contains("/"), pluginID != ".", pluginID != ".." else {
+            throw ProjectCapabilityManagerError.invalidPluginID(pluginID)
+        }
+    }
+
+    private static func sanitizedCapabilityName(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let scalars = value.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        let result = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return result.isEmpty ? "example" : result
     }
 
     static func setProjectPluginEnabled(project: AgentProject, pluginID: String, enabled: Bool) throws {

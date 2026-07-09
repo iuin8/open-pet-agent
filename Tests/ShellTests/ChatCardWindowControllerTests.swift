@@ -191,40 +191,27 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.projectCapabilityPanel == nil)
     }
 
-    @Test("refreshProjectConfiguration：项目能力管理 toggle 后保留当前 tab")
-    func projectCapabilityManagerTogglePreservesSelectedTab() {
+    @Test("refreshProjectConfiguration：项目能力管理触发独立窗口入口")
+    func refreshProjectConfigurationWiresProjectCapabilityManagerOpenAction() {
         let ctrl = ChatCardWindowController(streamProvider: { _ in
             AsyncThrowingStream { $0.finish() }
         })
-        let manager = ProjectCapabilityCardState(
-            selectedTab: .mcp,
-            items: [ProjectCapabilityCardState.Item(
-                id: "mcp:dev-toolkit:filesystem",
-                kind: .mcp,
-                name: "filesystem",
-                pluginID: "dev-toolkit",
-                sourcePath: "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/mcp/servers.json#filesystem",
-                targetPaths: [],
-                isEnabled: true,
-                status: .enabled,
-                diagnostics: []
-            )]
-        )
+        var requested = false
         ctrl.projectProvider = {
             (
                 current: ProjectOption(id: "p", name: "P", isExternal: true),
                 projects: [ProjectOption(id: "p", name: "P", isExternal: true)]
             )
         }
-        ctrl.onRequestShowProjectCapabilityManager = { manager }
-        ctrl.onRequestSetProjectPluginEnabled = { _, _ in
-            ProjectCapabilityCardState(selectedTab: .skills, items: manager.items)
+        ctrl.onRequestOpenProjectCapabilityManager = {
+            requested = true
         }
 
         ctrl.refreshProjectConfiguration()
         ctrl.cardState.requestShowProjectCapabilityManager()
-        ctrl.cardState.setProjectPluginEnabled(pluginID: "dev-toolkit", enabled: false)
 
-        #expect(ctrl.cardState.projectCapabilityManager?.selectedTab == .mcp)
+        #expect(requested == true)
+        #expect(ctrl.cardState.projectCapabilityPanel == nil)
+        #expect(ctrl.cardState.codexProjectionSyncMessage == nil)
     }
 }

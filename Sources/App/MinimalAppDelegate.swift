@@ -453,6 +453,8 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     var permissionHookServer: AgentSensing.PermissionHookServer?
     /// pet 旁权限侧卡控制器(待答队列堆叠展示,2026-06-16)。
     var permissionCardController: Shell.PermissionCardWindowController?
+    /// pet 旁项目能力管理卡片控制器。独立窗口，不挤占聊天 composer。
+    var projectCapabilityCardWindowController: Shell.ProjectCapabilityCardWindowController?
     /// requestId → responder(liveness 轮询用:连接死了把死请求移出队列 + 收起卡)。
     var permissionResponders: [String: any AgentSensing.HookResponder] = [:]
     /// liveness 轮询 timer:连接死(超时/Claude 退出)→ 自动移除死的待答(死卡不杵着可点但无效)。
