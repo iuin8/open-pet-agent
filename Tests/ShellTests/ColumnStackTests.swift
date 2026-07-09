@@ -35,6 +35,22 @@ struct ColumnStackTests {
         #expect(s.rootSourceKey == "row:2")
     }
 
+    @MainActor
+    @Test("openRoot:项目能力管理可作为 root 列")
+    func openRootProjectCapabilityManager() {
+        let model = ProjectCapabilityColumnState(card: ProjectCapabilityCardState(selectedTab: .skills, items: []))
+        var s = ColumnStack()
+
+        #expect(s.openRoot(.projectCapabilityManager(model), sourceKey: "project-capability") == true)
+
+        #expect(s.columns.count == 1)
+        if case .projectCapabilityManager(let stored) = s.columns[0].kind {
+            #expect(stored === model)
+        } else {
+            Issue.record("应是项目能力管理列")
+        }
+    }
+
     @Test("drillIn:点第 0 列某行 → 截断后 + 设 selectedRowId + 追加新列")
     func drillInAppends() {
         var s = ColumnStack()

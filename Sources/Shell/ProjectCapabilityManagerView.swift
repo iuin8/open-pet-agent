@@ -13,6 +13,8 @@ struct ProjectCapabilityManagerView: View {
     let onSyncClaudeCode: () -> Void
     let onSyncOpencode: () -> Void
     let onClose: () -> Void
+    var showsHeader = true
+    var usesCardChrome = true
 
     @State private var pluginID = "dev-toolkit"
     @State private var pluginName = "Dev Toolkit"
@@ -22,7 +24,7 @@ struct ProjectCapabilityManagerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            header
+            if showsHeader { header }
             authoringControls
             syncControls
             if !syncMessages.isEmpty { syncMessageList }
@@ -36,14 +38,22 @@ struct ProjectCapabilityManagerView: View {
             }
         }
         .padding(10)
-        .background(
+        .background(cardBackground)
+        .overlay(cardStroke)
+    }
+
+    @ViewBuilder private var cardBackground: some View {
+        if usesCardChrome {
             RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius, style: .continuous)
                 .fill(ChatCardTheme.petBubbleFill.opacity(0.95))
-        )
-        .overlay(
+        }
+    }
+
+    @ViewBuilder private var cardStroke: some View {
+        if usesCardChrome {
             RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius, style: .continuous)
                 .stroke(ChatCardTheme.petBubbleStroke, lineWidth: 1)
-        )
+        }
     }
 
     private var header: some View {
