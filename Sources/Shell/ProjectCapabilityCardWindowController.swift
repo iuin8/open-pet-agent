@@ -12,9 +12,13 @@ public final class ProjectCapabilityCardWindowController {
     private var lastPetRect: NSRect = .zero
     private var lastScreen: NSRect = .zero
     private var onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
-    private var onCreatePlugin: (() -> ProjectCapabilityCardState)?
-    private var onAddSkill: (() -> ProjectCapabilityCardState)?
-    private var onAddMCP: (() -> ProjectCapabilityCardState)?
+    private var onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
+    private var onAddSkill: ((String, String) -> ProjectCapabilityCardState)?
+    private var onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
+    private var onSyncCodex: (() -> String)?
+    private var onSyncClaudeCode: (() -> String)?
+    private var onSyncOpencode: (() -> String)?
+    private(set) public var syncMessages: [String] = []
 
     public init() {}
 
@@ -23,9 +27,12 @@ public final class ProjectCapabilityCardWindowController {
         petRect: NSRect,
         screen: NSRect,
         onSetEnabled: @escaping (String, Bool) -> ProjectCapabilityCardState,
-        onCreatePlugin: @escaping () -> ProjectCapabilityCardState,
-        onAddSkill: @escaping () -> ProjectCapabilityCardState,
-        onAddMCP: @escaping () -> ProjectCapabilityCardState
+        onCreatePlugin: @escaping (String, String) -> ProjectCapabilityCardState,
+        onAddSkill: @escaping (String, String) -> ProjectCapabilityCardState,
+        onAddMCP: @escaping (String, String, [String]) -> ProjectCapabilityCardState,
+        onSyncCodex: @escaping () -> String,
+        onSyncClaudeCode: @escaping () -> String,
+        onSyncOpencode: @escaping () -> String
     ) {
         currentCard = card
         lastPetRect = petRect
@@ -34,6 +41,9 @@ public final class ProjectCapabilityCardWindowController {
         self.onCreatePlugin = onCreatePlugin
         self.onAddSkill = onAddSkill
         self.onAddMCP = onAddMCP
+        self.onSyncCodex = onSyncCodex
+        self.onSyncClaudeCode = onSyncClaudeCode
+        self.onSyncOpencode = onSyncOpencode
         if panel == nil { createPanel() }
         renderAndPlace()
         panel?.makeKeyAndOrderFront(nil)
@@ -56,25 +66,43 @@ public final class ProjectCapabilityCardWindowController {
         renderAndPlace()
     }
 
-    private func createPlugin() {
+    private func createPlugin(pluginID: String, name: String) {
         guard let onCreatePlugin else { return }
-        currentCard = onCreatePlugin()
+        currentCard = onCreatePlugin(pluginID, name)
         renderAndPlace()
     }
 
-    private func addSkill() {
+    private func addSkill(pluginID: String, skillName: String) {
         guard let onAddSkill else { return }
         let tab = currentCard.selectedTab
-        let refreshed = onAddSkill()
+        let refreshed = onAddSkill(pluginID, skillName)
         currentCard = ProjectCapabilityCardState(selectedTab: tab, items: refreshed.items)
         renderAndPlace()
     }
 
-    private func addMCP() {
+    private func addMCP(pluginID: String, serverName: String, command: [String]) {
         guard let onAddMCP else { return }
         let tab = currentCard.selectedTab
-        let refreshed = onAddMCP()
+        let refreshed = onAddMCP(pluginID, serverName, command)
         currentCard = ProjectCapabilityCardState(selectedTab: tab, items: refreshed.items)
+        renderAndPlace()
+    }
+
+    public func syncCodex() {
+        guard let onSyncCodex else { return }
+        syncMessages.append(onSyncCodex())
+        renderAndPlace()
+    }
+
+    public func syncClaudeCode() {
+        guard let onSyncClaudeCode else { return }
+        syncMessages.append(onSyncClaudeCode())
+        renderAndPlace()
+    }
+
+    public func syncOpencode() {
+        guard let onSyncOpencode else { return }
+        syncMessages.append(onSyncOpencode())
         renderAndPlace()
     }
 
@@ -85,8 +113,10 @@ public final class ProjectCapabilityCardWindowController {
         let width: CGFloat = 380
         let height = min(max(host.fittingSize.height, 220), min(520, lastScreen.height - 24))
         let size = NSSize(width: width, height: height)
-        let placement = ChatCardAnchor.place(anchor: lastPetRect, in: lastScreen, cardSize: size)
-        panel.setFrame(NSRect(origin: placement.origin, size: size), display: true)
+        let origin = panel.isVisible
+            ? panel.frame.origin
+            : ChatCardAnchor.place(anchor: lastPetRect, in: lastScreen, cardSize: size).origin
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
     }
 
     private func rootView() -> AnyView {
@@ -94,11 +124,15 @@ public final class ProjectCapabilityCardWindowController {
             ScrollView {
                 ProjectCapabilityManagerView(
                     state: currentCard,
+                    syncMessages: syncMessages,
                     onSelectTab: { [weak self] tab in self?.selectTab(tab) },
                     onSetEnabled: { [weak self] pluginID, enabled in self?.setPluginEnabled(pluginID: pluginID, enabled: enabled) },
-                    onCreatePlugin: { [weak self] in self?.createPlugin() },
-                    onAddSkill: { [weak self] in self?.addSkill() },
-                    onAddMCP: { [weak self] in self?.addMCP() },
+                    onCreatePlugin: { [weak self] pluginID, name in self?.createPlugin(pluginID: pluginID, name: name) },
+                    onAddSkill: { [weak self] pluginID, skillName in self?.addSkill(pluginID: pluginID, skillName: skillName) },
+                    onAddMCP: { [weak self] pluginID, serverName, command in self?.addMCP(pluginID: pluginID, serverName: serverName, command: command) },
+                    onSyncCodex: { [weak self] in self?.syncCodex() },
+                    onSyncClaudeCode: { [weak self] in self?.syncClaudeCode() },
+                    onSyncOpencode: { [weak self] in self?.syncOpencode() },
                     onClose: { [weak self] in self?.hide() }
                 )
                 .frame(width: 360)
@@ -120,6 +154,7 @@ public final class ProjectCapabilityCardWindowController {
         p.isOpaque = false
         p.backgroundColor = .clear
         p.hasShadow = true
+        p.isMovableByWindowBackground = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         p.isReleasedWhenClosed = false
         p.hidesOnDeactivate = false

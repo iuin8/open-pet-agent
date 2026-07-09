@@ -234,33 +234,36 @@ extension MinimalAppDelegate {
                 }
                 return self.projectCapabilityCardForCurrentProject()
             },
-            onCreatePlugin: { [weak self] in
+            onCreatePlugin: { [weak self] pluginID, name in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
                 do {
-                    try Self.createProjectCapabilityPlugin(project: project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+                    try Self.createProjectCapabilityPlugin(project: project, pluginID: pluginID, name: name)
                 } catch {
                     self.showProjectError(title: "创建项目能力失败", error: error)
                 }
                 return self.projectCapabilityCardForCurrentProject()
             },
-            onAddSkill: { [weak self] in
+            onAddSkill: { [weak self] pluginID, skillName in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
                 do {
-                    try Self.addProjectCapabilitySkill(project: project, pluginID: "dev-toolkit", skillName: "code-review")
+                    try Self.addProjectCapabilitySkill(project: project, pluginID: pluginID, skillName: skillName)
                 } catch {
                     self.showProjectError(title: "添加 Skill 失败", error: error)
                 }
                 return self.projectCapabilityCardForCurrentProject()
             },
-            onAddMCP: { [weak self] in
+            onAddMCP: { [weak self] pluginID, serverName, command in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .mcp, items: []) }
                 do {
-                    try Self.addProjectCapabilityMCP(project: project, pluginID: "dev-toolkit", serverName: "filesystem")
+                    try Self.addProjectCapabilityMCP(project: project, pluginID: pluginID, serverName: serverName, command: command)
                 } catch {
                     self.showProjectError(title: "添加 MCP 失败", error: error)
                 }
                 return self.projectCapabilityCardForCurrentProject()
-            }
+            },
+            onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject() ?? "同步 Codex 配置失败：App 已释放" },
+            onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject() ?? "同步 Claude Code 配置失败：App 已释放" },
+            onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject() ?? "同步 opencode 配置失败：App 已释放" }
         )
     }
 
@@ -341,7 +344,7 @@ extension MinimalAppDelegate {
         }
     }
 
-    static func addProjectCapabilityMCP(project: AgentProject, pluginID: String, serverName: String) throws {
+    static func addProjectCapabilityMCP(project: AgentProject, pluginID: String, serverName: String, command: [String] = ["npx", "-y", "@modelcontextprotocol/server-filesystem"]) throws {
         try createProjectCapabilityPlugin(project: project, pluginID: pluginID, name: pluginID)
         let safeServer = sanitizedCapabilityName(serverName)
         let mcpDir = ProjectConfig.pluginMCPDirectory(for: project, pluginID: pluginID)
@@ -351,7 +354,7 @@ extension MinimalAppDelegate {
             "mcpServers": [
                 safeServer: [
                     "type": "local",
-                    "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+                    "command": command.isEmpty ? ["npx", "-y", "@modelcontextprotocol/server-filesystem"] : command,
                     "enabled": true
                 ]
             ]
