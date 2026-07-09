@@ -1,0 +1,79 @@
+import Foundation
+import Testing
+@testable import AgentMode
+@testable import App
+@testable import Shell
+
+@MainActor
+@Suite("ProjectCapabilityAuthoring")
+struct ProjectCapabilityAuthoringTests {
+    @Test("create：创建最小 plugin 后卡片能看到空 plugin")
+    func createsPluginVisibleInCard() throws {
+        let fixture = try ProjectCapabilityAuthoringFixture()
+
+        try MinimalAppDelegate.createProjectCapabilityPlugin(project: fixture.project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+
+        #expect(FileManager.default.fileExists(atPath: fixture.pluginRoot.appendingPathComponent("plugin.json").path))
+        #expect(state.items.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+    }
+
+    @Test("create：拒绝 symlink plugin 写出项目 plugins root")
+    func createRejectsSymlinkedPluginDirectory() throws {
+        let fixture = try ProjectCapabilityAuthoringFixture()
+        let external = fixture.root.appendingPathComponent("external-plugin", isDirectory: true)
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: ProjectConfig.pluginRoot(for: fixture.project), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: fixture.pluginRoot, withDestinationURL: external)
+
+        #expect(throws: ProjectCapabilityManagerError.invalidPluginID("dev-toolkit")) {
+            try MinimalAppDelegate.createProjectCapabilityPlugin(project: fixture.project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+        }
+        #expect(FileManager.default.fileExists(atPath: external.appendingPathComponent("plugin.json").path) == false)
+    }
+
+    @Test("addSkill：添加 skill 后卡片显示 skill 且不 materialize")
+    func addsSkillVisibleInCardWithoutMaterializing() throws {
+        let fixture = try ProjectCapabilityAuthoringFixture()
+        try MinimalAppDelegate.createProjectCapabilityPlugin(project: fixture.project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+
+        try MinimalAppDelegate.addProjectCapabilitySkill(project: fixture.project, pluginID: "dev-toolkit", skillName: "code-review")
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+
+        #expect(state.visibleItems.map(\.name) == ["code-review"])
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents/skills/dev-toolkit-code-review").path) == false)
+    }
+
+    @Test("addMCP：添加 MCP 后卡片显示 server 且不 materialize")
+    func addsMCPVisibleInCardWithoutMaterializing() throws {
+        let fixture = try ProjectCapabilityAuthoringFixture()
+        try MinimalAppDelegate.createProjectCapabilityPlugin(project: fixture.project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+
+        try MinimalAppDelegate.addProjectCapabilityMCP(project: fixture.project, pluginID: "dev-toolkit", serverName: "filesystem")
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .mcp)
+
+        #expect(state.visibleItems.map(\.name) == ["filesystem"])
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
+    }
+}
+
+private struct ProjectCapabilityAuthoringFixture {
+    let root: URL
+    let project: AgentProject
+    let pluginRoot: URL
+
+    init() throws {
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProjectCapabilityAuthoringTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        project = AgentProject(
+            id: "p",
+            name: "P",
+            rootURL: root.appendingPathComponent("repo", isDirectory: true),
+            isExternal: true,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+    }
+}

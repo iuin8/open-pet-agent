@@ -72,8 +72,6 @@ public final class ChatCardState: ObservableObject {
     @Published public var codexProjectionSyncMessage: String?
     /// 当前卡片内项目能力诊断面板。nil 表示隐藏。
     @Published public var projectCapabilityPanel: ProjectCapabilityPanelState?
-    /// 当前卡片内项目能力管理面板。nil 表示隐藏。
-    @Published public var projectCapabilityManager: ProjectCapabilityCardState?
     /// 切换项目回调(App 注入:写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply 即时生效)。
     public var onCommitProject: (@MainActor (String) -> Void)?
     /// 请求创建项目回调(App 注入:弹 NSAlert 收名字 + `ProjectStore.create` + 刷新)。
@@ -86,7 +84,6 @@ public final class ChatCardState: ObservableObject {
         }
         codexProjectionSyncMessage = nil
         projectCapabilityPanel = nil
-        projectCapabilityManager = nil
         onCommitProject?(id)
     }
     /// 请求创建项目(触发 `onRequestCreateProject`)。
@@ -107,49 +104,35 @@ public final class ChatCardState: ObservableObject {
     public var onRequestSyncOpencodeProjection: (@MainActor () -> String)?
     /// 请求显示当前项目能力诊断（App 层只读 dry-run plans，不写项目文件）。
     public var onRequestShowProjectCapabilityDiagnostics: (@MainActor () -> ProjectCapabilityPanelState)?
-    /// 请求显示当前项目能力管理卡片（App 层只读 catalog + dry-run plans，不写 engine 文件）。
-    public var onRequestShowProjectCapabilityManager: (@MainActor () -> ProjectCapabilityCardState)?
-    /// 请求启用/禁用 canonical plugin manifest；App 层只改 plugin.json，不同步 engine 文件。
-    public var onRequestSetProjectPluginEnabled: (@MainActor (String, Bool) -> ProjectCapabilityCardState)?
+    /// 请求显示独立项目能力管理卡片（App 层负责窗口和写入）。
+    public var onRequestShowProjectCapabilityManager: (@MainActor () -> Void)?
 
     public func requestCreateExternal() { onRequestCreateExternal?() }
     public func requestRenameCurrent() { onRequestRenameCurrent?() }
     public func requestDeleteCurrent() { onRequestDeleteCurrent?() }
     public func requestSyncCodexProjection() {
         projectCapabilityPanel = nil
-        projectCapabilityManager = nil
         codexProjectionSyncMessage = onRequestSyncCodexProjection?()
     }
     public func requestSyncClaudeCodeProjection() {
         projectCapabilityPanel = nil
-        projectCapabilityManager = nil
         codexProjectionSyncMessage = onRequestSyncClaudeCodeProjection?()
     }
     public func requestSyncOpencodeProjection() {
         projectCapabilityPanel = nil
-        projectCapabilityManager = nil
         codexProjectionSyncMessage = onRequestSyncOpencodeProjection?()
     }
     public func requestShowProjectCapabilityDiagnostics() {
         codexProjectionSyncMessage = nil
-        projectCapabilityManager = nil
         projectCapabilityPanel = onRequestShowProjectCapabilityDiagnostics?()
     }
     public func requestShowProjectCapabilityManager() {
         codexProjectionSyncMessage = nil
         projectCapabilityPanel = nil
-        projectCapabilityManager = onRequestShowProjectCapabilityManager?()
-    }
-    public func setProjectPluginEnabled(pluginID: String, enabled: Bool) {
-        let selectedTab = projectCapabilityManager?.selectedTab ?? .skills
-        guard let refreshed = onRequestSetProjectPluginEnabled?(pluginID, enabled) else { return }
-        projectCapabilityManager = ProjectCapabilityCardState(selectedTab: selectedTab, items: refreshed.items)
+        onRequestShowProjectCapabilityManager?()
     }
     public func dismissProjectCapabilityPanel() {
         projectCapabilityPanel = nil
-    }
-    public func dismissProjectCapabilityManager() {
-        projectCapabilityManager = nil
     }
 
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。

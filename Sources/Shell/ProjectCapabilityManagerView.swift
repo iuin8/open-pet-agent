@@ -5,6 +5,9 @@ struct ProjectCapabilityManagerView: View {
     let state: ProjectCapabilityCardState
     let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
     let onSetEnabled: (String, Bool) -> Void
+    let onCreatePlugin: () -> Void
+    let onAddSkill: () -> Void
+    let onAddMCP: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -38,6 +41,21 @@ struct ProjectCapabilityManagerView: View {
                 .font(ChatCardTheme.chip)
                 .foregroundStyle(ChatCardTheme.textPrimary)
             Spacer()
+            Button(action: onCreatePlugin) {
+                Image(systemName: "plus.square")
+            }
+            .buttonStyle(.plain)
+            .help("创建最小 plugin")
+            Button(action: onAddSkill) {
+                Image(systemName: "sparkles")
+            }
+            .buttonStyle(.plain)
+            .help("添加示例 Skill")
+            Button(action: onAddMCP) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+            }
+            .buttonStyle(.plain)
+            .help("添加示例 MCP")
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }

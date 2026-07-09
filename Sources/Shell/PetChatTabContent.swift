@@ -13,23 +13,7 @@ struct PetChatTabContent: View {
     var body: some View {
         VStack(spacing: 0) {
             messageList
-            if let manager = state.projectCapabilityManager {
-                ScrollView {
-                    ProjectCapabilityManagerView(
-                        state: manager,
-                        onSelectTab: { tab in
-                            state.projectCapabilityManager = ProjectCapabilityCardState(selectedTab: tab, items: manager.items)
-                        },
-                        onSetEnabled: { pluginID, enabled in
-                            state.setProjectPluginEnabled(pluginID: pluginID, enabled: enabled)
-                        },
-                        onClose: { state.dismissProjectCapabilityManager() }
-                    )
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                }
-                .frame(maxHeight: 220)
-            } else if let panel = state.projectCapabilityPanel {
+            if let panel = state.projectCapabilityPanel {
                 ScrollView {
                     ProjectCapabilityPanelView(panel: panel) {
                         state.dismissProjectCapabilityPanel()
