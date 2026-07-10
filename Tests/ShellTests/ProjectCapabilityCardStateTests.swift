@@ -45,9 +45,11 @@ struct ProjectCapabilityCardStateTests {
             diagnostics: []
         )
 
-        let state = ProjectCapabilityCardState(selectedTab: .skills, items: [skill, mcp])
+        let state = ProjectCapabilityCardState(selectedTab: .skills, items: [mcp, skill])
 
         #expect(state.visibleItems == [skill])
+        #expect(state.visibleRows.map(\.rowID) == [1])
+        #expect(state.visibleRows.map(\.item) == [skill])
     }
 
     @Test("Item：启用/禁用下一值由 isEnabled 决定，不受 warning 状态影响")

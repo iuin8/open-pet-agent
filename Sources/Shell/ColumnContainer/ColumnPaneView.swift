@@ -40,13 +40,14 @@ struct ColumnPaneView: View {
         case .detail: return DetailPaneContent.width   // 520
         case .image:  return 460
         case .projectCapabilityManager: return 380
+        case .projectCapabilitySkillDetail: return 520
         }
     }
 
     private var showsColumnHeader: Bool {
         switch column.kind {
         case .list, .projectCapabilityManager: return true
-        case .detail, .image: return false
+        case .detail, .image, .projectCapabilitySkillDetail: return false
         }
     }
 
@@ -84,7 +85,7 @@ struct ColumnPaneView: View {
             columnHeader(glyph: glyph, title: title, subtitle: subtitle)
         case .projectCapabilityManager:
             columnHeader(glyph: "shippingbox.fill", title: "项目能力", subtitle: "Skills / MCP / Profiles")
-        case .detail, .image:
+        case .detail, .image, .projectCapabilitySkillDetail:
             EmptyView()
         }
     }
@@ -179,13 +180,20 @@ struct ColumnPaneView: View {
         case .image(let data):
             ImagePaneContent(data: data)
         case .projectCapabilityManager(let model):
-            ProjectCapabilityManagerColumnView(model: model, onClose: onClose)
+            ProjectCapabilityManagerColumnView(
+                model: model,
+                selectedRowID: column.selectedRowId,
+                onClose: onClose
+            )
+        case .projectCapabilitySkillDetail(let model):
+            ProjectCapabilitySkillDetailView(model: model)
         }
     }
 }
 
 private struct ProjectCapabilityManagerColumnView: View {
     @ObservedObject var model: ProjectCapabilityColumnState
+    let selectedRowID: Int?
     let onClose: () -> Void
 
     var body: some View {
@@ -195,6 +203,7 @@ private struct ProjectCapabilityManagerColumnView: View {
                 syncMessages: model.syncMessages,
                 onSelectTab: { model.selectTab($0) },
                 onSetEnabled: { model.setPluginEnabled(pluginID: $0, enabled: $1) },
+                onOpenItem: { model.openItem($1, rowID: $0) },
                 onCreatePlugin: { model.createPlugin(pluginID: $0, name: $1) },
                 onAddSkill: { model.addSkill(pluginID: $0, skillName: $1) },
                 onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, command: $2) },
@@ -202,6 +211,7 @@ private struct ProjectCapabilityManagerColumnView: View {
                 onSyncClaudeCode: { model.syncClaudeCode() },
                 onSyncOpencode: { model.syncOpencode() },
                 onClose: onClose,
+                selectedRowID: selectedRowID,
                 showsHeader: false,
                 usesCardChrome: false
             )

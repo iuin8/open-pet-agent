@@ -97,6 +97,137 @@ struct ProjectCapabilityManagerCardTests {
         #expect(json["enabled"] as? Bool == true)
     }
 
+    @Test("Skill detail：保存正文只写 canonical catalog 并刷新 typed state")
+    func skillDetailSavesCanonicalBodyWithoutMaterializing() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try fixture.writePlugin(enabled: true)
+        let suite = "ProjectCapabilitySkillEditTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        let model = delegate.projectCapabilityColumnState(for: fixture.project)
+        let detail = try #require(model.skillDetail(
+            pluginID: "dev-toolkit",
+            skillRef: "skills/code-review"
+        ))
+        let updatedBody = "# code-review\n\n完整更新正文。\n"
+        detail.beginEditing()
+        detail.draftBody = updatedBody
+
+        detail.save()
+
+        let body = try String(
+            contentsOf: fixture.pluginRoot.appendingPathComponent("skills/code-review/SKILL.md"),
+            encoding: .utf8
+        )
+        #expect(body == updatedBody)
+        #expect(model.catalog?.plugins.first?.skills.first?.body == updatedBody)
+        #expect(detail.skill.body == updatedBody)
+        #expect(detail.errorMessage == nil)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".claude").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".open-pet-agent/plugins/.materialized").path) == false)
+    }
+
+    @Test("Skill detail：写入后全局刷新失败仍保持保存成功")
+    func skillDetailKeepsSuccessfulWriteWhenCatalogRefreshFails() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "RefreshFailure")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try fixture.writePlugin(enabled: true)
+        let suite = "ProjectCapabilityRefreshFailureTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        let model = delegate.projectCapabilityColumnState(for: fixture.project)
+        let detail = try #require(model.skillDetail(
+            pluginID: "dev-toolkit",
+            skillRef: "skills/code-review"
+        ))
+        let brokenRoot = ProjectConfig.pluginDirectory(for: fixture.project, pluginID: "broken")
+        try FileManager.default.createDirectory(at: brokenRoot, withIntermediateDirectories: true)
+        try """
+        { "schemaVersion": 1, "id": "not-broken", "name": "Broken", "enabled": true, "capabilities": [] }
+        """.data(using: .utf8)!.write(to: brokenRoot.appendingPathComponent("plugin.json"), options: .atomic)
+        let updatedBody = "# code-review\n\n刷新失败也不能回滚成功写入。\n"
+        detail.beginEditing()
+        detail.draftBody = updatedBody
+
+        detail.save()
+
+        let body = try String(
+            contentsOf: fixture.pluginRoot.appendingPathComponent("skills/code-review/SKILL.md"),
+            encoding: .utf8
+        )
+        #expect(body == updatedBody)
+        #expect(model.catalog?.plugins.first { $0.id == "dev-toolkit" }?.skills.first?.body == updatedBody)
+        #expect(detail.skill.body == updatedBody)
+        #expect(detail.isEditing == false)
+        #expect(detail.errorMessage == nil)
+    }
+
+    @Test("column：点击 Skill 行在现有容器追加 detail 列")
+    func skillRowDrillsIntoDetailColumn() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProjectCapabilityDrillInTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suite = "ProjectCapabilityDrillInTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        ProjectConfig.homeDirectoryOverride = root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let project = try ProjectStore.createExternal(
+            name: "Drill In",
+            rootURL: root.appendingPathComponent("repo", isDirectory: true)
+        )
+        let fixture = ProjectCapabilityManagerFixture(project: project)
+        try fixture.writePlugin(enabled: true)
+        ProjectStore.setCurrent(project.id, defaults: defaults)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        defer { delegate.columnContainerWindowController.close() }
+
+        delegate.showProjectCapabilityManagerCard()
+        let rootColumn = try #require(delegate.columnContainerWindowController.state.stack.columns.first)
+        guard case .projectCapabilityManager(let model) = rootColumn.kind else {
+            Issue.record("根列不是项目能力管理")
+            return
+        }
+        let item = try #require(model.card.visibleItems.first)
+        model.openItem(item, rowID: 0)
+
+        #expect(delegate.columnContainerWindowController.state.stack.columns.count == 2)
+        let detailColumn = try #require(delegate.columnContainerWindowController.state.stack.columns.last)
+        guard case .projectCapabilitySkillDetail(let detail) = detailColumn.kind else {
+            Issue.record("未追加 Skill detail 列")
+            return
+        }
+        #expect(detail.skill.id == "dev-toolkit:skills/code-review")
+        #expect(rootColumn.id == delegate.columnContainerWindowController.state.stack.columns.first?.id)
+    }
+
     @Test("column：项目能力列操作绑定打开时项目，不被 current project 后续切换影响")
     func columnStateMutatesOpenedProjectAfterCurrentProjectChanges() throws {
         let root = FileManager.default.temporaryDirectory

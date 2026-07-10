@@ -6,6 +6,7 @@ struct ProjectCapabilityManagerView: View {
     let syncMessages: [String]
     let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
     let onSetEnabled: (String, Bool) -> Void
+    var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
     let onCreatePlugin: (String, String) -> Void
     let onAddSkill: (String, String) -> Void
     let onAddMCP: (String, String, [String]) -> Void
@@ -13,6 +14,7 @@ struct ProjectCapabilityManagerView: View {
     let onSyncClaudeCode: () -> Void
     let onSyncOpencode: () -> Void
     let onClose: () -> Void
+    var selectedRowID: Int? = nil
     var showsHeader = true
     var usesCardChrome = true
 
@@ -32,8 +34,8 @@ struct ProjectCapabilityManagerView: View {
             if state.visibleItems.isEmpty {
                 emptyState
             } else {
-                ForEach(state.visibleItems) { item in
-                    itemView(item)
+                ForEach(state.visibleRows, id: \.item.id) { row in
+                    itemView(row.item, rowID: row.rowID)
                 }
             }
         }
@@ -175,7 +177,7 @@ struct ProjectCapabilityManagerView: View {
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.52)))
     }
 
-    private func itemView(_ item: ProjectCapabilityCardState.Item) -> some View {
+    private func itemView(_ item: ProjectCapabilityCardState.Item, rowID: Int) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon(for: item.kind))
                 .font(.system(size: 14, weight: .semibold))
@@ -211,6 +213,11 @@ struct ProjectCapabilityManagerView: View {
                         .lineLimit(2)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard item.kind == .skill else { return }
+                onOpenItem(rowID, item)
+            }
             Spacer(minLength: 4)
             VStack(spacing: 5) {
                 Button {
@@ -238,7 +245,14 @@ struct ProjectCapabilityManagerView: View {
             .font(.system(size: 10))
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.52)))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(selectedRowID == rowID ? ChatCardTheme.accent.opacity(0.12) : Color.white.opacity(0.52))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(selectedRowID == rowID ? ChatCardTheme.accent.opacity(0.42) : Color.clear, lineWidth: 1)
+        )
     }
 
     private func statusBadge(_ status: ProjectCapabilityCardState.Item.Status) -> some View {

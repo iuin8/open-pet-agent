@@ -38,6 +38,7 @@ public struct CapabilitySkill: Identifiable, Sendable, Equatable {
     public var name: String
     public var relativePath: String
     public var summary: String?
+    public var body: String?
     public var bodyPreview: String?
     public var targets: [CapabilityTarget]
     public var diagnostics: [ProjectConfigDiagnostic]
@@ -133,6 +134,7 @@ private struct ProjectCapabilityModelBuilder {
             name: url.lastPathComponent,
             relativePath: ref,
             summary: body.flatMap(Self.skillSummary),
+            body: body,
             bodyPreview: body.map { String($0.prefix(240)) },
             targets: targets(for: plugin),
             diagnostics: []
