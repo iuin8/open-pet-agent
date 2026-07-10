@@ -37,8 +37,23 @@ final class ProjectCapabilityModelTests: XCTestCase {
         XCTAssertEqual(model.plugins[0].skills.map(\.id), ["dev-toolkit:skills/code-review"])
         XCTAssertEqual(model.plugins[0].skills[0].name, "code-review")
         XCTAssertEqual(model.plugins[0].skills[0].summary, "Review staged diffs.")
+        XCTAssertEqual(model.plugins[0].skills[0].body, "# code-review\n\nReview staged diffs.")
         XCTAssertEqual(model.plugins[0].mcpServers.map(\.name), ["filesystem"])
         XCTAssertEqual(model.plugins[0].mcpServers[0].command, ["npx", "-y", "@modelcontextprotocol/server-filesystem"])
+    }
+
+    func testSkillModelKeepsFullBodyAndTruncatedPreview() throws {
+        let body = "# long-skill\n\n" + String(repeating: "正文", count: 180)
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "enabled": true, "capabilities": ["skills"], "skills": ["skills/long-skill"], "engines": {} }
+        """)
+        try writeSkill("dev-toolkit", "long-skill", body)
+
+        let skill = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.skills.first)
+
+        XCTAssertEqual(skill.body, body)
+        XCTAssertEqual(skill.bodyPreview, String(body.prefix(240)))
+        XCTAssertGreaterThan(skill.body?.count ?? 0, skill.bodyPreview?.count ?? 0)
     }
 
     func testValidatorReportsMissingSkill() throws {

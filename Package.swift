@@ -25,7 +25,7 @@ var targets: [Target] = [
         // AgentSensing: 统一陪伴卡片的 Claude Code/Codex tab 需 ConversationItem/AgentEvent 值类型
         //   (P3.2 会话流渲染)。AgentSensing deps=[] 纯 Foundation,单向无环;Shell 只用值类型与
         //   AgentConversation.build 纯变换,不做 tail/discovery(感知仍在 App 接线层驱动)。
-        dependencies: [.product(name: "Context", package: "Vivarium"), .product(name: "RuntimeBridge", package: "Vivarium"), .product(name: "Rendering", package: "Vivarium"), "Orchestrator", "Weather", .product(name: "ShimejiImport", package: "Vivarium"), .product(name: "PetCatalog", package: "Vivarium"), "AgentSensing"],
+        dependencies: [.product(name: "Context", package: "Vivarium"), .product(name: "RuntimeBridge", package: "Vivarium"), .product(name: "Rendering", package: "Vivarium"), "Orchestrator", "AgentMode", "Weather", .product(name: "ShimejiImport", package: "Vivarium"), .product(name: "PetCatalog", package: "Vivarium"), "AgentSensing"],
         path: "Sources/Shell",
         linkerSettings: [
             .linkedFramework("AppKit")
@@ -99,7 +99,7 @@ var targets: [Target] = [
     ),
     .testTarget(
         name: "ShellTests",
-        dependencies: ["Shell", .product(name: "Context", package: "Vivarium"), .product(name: "RuntimeBridge", package: "Vivarium"), .product(name: "Rendering", package: "Vivarium"), "AgentSensing"],
+        dependencies: ["Shell", "AgentMode", .product(name: "Context", package: "Vivarium"), .product(name: "RuntimeBridge", package: "Vivarium"), .product(name: "Rendering", package: "Vivarium"), "AgentSensing"],
         path: "Tests/ShellTests"
     ),
     .testTarget(

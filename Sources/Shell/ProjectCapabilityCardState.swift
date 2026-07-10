@@ -1,6 +1,11 @@
 import Foundation
 
 public struct ProjectCapabilityCardState: Sendable, Equatable {
+    public struct VisibleRow: Sendable, Equatable {
+        public let rowID: Int
+        public let item: Item
+    }
+
     public enum Tab: String, Sendable, Equatable, CaseIterable {
         case skills
         case mcp
@@ -69,13 +74,21 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
         self.items = items
     }
 
+    public var visibleRows: [VisibleRow] {
+        items.enumerated().compactMap { rowID, item in
+            isVisible(item) ? VisibleRow(rowID: rowID, item: item) : nil
+        }
+    }
+
     public var visibleItems: [Item] {
-        items.filter { item in
-            switch selectedTab {
-            case .skills: return item.kind == .skill
-            case .mcp: return item.kind == .mcp
-            case .profiles: return item.kind == .profile
-            }
+        visibleRows.map(\.item)
+    }
+
+    private func isVisible(_ item: Item) -> Bool {
+        switch selectedTab {
+        case .skills: return item.kind == .skill
+        case .mcp: return item.kind == .mcp
+        case .profiles: return item.kind == .profile
         }
     }
 }

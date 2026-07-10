@@ -221,8 +221,12 @@ extension MinimalAppDelegate {
         func card(for project: AgentProject) -> ProjectCapabilityCardState {
             (try? Self.projectCapabilityCard(for: project, selectedTab: .skills)) ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
         }
+        func catalog(for project: AgentProject) -> ProjectCapabilityCatalogModel? {
+            try? ProjectCapabilityCatalogModel.build(for: project)
+        }
         return ProjectCapabilityColumnState(
             card: card(for: project),
+            catalog: catalog(for: project),
             onSetEnabled: { [weak self] pluginID, enabled in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
                 do {
@@ -259,6 +263,23 @@ extension MinimalAppDelegate {
                 }
                 return card(for: project)
             },
+            onUpdateSkillBody: { pluginID, skillRef, body in
+                try ProjectCapabilityWriter().updateSkillBody(
+                    project: project,
+                    pluginID: pluginID,
+                    skillRef: skillRef,
+                    body: body
+                )
+                guard let refreshedCatalog = try? ProjectCapabilityCatalogModel.build(for: project),
+                      let refreshedCard = try? Self.projectCapabilityCard(for: project, selectedTab: .skills) else {
+                    return nil
+                }
+                return ProjectCapabilitySnapshot(
+                    catalog: refreshedCatalog,
+                    card: refreshedCard
+                )
+            },
+            onRefreshCatalog: { catalog(for: project) },
             onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
             onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
             onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject(project: project) ?? "同步 opencode 配置失败：App 已释放" }
@@ -269,6 +290,21 @@ extension MinimalAppDelegate {
         projectCapabilityCardWindowController?.hide()
         let project = ProjectStore.current(defaults: userDefaults)
         let model = projectCapabilityColumnState(for: project)
+        model.onOpenSkillDetail = { [weak self, weak model] rowID, detail in
+            guard let self, let model,
+                  let rootID = self.columnContainerWindowController.state.stack.columns
+                    .first(where: { column in
+                        if case .projectCapabilityManager(let rootModel) = column.kind {
+                            return rootModel === model
+                        }
+                        return false
+                    })?.id else { return }
+            self.columnContainerWindowController.drillIn(
+                columnId: rootID,
+                rowId: rowID,
+                into: .projectCapabilitySkillDetail(detail)
+            )
+        }
         columnContainerWindowController.openRoot(
             .projectCapabilityManager(model),
             sourceKey: "project-capability-manager",
