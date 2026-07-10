@@ -7,6 +7,7 @@ struct ProjectCapabilityManagerView: View {
     let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
     let onSetEnabled: (String, Bool) -> Void
     var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
+    var onImportExisting: (() -> Void)? = nil
     let onCreatePlugin: (String, String) -> Void
     let onAddSkill: (String, String) -> Void
     let onAddMCP: (String, String, [String]) -> Void
@@ -115,6 +116,9 @@ struct ProjectCapabilityManagerView: View {
 
     private var syncControls: some View {
         HStack(spacing: 5) {
+            if let onImportExisting {
+                Button("导入现有") { onImportExisting() }
+            }
             Button("同步 Codex") { onSyncCodex() }
             Button("同步 Claude") { onSyncClaudeCode() }
             Button("同步 opencode") { onSyncOpencode() }

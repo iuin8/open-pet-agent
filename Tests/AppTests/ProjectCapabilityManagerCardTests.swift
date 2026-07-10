@@ -253,6 +253,160 @@ struct ProjectCapabilityManagerCardTests {
         #expect(detail.errorMessage == nil)
     }
 
+    @Test("column：Import Existing 扫描、确认后只写 canonical catalog")
+    func importExistingDrillsInAndWritesCanonicalOnly() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "ProjectCapabilityImportIntegrationTests-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suite = "ProjectCapabilityImportIntegrationTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        ProjectConfig.homeDirectoryOverride = root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let project = try ProjectStore.createExternal(
+            name: "Import Existing",
+            rootURL: root.appendingPathComponent("repo", isDirectory: true)
+        )
+        let skill = project.rootURL
+            .appendingPathComponent(".claude/skills/review", isDirectory: true)
+        try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+        try Data("# review\n\nImported.\n".utf8).write(
+            to: skill.appendingPathComponent("SKILL.md"),
+            options: .atomic
+        )
+        ProjectStore.setCurrent(project.id, defaults: defaults)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        defer { delegate.columnContainerWindowController.close() }
+
+        delegate.showProjectCapabilityManagerCard()
+        let rootColumn = try #require(
+            delegate.columnContainerWindowController.state.stack.columns.first
+        )
+        guard case .projectCapabilityManager(let model) = rootColumn.kind else {
+            Issue.record("根列不是项目能力管理")
+            return
+        }
+        model.openImport()
+
+        #expect(delegate.columnContainerWindowController.state.stack.columns.count == 2)
+        let importColumn = try #require(
+            delegate.columnContainerWindowController.state.stack.columns.last
+        )
+        guard case .projectCapabilityImport(let importState) = importColumn.kind else {
+            Issue.record("未追加 Import Existing 列")
+            return
+        }
+        #expect(importState.candidates.map(\.name) == ["review"])
+        importState.pluginID = "imported-local"
+        importState.pluginName = "Imported Local"
+        importState.toggleSelection("skill:review:claudeSkill")
+        importState.importSelected()
+
+        let canonical = ProjectConfig.pluginDirectory(
+            for: project,
+            pluginID: "imported-local"
+        )
+        #expect(FileManager.default.fileExists(
+            atPath: canonical.appendingPathComponent("skills/review/SKILL.md").path
+        ))
+        #expect(FileManager.default.fileExists(
+            atPath: skill.appendingPathComponent("SKILL.md").path
+        ))
+        #expect(FileManager.default.fileExists(
+            atPath: project.rootURL.appendingPathComponent(".mcp.json").path
+        ) == false)
+        #expect(FileManager.default.fileExists(
+            atPath: project.rootURL.appendingPathComponent(".codex/config.toml").path
+        ) == false)
+        #expect(model.catalog?.plugins.contains { $0.id == "imported-local" } == true)
+        #expect(importState.errorMessage == nil)
+    }
+
+    @Test("Import Existing：写入成功但全局刷新失败时局部更新 root")
+    func importKeepsSuccessfulWriteWhenCatalogRefreshFails() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "ProjectCapabilityImportRefreshFailureTests-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suite = "ProjectCapabilityImportRefreshFailureTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        ProjectConfig.homeDirectoryOverride = root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let project = try ProjectStore.createExternal(
+            name: "Import Refresh Failure",
+            rootURL: root.appendingPathComponent("repo", isDirectory: true)
+        )
+        let skill = project.rootURL
+            .appendingPathComponent(".claude/skills/review", isDirectory: true)
+        try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+        try Data("# review\n\nImported.\n".utf8).write(
+            to: skill.appendingPathComponent("SKILL.md"),
+            options: .atomic
+        )
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        let model = delegate.projectCapabilityColumnState(for: project)
+        let broken = ProjectConfig.pluginDirectory(for: project, pluginID: "broken")
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data("""
+        { "schemaVersion": 1, "id": "not-broken", "name": "Broken", "enabled": true }
+        """.utf8).write(to: broken.appendingPathComponent("plugin.json"), options: .atomic)
+        var importState: ProjectCapabilityImportState?
+        model.onOpenImport = { _, state in importState = state }
+
+        model.openImport()
+        let state = try #require(importState)
+        state.toggleSelection("skill:review:claudeSkill")
+        state.importSelected()
+
+        #expect(FileManager.default.fileExists(
+            atPath: ProjectConfig.pluginDirectory(
+                for: project,
+                pluginID: "imported-local"
+            ).appendingPathComponent("skills/review/SKILL.md").path
+        ))
+        #expect(state.didImport)
+        #expect(state.errorMessage == nil)
+        #expect(model.catalog?.plugins.contains { $0.id == "imported-local" } == true)
+        let item = try #require(
+            model.card.items.first { $0.pluginID == "imported-local" }
+        )
+        #expect(item.status == .warning)
+        #expect(item.targetPaths == [
+            project.rootURL.appendingPathComponent(
+                ".claude/skills/imported-local-review",
+                isDirectory: true
+            ).path
+        ])
+        #expect(item.diagnostics.contains {
+            $0.severity == "warning"
+                && $0.message.contains("全局刷新失败")
+        })
+    }
+
     @Test("column：点击 MCP 行在现有容器追加 detail 列")
     func mcpRowDrillsIntoDetailColumn() throws {
         let root = FileManager.default.temporaryDirectory

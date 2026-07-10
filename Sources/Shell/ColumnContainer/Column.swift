@@ -15,6 +15,8 @@ public enum ColumnKind {
     case projectCapabilitySkillDetail(ProjectCapabilitySkillDetailState)
     /// MCP 详情/编辑列：Basic 与 Advanced JSON 共用同一列。
     case projectCapabilityMCPDetail(ProjectCapabilityMCPDetailState)
+    /// Import Existing 列：扫描、选择、预览与显式确认导入。
+    case projectCapabilityImport(ProjectCapabilityImportState)
 }
 
 /// 列视图里的一列。`selectedRowId` = 本列哪行被 drill-in（高亮 + 紧邻右列是它的展开）。

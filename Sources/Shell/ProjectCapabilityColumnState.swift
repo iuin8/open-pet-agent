@@ -14,12 +14,15 @@ public struct ProjectCapabilitySnapshot: Sendable, Equatable {
 
 @MainActor
 public final class ProjectCapabilityColumnState: ObservableObject {
+    public static let importRowID = -1
+
     @Published public private(set) var card: ProjectCapabilityCardState
     @Published public private(set) var catalog: ProjectCapabilityCatalogModel?
     @Published public private(set) var syncMessages: [String]
 
     public var onOpenSkillDetail: ((Int, ProjectCapabilitySkillDetailState) -> Void)?
     public var onOpenMCPDetail: ((Int, ProjectCapabilityMCPDetailState) -> Void)?
+    public var onOpenImport: ((Int, ProjectCapabilityImportState) -> Void)?
 
     private let onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
     private let onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
@@ -27,6 +30,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
     private let onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)?
     private let onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)?
+    private let onScanImports: (() -> ProjectCapabilityImportScan)?
+    private let onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)?
     private let onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)?
     private let onSyncCodex: (() -> String)?
     private let onSyncClaudeCode: (() -> String)?
@@ -42,6 +47,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)? = nil,
         onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)? = nil,
         onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)? = nil,
+        onScanImports: (() -> ProjectCapabilityImportScan)? = nil,
+        onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)? = nil,
         onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)? = nil,
         onSyncCodex: (() -> String)? = nil,
         onSyncClaudeCode: (() -> String)? = nil,
@@ -56,6 +63,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onAddMCP = onAddMCP
         self.onUpdateSkillBody = onUpdateSkillBody
         self.onUpdateMCPServer = onUpdateMCPServer
+        self.onScanImports = onScanImports
+        self.onImportCandidates = onImportCandidates
         self.onRefreshCatalog = onRefreshCatalog
         self.onSyncCodex = onSyncCodex
         self.onSyncClaudeCode = onSyncClaudeCode
@@ -162,6 +171,18 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         }
     }
 
+    public func openImport() {
+        guard let onScanImports, let onImportCandidates else { return }
+        let state = ProjectCapabilityImportState(
+            scan: onScanImports(),
+            onImport: onImportCandidates,
+            onApply: { [weak self] outcome in
+                self?.applyImport(outcome)
+            }
+        )
+        onOpenImport?(Self.importRowID, state)
+    }
+
     public func syncCodex() {
         guard let onSyncCodex else { return }
         syncMessages.append(onSyncCodex())
@@ -175,6 +196,31 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     public func syncOpencode() {
         guard let onSyncOpencode else { return }
         syncMessages.append(onSyncOpencode())
+    }
+
+    private func applyImport(_ outcome: ProjectCapabilityImportOutcome) {
+        switch outcome {
+        case .snapshot(let snapshot):
+            apply(snapshot)
+        case .partial(let projectID, let plugin, let items):
+            var plugins = catalog?.plugins ?? []
+            plugins.removeAll { $0.id == plugin.id }
+            plugins.append(plugin)
+            plugins.sort { $0.id < $1.id }
+            let previous = catalog
+            catalog = ProjectCapabilityCatalogModel(
+                projectID: previous?.projectID ?? projectID,
+                plugins: plugins,
+                diagnostics: previous?.diagnostics ?? [],
+                targets: previous?.targets ?? [],
+                audit: previous?.audit
+            )
+            let retained = card.items.filter { $0.pluginID != plugin.id }
+            card = ProjectCapabilityCardState(
+                selectedTab: card.selectedTab,
+                items: retained + items
+            )
+        }
     }
 
     private func apply(_ snapshot: ProjectCapabilitySnapshot) {

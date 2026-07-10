@@ -40,14 +40,17 @@ struct ColumnPaneView: View {
         case .detail: return DetailPaneContent.width   // 520
         case .image:  return 460
         case .projectCapabilityManager: return 380
-        case .projectCapabilitySkillDetail, .projectCapabilityMCPDetail: return 520
+        case .projectCapabilitySkillDetail,
+             .projectCapabilityMCPDetail,
+             .projectCapabilityImport: return 520
         }
     }
 
     private var showsColumnHeader: Bool {
         switch column.kind {
         case .list, .projectCapabilityManager: return true
-        case .detail, .image, .projectCapabilitySkillDetail, .projectCapabilityMCPDetail: return false
+        case .detail, .image, .projectCapabilitySkillDetail,
+             .projectCapabilityMCPDetail, .projectCapabilityImport: return false
         }
     }
 
@@ -85,7 +88,8 @@ struct ColumnPaneView: View {
             columnHeader(glyph: glyph, title: title, subtitle: subtitle)
         case .projectCapabilityManager:
             columnHeader(glyph: "shippingbox.fill", title: "项目能力", subtitle: "Skills / MCP / Profiles")
-        case .detail, .image, .projectCapabilitySkillDetail, .projectCapabilityMCPDetail:
+        case .detail, .image, .projectCapabilitySkillDetail,
+             .projectCapabilityMCPDetail, .projectCapabilityImport:
             EmptyView()
         }
     }
@@ -189,6 +193,8 @@ struct ColumnPaneView: View {
             ProjectCapabilitySkillDetailView(model: model)
         case .projectCapabilityMCPDetail(let model):
             ProjectCapabilityMCPDetailView(model: model)
+        case .projectCapabilityImport(let model):
+            ProjectCapabilityImportView(model: model)
         }
     }
 }
@@ -206,6 +212,7 @@ private struct ProjectCapabilityManagerColumnView: View {
                 onSelectTab: { model.selectTab($0) },
                 onSetEnabled: { model.setPluginEnabled(pluginID: $0, enabled: $1) },
                 onOpenItem: { model.openItem($1, rowID: $0) },
+                onImportExisting: { model.openImport() },
                 onCreatePlugin: { model.createPlugin(pluginID: $0, name: $1) },
                 onAddSkill: { model.addSkill(pluginID: $0, skillName: $1) },
                 onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, command: $2) },

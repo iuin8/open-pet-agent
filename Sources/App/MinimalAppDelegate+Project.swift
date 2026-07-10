@@ -296,6 +296,36 @@ extension MinimalAppDelegate {
                     card: refreshedCard
                 )
             },
+            onScanImports: {
+                ProjectCapabilityImportScanner().scan(project: project)
+            },
+            onImportCandidates: { candidates, pluginID, pluginName in
+                let plugin = try ProjectCapabilityWriter().importCandidates(
+                    candidates,
+                    project: project,
+                    pluginID: pluginID,
+                    pluginName: pluginName
+                )
+                if let refreshedCatalog = try? ProjectCapabilityCatalogModel.build(for: project),
+                   let refreshedCard = try? Self.projectCapabilityCard(
+                       for: project,
+                       selectedTab: .skills
+                   ) {
+                    return .snapshot(ProjectCapabilitySnapshot(
+                        catalog: refreshedCatalog,
+                        card: refreshedCard
+                    ))
+                }
+                return .partial(
+                    projectID: project.id,
+                    plugin: plugin,
+                    items: Self.importedCapabilityItems(
+                        plugin,
+                        project: project,
+                        partialWarning: "导入已写入 canonical catalog，但全局刷新失败；当前显示局部结果。"
+                    )
+                )
+            },
             onRefreshCatalog: { catalog(for: project) },
             onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
             onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
@@ -327,6 +357,9 @@ extension MinimalAppDelegate {
         }
         model.onOpenMCPDetail = { rowID, detail in
             drillIn(rowID, .projectCapabilityMCPDetail(detail))
+        }
+        model.onOpenImport = { rowID, importState in
+            drillIn(rowID, .projectCapabilityImport(importState))
         }
         columnContainerWindowController.openRoot(
             .projectCapabilityManager(model),
@@ -529,6 +562,89 @@ extension MinimalAppDelegate {
                 if case let .writeFile(_, destination) = operation { return destination.path }
                 return nil
             }
+    }
+
+    private static func importedCapabilityItems(
+        _ plugin: CapabilityPlugin,
+        project: AgentProject,
+        partialWarning: String
+    ) -> [ProjectCapabilityCardState.Item] {
+        guard case .local(let root) = plugin.source else { return [] }
+        let diagnostics = [ProjectCapabilityPanelState.Diagnostic(
+            severity: "warning",
+            message: partialWarning,
+            path: root
+        )]
+        let skills = plugin.skills.map { skill in
+            let source = URL(fileURLWithPath: root)
+                .appendingPathComponent(
+                    skill.relativePath,
+                    isDirectory: true
+                ).path
+            let targets = skill.targets.map { target in
+                switch target {
+                case .claudeCode:
+                    return project.rootURL.appendingPathComponent(
+                        ".claude/skills/\(plugin.id)-\(skill.name)",
+                        isDirectory: true
+                    ).path
+                case .codex:
+                    return project.rootURL.appendingPathComponent(
+                        ".agents/skills/\(plugin.id)-\(skill.name)",
+                        isDirectory: true
+                    ).path
+                case .opencode:
+                    return project.rootURL.appendingPathComponent(
+                        ".open-pet-agent/plugins/.materialized/openCode/plugins/\(plugin.id)",
+                        isDirectory: true
+                    ).path
+                }
+            }.sorted()
+            return ProjectCapabilityCardState.Item(
+                id: "skill:\(plugin.id):\(source)",
+                kind: .skill,
+                name: skill.name,
+                pluginID: plugin.id,
+                sourcePath: source,
+                targetPaths: targets,
+                isEnabled: plugin.enabled,
+                status: .warning,
+                diagnostics: diagnostics
+            )
+        }
+        let servers = plugin.mcpServers.map { server in
+            let source = URL(fileURLWithPath: root)
+                .appendingPathComponent(server.fileRef).path
+                + "#\(server.name)"
+            let targets = server.targets.compactMap { target -> String? in
+                switch target {
+                case .claudeCode:
+                    return project.rootURL.appendingPathComponent(
+                        ".mcp.json",
+                        isDirectory: false
+                    ).path
+                case .codex:
+                    return project.rootURL.appendingPathComponent(
+                        ".codex/config.toml",
+                        isDirectory: false
+                    ).path
+                case .opencode:
+                    return nil
+                }
+            }.sorted()
+            return ProjectCapabilityCardState.Item(
+                id: "mcp:\(plugin.id):\(server.name)",
+                kind: .mcp,
+                name: server.name,
+                pluginID: plugin.id,
+                sourcePath: source,
+                targetPaths: targets,
+                isEnabled: plugin.enabled,
+                status: .warning,
+                diagnostics: diagnostics
+            )
+        }
+        return skills + servers
     }
 
     private static func capabilityItems(

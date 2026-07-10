@@ -151,6 +151,50 @@ struct ProjectCapabilityColumnStateTests {
         #expect(openedMCPRow == 8)
     }
 
+    @Test("Import Existing：稳定 rowID 打开独立导入列")
+    func opensImportPaneWithStableRowID() {
+        let candidate = ProjectCapabilityImportCandidate(
+            id: "skill:review:claudeSkill",
+            kind: .skill,
+            name: "review",
+            sources: [.init(
+                kind: .claudeSkill,
+                url: URL(fileURLWithPath: "/tmp/review/SKILL.md")
+            )],
+            skillBody: "# review"
+        )
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: []),
+            onScanImports: {
+                ProjectCapabilityImportScan(candidates: [candidate])
+            },
+            onImportCandidates: { _, _, _ in
+                .snapshot(ProjectCapabilitySnapshot(
+                    catalog: ProjectCapabilityCatalogModel(
+                        projectID: "p",
+                        plugins: []
+                    ),
+                    card: ProjectCapabilityCardState(
+                        selectedTab: .skills,
+                        items: []
+                    )
+                ))
+            }
+        )
+        var openedRow: Int?
+        var openedState: ProjectCapabilityImportState?
+        model.onOpenImport = { rowID, state in
+            openedRow = rowID
+            openedState = state
+        }
+
+        model.openImport()
+
+        #expect(openedRow == ProjectCapabilityColumnState.importRowID)
+        #expect(openedState?.candidates.map(\.name) == ["review"])
+        #expect(model.card.selectedTab == .mcp)
+    }
+
     @Test("MCP detail：保存成功后刷新 root/detail 并保留 tab")
     func mcpDetailSaveRefreshesRootAndDetail() throws {
         let original = capabilityMCPServer(command: ["npx", "old"])
