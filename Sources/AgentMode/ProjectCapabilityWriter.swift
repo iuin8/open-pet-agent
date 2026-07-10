@@ -17,8 +17,8 @@ public struct ProjectCapabilityWriter: Sendable {
         guard !serverName.isEmpty else {
             throw ProjectCapabilityValidationError("Missing MCP server name")
         }
-        guard ProjectCapabilityMCPResolver.commandParts(for: value) != nil else {
-            throw ProjectCapabilityValidationError("Malformed MCP command: \(serverName)")
+        guard ProjectCapabilityMCPResolver.isValidConfiguration(value) else {
+            throw ProjectCapabilityValidationError("Malformed MCP configuration: \(serverName)")
         }
         let plugin = try descriptor(project: project, pluginID: pluginID)
         let fileURL = try ProjectCapabilityPath.containedURL(ref: fileRef, subdirectory: "mcp", plugin: plugin, isDirectory: false) {

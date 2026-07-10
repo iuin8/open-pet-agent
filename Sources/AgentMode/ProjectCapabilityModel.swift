@@ -47,6 +47,7 @@ public struct CapabilitySkill: Identifiable, Sendable, Equatable {
 public struct CapabilityMCPServer: Identifiable, Sendable, Equatable {
     public let id: String
     public var name: String
+    public var fileRef: String
     public var transport: MCPTransport
     public var command: [String]
     public var url: String?
@@ -144,15 +145,17 @@ private struct ProjectCapabilityModelBuilder {
     private func buildMCP(_ ref: String, plugin: ProjectPluginDescriptor) throws -> CapabilityMCPServer {
         let resolved = try ProjectCapabilityMCPResolver.resolve(ref, plugin: plugin)
         let object = resolved.value.objectValue ?? [:]
+        let fileRef = String(ref.split(separator: "#", maxSplits: 1)[0])
         return CapabilityMCPServer(
             id: "\(plugin.id):\(resolved.name)",
             name: resolved.name,
+            fileRef: fileRef,
             transport: Self.transport(for: object),
             command: ProjectCapabilityMCPResolver.commandParts(for: resolved.value) ?? [],
             url: object["url"]?.stringValue,
             env: Self.stringMap(object["env"]),
             cwd: object["cwd"]?.stringValue,
-            rawJSON: nil,
+            rawJSON: Self.rawJSON(resolved.value),
             targets: targets(for: plugin),
             diagnostics: []
         )
@@ -186,5 +189,12 @@ private struct ProjectCapabilityModelBuilder {
 
     private static func stringMap(_ value: ACPJSON?) -> [String: String] {
         value?.objectValue?.compactMapValues(\.stringValue) ?? [:]
+    }
+
+    private static func rawJSON(_ value: ACPJSON) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(value) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

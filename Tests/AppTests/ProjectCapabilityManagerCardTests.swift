@@ -180,6 +180,127 @@ struct ProjectCapabilityManagerCardTests {
         #expect(detail.errorMessage == nil)
     }
 
+    @Test("MCP detail：保存配置只写 canonical catalog 并刷新 typed state")
+    func mcpDetailSavesCanonicalConfigWithoutMaterializing() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "MCPEdit")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try fixture.writePlugin(enabled: true)
+        let suite = "ProjectCapabilityMCPEditTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        let model = delegate.projectCapabilityColumnState(for: fixture.project)
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+        detail.beginEditing()
+        detail.draftCommand = "uvx"
+        detail.draftArguments = "mcp-server\n--verbose"
+        detail.draftEnvironment = "TOKEN=secret"
+        detail.draftCWD = "/tmp/work"
+
+        detail.save()
+
+        let server = try fixture.mcpServerJSON(name: "filesystem")
+        #expect(server["command"] as? String == "uvx")
+        #expect(server["args"] as? [String] == ["mcp-server", "--verbose"])
+        #expect((server["env"] as? [String: String])?["TOKEN"] == "secret")
+        #expect(server["cwd"] as? String == "/tmp/work")
+        #expect(model.catalog?.plugins.first?.mcpServers.first?.command == ["uvx", "mcp-server", "--verbose"])
+        #expect(detail.errorMessage == nil)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".open-pet-agent/plugins/.materialized").path) == false)
+    }
+
+    @Test("MCP detail：写入后全局刷新失败仍保持保存成功")
+    func mcpDetailKeepsSuccessfulWriteWhenCatalogRefreshFails() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "MCPRefreshFailure")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try fixture.writePlugin(enabled: true)
+        let suite = "ProjectCapabilityMCPRefreshFailureTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        let model = delegate.projectCapabilityColumnState(for: fixture.project)
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+        let brokenRoot = ProjectConfig.pluginDirectory(for: fixture.project, pluginID: "broken")
+        try FileManager.default.createDirectory(at: brokenRoot, withIntermediateDirectories: true)
+        try """
+        { "schemaVersion": 1, "id": "not-broken", "name": "Broken", "enabled": true, "capabilities": [] }
+        """.data(using: .utf8)!.write(to: brokenRoot.appendingPathComponent("plugin.json"), options: .atomic)
+        detail.beginEditing()
+        detail.draftCommand = "uvx"
+        detail.draftArguments = "new"
+
+        detail.save()
+
+        let server = try fixture.mcpServerJSON(name: "filesystem")
+        #expect(server["command"] as? String == "uvx")
+        #expect(model.catalog?.plugins.first { $0.id == "dev-toolkit" }?.mcpServers.first?.command == ["uvx", "new"])
+        #expect(detail.server.command == ["uvx", "new"])
+        #expect(detail.isEditing == false)
+        #expect(detail.errorMessage == nil)
+    }
+
+    @Test("column：点击 MCP 行在现有容器追加 detail 列")
+    func mcpRowDrillsIntoDetailColumn() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProjectCapabilityMCPDrillInTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suite = "ProjectCapabilityMCPDrillInTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        ProjectConfig.homeDirectoryOverride = root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let project = try ProjectStore.createExternal(
+            name: "MCP Drill In",
+            rootURL: root.appendingPathComponent("repo", isDirectory: true)
+        )
+        let fixture = ProjectCapabilityManagerFixture(project: project)
+        try fixture.writePlugin(enabled: true)
+        ProjectStore.setCurrent(project.id, defaults: defaults)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        defer { delegate.columnContainerWindowController.close() }
+
+        delegate.showProjectCapabilityManagerCard()
+        let rootColumn = try #require(delegate.columnContainerWindowController.state.stack.columns.first)
+        guard case .projectCapabilityManager(let model) = rootColumn.kind else {
+            Issue.record("根列不是项目能力管理")
+            return
+        }
+        model.selectTab(.mcp)
+        let row = try #require(model.card.visibleRows.first)
+        model.openItem(row.item, rowID: row.rowID)
+
+        #expect(delegate.columnContainerWindowController.state.stack.columns.count == 2)
+        let detailColumn = try #require(delegate.columnContainerWindowController.state.stack.columns.last)
+        guard case .projectCapabilityMCPDetail(let detail) = detailColumn.kind else {
+            Issue.record("未追加 MCP detail 列")
+            return
+        }
+        #expect(detail.server.id == "dev-toolkit:filesystem")
+    }
+
     @Test("column：点击 Skill 行在现有容器追加 detail 列")
     func skillRowDrillsIntoDetailColumn() throws {
         let root = FileManager.default.temporaryDirectory
@@ -321,6 +442,16 @@ private struct ProjectCapabilityManagerFixture {
         try """
         { "mcpServers": { "filesystem": { "type": "local", "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"], "enabled": true } } }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("mcp/servers.json"), options: .atomic)
+    }
+
+    func mcpServerJSON(name: String) throws -> [String: Any] {
+        let data = try Data(contentsOf: pluginRoot.appendingPathComponent("mcp/servers.json"))
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let servers = root["mcpServers"] as? [String: Any],
+              let server = servers[name] as? [String: Any] else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return server
     }
 
     func manifestJSON() throws -> [String: Any] {

@@ -156,6 +156,84 @@ final class ProjectCapabilityWriterTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: mcpURL.path))
     }
 
+    func testUpsertMCPServerAcceptsRemoteTransportWithoutMaterializing() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": [], "mcp": [], "engines": {} }
+        """)
+
+        try ProjectCapabilityWriter().upsertMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "remote",
+            value: .object([
+                "type": .string("sse"),
+                "url": .string("https://example.com/mcp"),
+                "headers": .object(["Authorization": .string("Bearer token")]),
+                "enabled": .bool(true)
+            ])
+        )
+
+        let mcpURL = pluginRoot("dev-toolkit").appendingPathComponent("mcp/servers.json")
+        let json = try readJSONObject(mcpURL)
+        let servers = try XCTUnwrap(json["mcpServers"] as? [String: Any])
+        let remote = try XCTUnwrap(servers["remote"] as? [String: Any])
+        XCTAssertEqual(remote["url"] as? String, "https://example.com/mcp")
+        XCTAssertNotNil(remote["headers"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.rootURL.appendingPathComponent(".mcp.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.rootURL.appendingPathComponent(".codex/config.toml").path))
+    }
+
+    func testUpsertMCPServerRejectsUnknownTransportAndMalformedArgs() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": [], "engines": {} }
+        """)
+
+        XCTAssertThrowsError(try ProjectCapabilityWriter().upsertMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "unknown",
+            value: .object([
+                "type": .string("websocket"),
+                "command": .string("npx")
+            ])
+        ))
+        XCTAssertThrowsError(try ProjectCapabilityWriter().upsertMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "bad-args",
+            value: .object([
+                "type": .string("local"),
+                "command": .string("npx"),
+                "args": .string("--verbose")
+            ])
+        ))
+        XCTAssertThrowsError(try ProjectCapabilityWriter().upsertMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "local-url",
+            value: .object([
+                "type": .string("local"),
+                "url": .string("https://example.com/mcp")
+            ])
+        ))
+        XCTAssertThrowsError(try ProjectCapabilityWriter().upsertMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "hostless",
+            value: .object([
+                "type": .string("http"),
+                "url": .string("https://")
+            ])
+        ))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: pluginRoot("dev-toolkit").appendingPathComponent("mcp/servers.json").path))
+    }
+
     func testEditingOnePluginIgnoresUnrelatedMalformedPlugin() throws {
         try writePlugin("dev-toolkit", """
         { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["skills"], "skills": ["skills/code-review"], "engines": {} }

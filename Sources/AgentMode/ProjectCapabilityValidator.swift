@@ -71,7 +71,7 @@ public struct ProjectCapabilityValidator: Sendable {
             if !seenIDs.insert(id).inserted, reportedIDs.insert(id).inserted {
                 diagnostics.append(.error("Duplicate MCP server id: \(id)", path: plugin.rootURL.path))
             }
-            if ProjectCapabilityMCPResolver.commandParts(for: resolved.value) == nil {
+            if !ProjectCapabilityMCPResolver.isValidConfiguration(resolved.value) {
                 diagnostics.append(.error("Malformed MCP command: \(resolved.name)", path: plugin.rootURL.path))
             }
         } catch let error as ProjectCapabilityValidationError {
@@ -115,12 +115,47 @@ enum ProjectCapabilityMCPResolver {
         } else {
             return nil
         }
-        if let args = object["args"]?.arrayValue {
-            let values = args.compactMap(\.stringValue)
-            guard values.count == args.count else { return nil }
+        if let args = object["args"] {
+            guard let array = args.arrayValue else { return nil }
+            let values = array.compactMap(\.stringValue)
+            guard values.count == array.count else { return nil }
             parts.append(contentsOf: values)
         }
         return parts
+    }
+
+    static func isValidConfiguration(_ server: ACPJSON) -> Bool {
+        guard let object = server.objectValue else { return false }
+        let transport = object["type"]?.stringValue ?? object["transport"]?.stringValue
+        let validTransport: Bool
+        switch transport {
+        case "local", "stdio":
+            validTransport = object["url"] == nil && commandParts(for: server) != nil
+        case nil:
+            validTransport = object["url"] == nil
+                ? commandParts(for: server) != nil
+                : validRemoteURL(object["url"]?.stringValue)
+        case "http", "sse":
+            validTransport = validRemoteURL(object["url"]?.stringValue)
+        default:
+            return false
+        }
+        guard validTransport else { return false }
+        if let env = object["env"] {
+            guard let values = env.objectValue,
+                  values.values.allSatisfy({ $0.stringValue != nil }) else { return false }
+        }
+        if let cwd = object["cwd"], cwd.stringValue == nil { return false }
+        return true
+    }
+
+    private static func validRemoteURL(_ raw: String?) -> Bool {
+        guard let raw,
+              let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              let host = url.host,
+              !host.isEmpty else { return false }
+        return scheme == "http" || scheme == "https"
     }
 }
 

@@ -215,7 +215,7 @@ struct ProjectCapabilityManagerView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                guard item.kind == .skill else { return }
+                guard item.kind == .skill || item.kind == .mcp else { return }
                 onOpenItem(rowID, item)
             }
             Spacer(minLength: 4)

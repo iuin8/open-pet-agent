@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import AgentMode
 @testable import Shell
@@ -124,23 +125,115 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.catalog == originalCatalog)
     }
 
-    @Test("Skill row：只为 Skill 打开 detail")
-    func opensDetailOnlyForSkillItems() {
+    @Test("Skill row：Skill 与 MCP 分别打开对应 detail")
+    func opensDetailsForSkillAndMCPItems() {
         let skill = capabilitySkill(body: "正文")
+        let server = capabilityMCPServer(command: ["npx", "old"])
         let model = ProjectCapabilityColumnState(
-            card: ProjectCapabilityCardState(selectedTab: .skills, items: [skillItem()]),
-            catalog: capabilityCatalog(skill: skill)
+            card: ProjectCapabilityCardState(selectedTab: .skills, items: [skillItem(), mcpItem()]),
+            catalog: capabilityCatalog(skill: skill, server: server)
         )
-        var openedRow: Int?
+        var openedSkillRow: Int?
+        var openedMCPRow: Int?
         model.onOpenSkillDetail = { rowID, detail in
-            openedRow = rowID
+            openedSkillRow = rowID
             #expect(detail.skill.id == skill.id)
+        }
+        model.onOpenMCPDetail = { rowID, detail in
+            openedMCPRow = rowID
+            #expect(detail.server.id == server.id)
         }
 
         model.openItem(skillItem(), rowID: 7)
         model.openItem(mcpItem(), rowID: 8)
 
-        #expect(openedRow == 7)
+        #expect(openedSkillRow == 7)
+        #expect(openedMCPRow == 8)
+    }
+
+    @Test("MCP detail：保存成功后刷新 root/detail 并保留 tab")
+    func mcpDetailSaveRefreshesRootAndDetail() throws {
+        let original = capabilityMCPServer(command: ["npx", "old"])
+        let refreshed = capabilityMCPServer(command: ["uvx", "new"])
+        let skill = capabilitySkill(body: "正文")
+        let originalCatalog = capabilityCatalog(skill: skill, server: original)
+        let refreshedCatalog = capabilityCatalog(skill: skill, server: refreshed)
+        let item = mcpItem()
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .skills, items: [item]),
+            catalog: originalCatalog,
+            onUpdateMCPServer: { pluginID, fileRef, serverName, value in
+                #expect(pluginID == "dev-toolkit")
+                #expect(fileRef == "mcp/servers.json")
+                #expect(serverName == "filesystem")
+                #expect(value.objectValue?["command"] == .string("uvx"))
+                return ProjectCapabilitySnapshot(
+                    catalog: refreshedCatalog,
+                    card: ProjectCapabilityCardState(selectedTab: .mcp, items: [item])
+                )
+            }
+        )
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+        detail.beginEditing()
+        detail.draftCommand = "uvx"
+        detail.draftArguments = "new"
+
+        detail.save()
+
+        #expect(detail.server.command == ["uvx", "new"])
+        #expect(detail.isEditing == false)
+        #expect(detail.errorMessage == nil)
+        #expect(model.catalog == refreshedCatalog)
+        #expect(model.card.selectedTab == .skills)
+    }
+
+    @Test("MCP detail：保存失败时保留草稿和原 snapshot")
+    func mcpDetailSaveFailureKeepsDraftAndSnapshot() throws {
+        struct SaveError: Error {}
+        let skill = capabilitySkill(body: "正文")
+        let original = capabilityMCPServer(command: ["npx", "old"])
+        let originalCatalog = capabilityCatalog(skill: skill, server: original)
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: [mcpItem()]),
+            catalog: originalCatalog,
+            onUpdateMCPServer: { _, _, _, _ in throw SaveError() }
+        )
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+        detail.beginEditing()
+        detail.draftCommand = "uvx"
+        detail.draftArguments = "unsaved"
+
+        detail.save()
+
+        #expect(detail.server.command == ["npx", "old"])
+        #expect(detail.draftCommand == "uvx")
+        #expect(detail.draftArguments == "unsaved")
+        #expect(detail.isEditing)
+        #expect(detail.errorMessage != nil)
+        #expect(model.catalog == originalCatalog)
+    }
+
+    @Test("MCP detail：写入成功但全局刷新失败时局部更新 typed state")
+    func mcpDetailPatchesCatalogWhenRefreshFails() throws {
+        let skill = capabilitySkill(body: "正文")
+        let original = capabilityMCPServer(command: ["npx", "old"])
+        let originalCatalog = capabilityCatalog(skill: skill, server: original)
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: [mcpItem()]),
+            catalog: originalCatalog,
+            onUpdateMCPServer: { _, _, _, _ in nil }
+        )
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+        detail.beginEditing()
+        detail.draftCommand = "uvx"
+        detail.draftArguments = "new"
+
+        detail.save()
+
+        #expect(detail.server.command == ["uvx", "new"])
+        #expect(model.catalog?.plugins.first?.mcpServers.first?.command == ["uvx", "new"])
+        #expect(detail.errorMessage == nil)
+        #expect(detail.isEditing == false)
     }
 
     private func capabilitySkill(body: String) -> CapabilitySkill {
@@ -156,7 +249,10 @@ struct ProjectCapabilityColumnStateTests {
         )
     }
 
-    private func capabilityCatalog(skill: CapabilitySkill) -> ProjectCapabilityCatalogModel {
+    private func capabilityCatalog(
+        skill: CapabilitySkill,
+        server: CapabilityMCPServer? = nil
+    ) -> ProjectCapabilityCatalogModel {
         ProjectCapabilityCatalogModel(
             projectID: "p",
             plugins: [CapabilityPlugin(
@@ -166,10 +262,34 @@ struct ProjectCapabilityColumnStateTests {
                 enabled: true,
                 source: .local(path: "/tmp/dev-toolkit"),
                 skills: [skill],
-                mcpServers: [],
+                mcpServers: server.map { [$0] } ?? [],
                 profiles: [],
                 diagnostics: []
             )]
+        )
+    }
+
+    private func capabilityMCPServer(command: [String]) -> CapabilityMCPServer {
+        let object: ACPJSON = .object([
+            "type": .string("local"),
+            "command": .string(command[0]),
+            "args": .array(command.dropFirst().map(ACPJSON.string)),
+            "enabled": .bool(true)
+        ])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return CapabilityMCPServer(
+            id: "dev-toolkit:filesystem",
+            name: "filesystem",
+            fileRef: "mcp/servers.json",
+            transport: .stdio,
+            command: command,
+            url: nil,
+            env: [:],
+            cwd: nil,
+            rawJSON: String(data: try! encoder.encode(object), encoding: .utf8),
+            targets: [.codex],
+            diagnostics: []
         )
     }
 
