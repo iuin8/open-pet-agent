@@ -115,6 +115,48 @@ final class ProjectCapabilityModelTests: XCTestCase {
         XCTAssertTrue(diagnostics.containsDiagnostic("Duplicate MCP server id: dev-toolkit:filesystem"))
     }
 
+    func testMCPModelKeepsFileRefAndRoundTrippableRawJSON() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/custom.json#remote"], "engines": {} }
+        """)
+        let mcpURL = ProjectConfig.pluginMCPDirectory(for: project, pluginID: "dev-toolkit")
+            .appendingPathComponent("custom.json")
+        try FileManager.default.createDirectory(at: mcpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        { "mcpServers": { "remote": { "type": "sse", "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer token" }, "enabled": true } } }
+        """.data(using: .utf8)!.write(to: mcpURL, options: .atomic)
+
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertEqual(server.fileRef, "mcp/custom.json")
+        XCTAssertEqual(server.transport, .sse)
+        XCTAssertEqual(server.url, "https://example.com/mcp")
+        XCTAssertEqual(
+            ACPJSON.parse(try XCTUnwrap(server.rawJSON)),
+            .object([
+                "type": .string("sse"),
+                "url": .string("https://example.com/mcp"),
+                "headers": .object(["Authorization": .string("Bearer token")]),
+                "enabled": .bool(true)
+            ])
+        )
+    }
+
+    func testValidatorAcceptsRemoteMCPTransportWithURL() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#remote"], "engines": {} }
+        """)
+        let mcpURL = ProjectConfig.pluginMCPDirectory(for: project, pluginID: "dev-toolkit").appendingPathComponent("servers.json")
+        try FileManager.default.createDirectory(at: mcpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        { "mcpServers": { "remote": { "type": "http", "url": "https://example.com/mcp", "enabled": true } } }
+        """.data(using: .utf8)!.write(to: mcpURL, options: .atomic)
+
+        let diagnostics = try ProjectCapabilityValidator().validate(project: project)
+
+        XCTAssertFalse(diagnostics.containsDiagnostic("Malformed MCP command: remote"))
+    }
+
     private func writePlugin(_ id: String, _ json: String) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

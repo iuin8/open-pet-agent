@@ -13,6 +13,8 @@ public enum ColumnKind {
     case projectCapabilityManager(ProjectCapabilityColumnState)
     /// Skill 详情/编辑列：复用同一列承载只读与编辑态。
     case projectCapabilitySkillDetail(ProjectCapabilitySkillDetailState)
+    /// MCP 详情/编辑列：Basic 与 Advanced JSON 共用同一列。
+    case projectCapabilityMCPDetail(ProjectCapabilityMCPDetailState)
 }
 
 /// 列视图里的一列。`selectedRowId` = 本列哪行被 drill-in（高亮 + 紧邻右列是它的展开）。

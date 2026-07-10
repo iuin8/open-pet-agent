@@ -19,12 +19,14 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     @Published public private(set) var syncMessages: [String]
 
     public var onOpenSkillDetail: ((Int, ProjectCapabilitySkillDetailState) -> Void)?
+    public var onOpenMCPDetail: ((Int, ProjectCapabilityMCPDetailState) -> Void)?
 
     private let onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
     private let onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
     private let onAddSkill: ((String, String) -> ProjectCapabilityCardState)?
     private let onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
     private let onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)?
+    private let onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)?
     private let onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)?
     private let onSyncCodex: (() -> String)?
     private let onSyncClaudeCode: (() -> String)?
@@ -39,6 +41,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onAddSkill: ((String, String) -> ProjectCapabilityCardState)? = nil,
         onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)? = nil,
         onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)? = nil,
+        onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)? = nil,
         onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)? = nil,
         onSyncCodex: (() -> String)? = nil,
         onSyncClaudeCode: (() -> String)? = nil,
@@ -52,6 +55,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onAddSkill = onAddSkill
         self.onAddMCP = onAddMCP
         self.onUpdateSkillBody = onUpdateSkillBody
+        self.onUpdateMCPServer = onUpdateMCPServer
         self.onRefreshCatalog = onRefreshCatalog
         self.onSyncCodex = onSyncCodex
         self.onSyncClaudeCode = onSyncClaudeCode
@@ -114,11 +118,48 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         )
     }
 
+    public func mcpDetail(pluginID: String, serverName: String) -> ProjectCapabilityMCPDetailState? {
+        guard let plugin = catalog?.plugins.first(where: { $0.id == pluginID }),
+              var server = plugin.mcpServers.first(where: { $0.name == serverName }),
+              case .local(let root) = plugin.source else { return nil }
+        server.diagnostics += plugin.diagnostics.filter { !server.diagnostics.contains($0) }
+        let sourcePath = URL(fileURLWithPath: root)
+            .appendingPathComponent(server.fileRef, isDirectory: false).path + "#\(server.name)"
+        return ProjectCapabilityMCPDetailState(
+            pluginID: pluginID,
+            sourcePath: sourcePath,
+            server: server,
+            onSave: { [weak self] value in
+                guard let self, let onUpdateMCPServer = self.onUpdateMCPServer else {
+                    throw ProjectCapabilityMCPDetailError.savingUnavailable
+                }
+                let snapshot = try onUpdateMCPServer(pluginID, server.fileRef, server.name, value)
+                if let snapshot,
+                   let refreshed = snapshot.catalog.plugins
+                    .first(where: { $0.id == pluginID })?.mcpServers
+                    .first(where: { $0.name == serverName }) {
+                    self.apply(snapshot)
+                    return refreshed
+                }
+                let refreshed = try ProjectCapabilityMCPDetailState.updatedServer(server, with: value)
+                self.patchCatalog(pluginID: pluginID, server: refreshed)
+                return refreshed
+            }
+        )
+    }
+
     public func openItem(_ item: ProjectCapabilityCardState.Item, rowID: Int) {
-        guard item.kind == .skill,
-              let skillRef = skillRef(matching: item),
-              let detail = skillDetail(pluginID: item.pluginID, skillRef: skillRef) else { return }
-        onOpenSkillDetail?(rowID, detail)
+        switch item.kind {
+        case .skill:
+            guard let skillRef = skillRef(matching: item),
+                  let detail = skillDetail(pluginID: item.pluginID, skillRef: skillRef) else { return }
+            onOpenSkillDetail?(rowID, detail)
+        case .mcp:
+            guard let detail = mcpDetail(pluginID: item.pluginID, serverName: item.name) else { return }
+            onOpenMCPDetail?(rowID, detail)
+        case .profile:
+            return
+        }
     }
 
     public func syncCodex() {
@@ -152,6 +193,21 @@ public final class ProjectCapabilityColumnState: ObservableObject {
               let skillIndex = catalog.plugins[pluginIndex].skills.firstIndex(where: { $0.id == skill.id }) else { return }
         var plugins = catalog.plugins
         plugins[pluginIndex].skills[skillIndex] = skill
+        self.catalog = ProjectCapabilityCatalogModel(
+            projectID: catalog.projectID,
+            plugins: plugins,
+            diagnostics: catalog.diagnostics,
+            targets: catalog.targets,
+            audit: catalog.audit
+        )
+    }
+
+    private func patchCatalog(pluginID: String, server: CapabilityMCPServer) {
+        guard let catalog,
+              let pluginIndex = catalog.plugins.firstIndex(where: { $0.id == pluginID }),
+              let serverIndex = catalog.plugins[pluginIndex].mcpServers.firstIndex(where: { $0.id == server.id }) else { return }
+        var plugins = catalog.plugins
+        plugins[pluginIndex].mcpServers[serverIndex] = server
         self.catalog = ProjectCapabilityCatalogModel(
             projectID: catalog.projectID,
             plugins: plugins,

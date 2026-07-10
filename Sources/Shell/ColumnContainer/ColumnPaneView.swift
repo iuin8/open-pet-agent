@@ -40,14 +40,14 @@ struct ColumnPaneView: View {
         case .detail: return DetailPaneContent.width   // 520
         case .image:  return 460
         case .projectCapabilityManager: return 380
-        case .projectCapabilitySkillDetail: return 520
+        case .projectCapabilitySkillDetail, .projectCapabilityMCPDetail: return 520
         }
     }
 
     private var showsColumnHeader: Bool {
         switch column.kind {
         case .list, .projectCapabilityManager: return true
-        case .detail, .image, .projectCapabilitySkillDetail: return false
+        case .detail, .image, .projectCapabilitySkillDetail, .projectCapabilityMCPDetail: return false
         }
     }
 
@@ -85,7 +85,7 @@ struct ColumnPaneView: View {
             columnHeader(glyph: glyph, title: title, subtitle: subtitle)
         case .projectCapabilityManager:
             columnHeader(glyph: "shippingbox.fill", title: "项目能力", subtitle: "Skills / MCP / Profiles")
-        case .detail, .image, .projectCapabilitySkillDetail:
+        case .detail, .image, .projectCapabilitySkillDetail, .projectCapabilityMCPDetail:
             EmptyView()
         }
     }
@@ -187,6 +187,8 @@ struct ColumnPaneView: View {
             )
         case .projectCapabilitySkillDetail(let model):
             ProjectCapabilitySkillDetailView(model: model)
+        case .projectCapabilityMCPDetail(let model):
+            ProjectCapabilityMCPDetailView(model: model)
         }
     }
 }

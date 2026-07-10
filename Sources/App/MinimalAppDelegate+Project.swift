@@ -279,6 +279,23 @@ extension MinimalAppDelegate {
                     card: refreshedCard
                 )
             },
+            onUpdateMCPServer: { pluginID, fileRef, serverName, value in
+                try ProjectCapabilityWriter().upsertMCPServer(
+                    project: project,
+                    pluginID: pluginID,
+                    fileRef: fileRef,
+                    serverName: serverName,
+                    value: value
+                )
+                guard let refreshedCatalog = try? ProjectCapabilityCatalogModel.build(for: project),
+                      let refreshedCard = try? Self.projectCapabilityCard(for: project, selectedTab: .mcp) else {
+                    return nil
+                }
+                return ProjectCapabilitySnapshot(
+                    catalog: refreshedCatalog,
+                    card: refreshedCard
+                )
+            },
             onRefreshCatalog: { catalog(for: project) },
             onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
             onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
@@ -290,7 +307,7 @@ extension MinimalAppDelegate {
         projectCapabilityCardWindowController?.hide()
         let project = ProjectStore.current(defaults: userDefaults)
         let model = projectCapabilityColumnState(for: project)
-        model.onOpenSkillDetail = { [weak self, weak model] rowID, detail in
+        let drillIn: (Int, ColumnKind) -> Void = { [weak self, weak model] rowID, detailKind in
             guard let self, let model,
                   let rootID = self.columnContainerWindowController.state.stack.columns
                     .first(where: { column in
@@ -302,8 +319,14 @@ extension MinimalAppDelegate {
             self.columnContainerWindowController.drillIn(
                 columnId: rootID,
                 rowId: rowID,
-                into: .projectCapabilitySkillDetail(detail)
+                into: detailKind
             )
+        }
+        model.onOpenSkillDetail = { rowID, detail in
+            drillIn(rowID, .projectCapabilitySkillDetail(detail))
+        }
+        model.onOpenMCPDetail = { rowID, detail in
+            drillIn(rowID, .projectCapabilityMCPDetail(detail))
         }
         columnContainerWindowController.openRoot(
             .projectCapabilityManager(model),
