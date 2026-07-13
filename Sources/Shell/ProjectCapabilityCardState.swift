@@ -1,6 +1,31 @@
 import Foundation
 
 public struct ProjectCapabilityCardState: Sendable, Equatable {
+    public struct AuditSummary: Sendable, Equatable {
+        public let lastValidationDescription: String?
+        public let lastSyncDescription: String?
+        public let warningCount: Int
+        public let errorCount: Int
+
+        public init(
+            lastValidationDescription: String? = nil,
+            lastSyncDescription: String? = nil,
+            warningCount: Int = 0,
+            errorCount: Int = 0
+        ) {
+            self.lastValidationDescription = lastValidationDescription
+            self.lastSyncDescription = lastSyncDescription
+            self.warningCount = warningCount
+            self.errorCount = errorCount
+        }
+
+        public var statusText: String {
+            if errorCount > 0 { return "\(errorCount) 个错误" }
+            if warningCount > 0 { return "\(warningCount) 个警告" }
+            return "doctor 正常"
+        }
+    }
+
     public struct VisibleRow: Sendable, Equatable {
         public let rowID: Int
         public let item: Item
@@ -68,10 +93,12 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
 
     public let selectedTab: Tab
     public let items: [Item]
+    public let auditSummary: AuditSummary?
 
-    public init(selectedTab: Tab, items: [Item]) {
+    public init(selectedTab: Tab, items: [Item], auditSummary: AuditSummary? = nil) {
         self.selectedTab = selectedTab
         self.items = items
+        self.auditSummary = auditSummary
     }
 
     public var visibleRows: [VisibleRow] {

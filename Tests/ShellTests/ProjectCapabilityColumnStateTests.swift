@@ -68,6 +68,25 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.syncMessages == ["Codex 配置已同步", "Claude Code 配置已同步", "opencode 配置已同步"])
     }
 
+    @Test("sync：同步后刷新 root 摘要但保留当前 tab")
+    func syncRefreshesCardSummaryPreservingTab() {
+        let refreshed = ProjectCapabilityCardState(
+            selectedTab: .skills,
+            items: [],
+            auditSummary: .init(lastSyncDescription: "1970-01-01T00:00:01Z")
+        )
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: []),
+            onRefreshCard: { refreshed },
+            onSyncCodex: { "Codex 配置已同步" }
+        )
+
+        model.syncCodex()
+
+        #expect(model.card.selectedTab == .mcp)
+        #expect(model.card.auditSummary?.lastSyncDescription == "1970-01-01T00:00:01Z")
+    }
+
     @Test("Skill detail：保存成功后刷新 root/detail 并保留 tab")
     func skillDetailSaveRefreshesRootAndDetail() throws {
         let original = capabilitySkill(body: "旧正文")

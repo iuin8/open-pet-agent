@@ -179,7 +179,11 @@ extension MinimalAppDelegate {
             let plans = try CodexProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
             try CodexProjectionMaterializer().apply(plans)
-            return operationCount == 0 ? "没有可同步的 Codex 配置" : "Codex 配置已同步"
+            return Self.syncResultMessage(
+                success: operationCount == 0 ? "没有可同步的 Codex 配置" : "Codex 配置已同步",
+                project: project,
+                plans: plans
+            )
         } catch {
             showProjectError(title: "同步 Codex 配置失败", error: error)
             return "同步 Codex 配置失败：\(error)"
@@ -194,7 +198,11 @@ extension MinimalAppDelegate {
             let plans = try ClaudeCodeProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
             try ClaudeCodeProjectionMaterializer().apply(plans)
-            return operationCount == 0 ? "没有可同步的 Claude Code 配置" : "Claude Code 配置已同步"
+            return Self.syncResultMessage(
+                success: operationCount == 0 ? "没有可同步的 Claude Code 配置" : "Claude Code 配置已同步",
+                project: project,
+                plans: plans
+            )
         } catch {
             showProjectError(title: "同步 Claude Code 配置失败", error: error)
             return "同步 Claude Code 配置失败：\(error)"
@@ -210,10 +218,27 @@ extension MinimalAppDelegate {
             let plans = try OpencodeProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
             try OpencodeProjectionMaterializer().apply(plans)
-            return operationCount == 0 ? "没有可同步的 opencode 配置" : "opencode 配置已同步"
+            return Self.syncResultMessage(
+                success: operationCount == 0 ? "没有可同步的 opencode 配置" : "opencode 配置已同步",
+                project: project,
+                plans: plans
+            )
         } catch {
             showProjectError(title: "同步 opencode 配置失败", error: error)
             return "同步 opencode 配置失败：\(error)"
+        }
+    }
+
+    private static func syncResultMessage(
+        success: String,
+        project: AgentProject,
+        plans: [ProjectionPlan]
+    ) -> String {
+        do {
+            try ProjectCapabilityAuditStore().recordSync(project: project, plans: plans)
+            return success
+        } catch {
+            return "\(success)；审计状态记录失败：\(error)"
         }
     }
 
@@ -326,6 +351,7 @@ extension MinimalAppDelegate {
                     )
                 )
             },
+            onRefreshCard: { card(for: project) },
             onRefreshCatalog: { catalog(for: project) },
             onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
             onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
@@ -382,9 +408,9 @@ extension MinimalAppDelegate {
             diagnostic.path.flatMap { pluginID(fromPath: $0) } ?? ""
         }
         let sections = [
-            Self.projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
-            Self.projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
-            Self.projectCapabilitySection(engineName: "Claude Code") { try ClaudeCodeProjectAdapter().plans(for: project) }
+            Self.projectCapabilitySection(engineName: "opencode", project: project) { try OpencodeProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Codex", project: project) { try CodexProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Claude Code", project: project) { try ClaudeCodeProjectAdapter().plans(for: project) }
         ]
         let targetsBySource = projectionTargetsBySource(sections)
         let mcpTargets = projectionConfigTargets(sections)
@@ -393,6 +419,10 @@ extension MinimalAppDelegate {
                 return [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: error, path: nil)]
             }
             return section.plans.flatMap(\.diagnostics).map { ProjectCapabilityPanelState.Diagnostic(
+                severity: $0.severity.rawValue,
+                message: $0.message,
+                path: $0.path
+            ) } + section.auditDiagnostics.map { ProjectCapabilityPanelState.Diagnostic(
                 severity: $0.severity.rawValue,
                 message: $0.message,
                 path: $0.path
@@ -407,7 +437,11 @@ extension MinimalAppDelegate {
                 mcpTargets: mcpTargets
             )
         }
-        return ProjectCapabilityCardState(selectedTab: selectedTab, items: items)
+        return ProjectCapabilityCardState(
+            selectedTab: selectedTab,
+            items: items,
+            auditSummary: projectCapabilityAuditSummary(project: project, sections: sections)
+        )
     }
 
     static func createProjectCapabilityPlugin(project: AgentProject, pluginID: String, name: String) throws {
@@ -694,6 +728,21 @@ extension MinimalAppDelegate {
         return skillItems + mcpItems
     }
 
+    private static func projectCapabilityAuditSummary(
+        project: AgentProject,
+        sections: [ProjectCapabilityDiagnosticSection]
+    ) -> ProjectCapabilityCardState.AuditSummary? {
+        let audit = try? ProjectCapabilityAuditStore().load(project: project)
+        let diagnostics = sections.flatMap(\.auditDiagnostics)
+        guard audit != nil || !diagnostics.isEmpty else { return nil }
+        return ProjectCapabilityCardState.AuditSummary(
+            lastValidationDescription: audit?.lastValidationDescription,
+            lastSyncDescription: audit?.lastSyncDescription,
+            warningCount: diagnostics.filter { $0.severity == .warning }.count,
+            errorCount: diagnostics.filter { $0.severity == .error }.count
+        )
+    }
+
     private static func capabilityStatus(enabled: Bool, diagnostics: [ProjectCapabilityPanelState.Diagnostic]) -> ProjectCapabilityCardState.Item.Status {
         if diagnostics.contains(where: { $0.severity == "error" }) { return .failed }
         if diagnostics.contains(where: { $0.severity == "warning" }) { return .warning }
@@ -702,21 +751,36 @@ extension MinimalAppDelegate {
 
     /// 只读汇总当前项目三路 projection dry-run:targets / ownership / diagnostics / plan 构建失败原因。
     @MainActor func projectCapabilityPanelForCurrentProject() -> ProjectCapabilityPanelState {
-        let project = ProjectStore.current(defaults: userDefaults)
+        projectCapabilityPanel(for: ProjectStore.current(defaults: userDefaults))
+    }
+
+    @MainActor func projectCapabilityPanel(for project: AgentProject) -> ProjectCapabilityPanelState {
         let sections = [
-            Self.projectCapabilitySection(engineName: "opencode") { try OpencodeProjectAdapter().plans(for: project) },
-            Self.projectCapabilitySection(engineName: "Codex") { try CodexProjectAdapter().plans(for: project) },
-            Self.projectCapabilitySection(engineName: "Claude Code") { try ClaudeCodeProjectAdapter().plans(for: project) }
+            Self.projectCapabilitySection(engineName: "opencode", project: project) { try OpencodeProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Codex", project: project) { try CodexProjectAdapter().plans(for: project) },
+            Self.projectCapabilitySection(engineName: "Claude Code", project: project) { try ClaudeCodeProjectAdapter().plans(for: project) }
         ]
+        let diagnostics = sections.flatMap(\.auditDiagnostics) + sections.flatMap { $0.plans.flatMap(\.diagnostics) }
+        try? ProjectCapabilityAuditStore().recordValidation(project: project, diagnostics: diagnostics)
         return ProjectCapabilityPanelState(
             fullText: ProjectCapabilityDiagnostics.render(sections),
             sections: sections.map(projectCapabilityPanelSection)
         )
     }
 
-    private static func projectCapabilitySection(engineName: String, load: () throws -> [ProjectionPlan]) -> ProjectCapabilityDiagnosticSection {
+    private static func projectCapabilitySection(
+        engineName: String,
+        project: AgentProject,
+        load: () throws -> [ProjectionPlan]
+    ) -> ProjectCapabilityDiagnosticSection {
         do {
-            return ProjectCapabilityDiagnosticSection(engineName: engineName, plans: try load())
+            let plans = try load()
+            let auditDiagnostics = try ProjectCapabilityAuditor().diagnostics(project: project, plans: plans)
+            return ProjectCapabilityDiagnosticSection(
+                engineName: engineName,
+                plans: plans,
+                auditDiagnostics: auditDiagnostics
+            )
         } catch {
             return ProjectCapabilityDiagnosticSection(engineName: engineName, plans: [], errorDescription: "\(error)")
         }
@@ -733,7 +797,7 @@ extension MinimalAppDelegate {
             )
         }
         let operations = section.plans.flatMap(\.operations)
-        let diagnostics = section.plans.flatMap(\.diagnostics)
+        let diagnostics = section.plans.flatMap(\.diagnostics) + section.auditDiagnostics
         let status: ProjectCapabilityPanelState.Section.Status
         if operations.isEmpty && diagnostics.isEmpty { status = .empty }
         else if diagnostics.contains(where: { $0.severity == .error }) { status = .failed }

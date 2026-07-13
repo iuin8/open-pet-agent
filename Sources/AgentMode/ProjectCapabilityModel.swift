@@ -89,11 +89,44 @@ public struct CapabilityTargetSummary: Sendable, Equatable {
     }
 }
 
-public struct CapabilityAuditState: Sendable, Equatable {
-    public let lastValidationDescription: String?
+public struct CapabilityAuditState: Sendable, Equatable, Codable {
+    public struct GeneratedTarget: Sendable, Equatable, Codable {
+        public let engineID: String
+        public let pluginID: String
+        public let path: String
+        public let hash: String
+        public let recordedAtDescription: String
 
-    public init(lastValidationDescription: String? = nil) {
+        public init(
+            engineID: String,
+            pluginID: String,
+            path: String,
+            hash: String,
+            recordedAtDescription: String
+        ) {
+            self.engineID = engineID
+            self.pluginID = pluginID
+            self.path = path
+            self.hash = hash
+            self.recordedAtDescription = recordedAtDescription
+        }
+    }
+
+    public let lastValidationDescription: String?
+    public let lastSyncDescription: String?
+    public let generatedTargets: [GeneratedTarget]
+    public let acknowledgedDiagnostics: Set<String>
+
+    public init(
+        lastValidationDescription: String? = nil,
+        lastSyncDescription: String? = nil,
+        generatedTargets: [GeneratedTarget] = [],
+        acknowledgedDiagnostics: Set<String> = []
+    ) {
         self.lastValidationDescription = lastValidationDescription
+        self.lastSyncDescription = lastSyncDescription
+        self.generatedTargets = generatedTargets
+        self.acknowledgedDiagnostics = acknowledgedDiagnostics
     }
 }
 

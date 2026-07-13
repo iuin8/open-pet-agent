@@ -30,6 +30,7 @@ struct ProjectCapabilityManagerView: View {
             if showsHeader { header }
             authoringControls
             syncControls
+            if let auditSummary = state.auditSummary { auditStatus(auditSummary) }
             if !syncMessages.isEmpty { syncMessageList }
             tabBar
             if state.visibleItems.isEmpty {
@@ -126,6 +127,22 @@ struct ProjectCapabilityManagerView: View {
         .buttonStyle(.plain)
         .font(.system(size: 9, weight: .semibold, design: .rounded))
         .foregroundStyle(ChatCardTheme.accent)
+    }
+
+    private func auditStatus(_ summary: ProjectCapabilityCardState.AuditSummary) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: summary.errorCount > 0 ? "exclamationmark.triangle.fill" : summary.warningCount > 0 ? "exclamationmark.circle.fill" : "checkmark.seal.fill")
+            Text(summary.statusText)
+            if let lastSync = summary.lastSyncDescription {
+                Text("同步 \(lastSync)")
+                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.45))
+            }
+        }
+        .font(.system(size: 9, weight: .medium, design: .rounded))
+        .foregroundStyle(summary.errorCount > 0 ? Color.red.opacity(0.75) : summary.warningCount > 0 ? ChatCardTheme.accent : ChatCardTheme.activeGreen)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.45)))
     }
 
     private var syncMessageList: some View {

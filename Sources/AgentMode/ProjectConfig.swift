@@ -49,6 +49,11 @@ public enum ProjectConfig {
         project.rootURL.appendingPathComponent(".open-pet-agent/plugins", isDirectory: true)
     }
 
+    /// 指定项目 local-only 能力状态路径。只记录 PetAgent 自己的审计元数据,不投影给外部 agent。
+    public static func capabilityAuditStateURL(for project: AgentProject) -> URL {
+        project.rootURL.appendingPathComponent(".open-pet-agent/state/capabilities.local.json", isDirectory: false)
+    }
+
     /// 指定项目某个 plugin bundle 路径:`.open-pet-agent/plugins/<plugin-id>/`。
     public static func pluginDirectory(for project: AgentProject, pluginID: String) -> URL {
         pluginRoot(for: project).appendingPathComponent(pluginID, isDirectory: true)

@@ -4,11 +4,18 @@ public struct ProjectCapabilityDiagnosticSection: Sendable, Equatable {
     public let engineName: String
     public let plans: [ProjectionPlan]
     public let errorDescription: String?
+    public let auditDiagnostics: [ProjectConfigDiagnostic]
 
-    public init(engineName: String, plans: [ProjectionPlan], errorDescription: String? = nil) {
+    public init(
+        engineName: String,
+        plans: [ProjectionPlan],
+        errorDescription: String? = nil,
+        auditDiagnostics: [ProjectConfigDiagnostic] = []
+    ) {
         self.engineName = engineName
         self.plans = plans
         self.errorDescription = errorDescription
+        self.auditDiagnostics = auditDiagnostics
     }
 }
 
@@ -32,7 +39,7 @@ public enum ProjectCapabilityDiagnostics {
             lines.append(contentsOf: operations.map(render))
         }
 
-        let diagnostics = section.plans.flatMap(\.diagnostics)
+        let diagnostics = section.plans.flatMap(\.diagnostics) + section.auditDiagnostics
         if !diagnostics.isEmpty {
             lines.append("诊断:")
             lines.append(contentsOf: diagnostics.map { diagnostic in

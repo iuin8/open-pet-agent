@@ -32,6 +32,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)?
     private let onScanImports: (() -> ProjectCapabilityImportScan)?
     private let onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)?
+    private let onRefreshCard: (() -> ProjectCapabilityCardState)?
     private let onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)?
     private let onSyncCodex: (() -> String)?
     private let onSyncClaudeCode: (() -> String)?
@@ -49,6 +50,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)? = nil,
         onScanImports: (() -> ProjectCapabilityImportScan)? = nil,
         onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)? = nil,
+        onRefreshCard: (() -> ProjectCapabilityCardState)? = nil,
         onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)? = nil,
         onSyncCodex: (() -> String)? = nil,
         onSyncClaudeCode: (() -> String)? = nil,
@@ -65,6 +67,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onUpdateMCPServer = onUpdateMCPServer
         self.onScanImports = onScanImports
         self.onImportCandidates = onImportCandidates
+        self.onRefreshCard = onRefreshCard
         self.onRefreshCatalog = onRefreshCatalog
         self.onSyncCodex = onSyncCodex
         self.onSyncClaudeCode = onSyncClaudeCode
@@ -72,7 +75,11 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     }
 
     public func selectTab(_ tab: ProjectCapabilityCardState.Tab) {
-        card = ProjectCapabilityCardState(selectedTab: tab, items: card.items)
+        card = ProjectCapabilityCardState(
+            selectedTab: tab,
+            items: card.items,
+            auditSummary: card.auditSummary
+        )
     }
 
     public func setPluginEnabled(pluginID: String, enabled: Bool) {
@@ -186,16 +193,24 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     public func syncCodex() {
         guard let onSyncCodex else { return }
         syncMessages.append(onSyncCodex())
+        refreshCardAfterSync()
     }
 
     public func syncClaudeCode() {
         guard let onSyncClaudeCode else { return }
         syncMessages.append(onSyncClaudeCode())
+        refreshCardAfterSync()
     }
 
     public func syncOpencode() {
         guard let onSyncOpencode else { return }
         syncMessages.append(onSyncOpencode())
+        refreshCardAfterSync()
+    }
+
+    private func refreshCardAfterSync() {
+        guard let refreshed = onRefreshCard?() else { return }
+        refreshPreservingTab(refreshed)
     }
 
     private func applyImport(_ outcome: ProjectCapabilityImportOutcome) {
@@ -218,18 +233,27 @@ public final class ProjectCapabilityColumnState: ObservableObject {
             let retained = card.items.filter { $0.pluginID != plugin.id }
             card = ProjectCapabilityCardState(
                 selectedTab: card.selectedTab,
-                items: retained + items
+                items: retained + items,
+                auditSummary: card.auditSummary
             )
         }
     }
 
     private func apply(_ snapshot: ProjectCapabilitySnapshot) {
         catalog = snapshot.catalog
-        card = ProjectCapabilityCardState(selectedTab: card.selectedTab, items: snapshot.card.items)
+        card = ProjectCapabilityCardState(
+            selectedTab: card.selectedTab,
+            items: snapshot.card.items,
+            auditSummary: snapshot.card.auditSummary
+        )
     }
 
     private func refreshPreservingTab(_ refreshed: ProjectCapabilityCardState) {
-        card = ProjectCapabilityCardState(selectedTab: card.selectedTab, items: refreshed.items)
+        card = ProjectCapabilityCardState(
+            selectedTab: card.selectedTab,
+            items: refreshed.items,
+            auditSummary: refreshed.auditSummary
+        )
         if let refreshedCatalog = onRefreshCatalog?() { catalog = refreshedCatalog }
     }
 
