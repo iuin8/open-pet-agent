@@ -1,6 +1,7 @@
 import Foundation
 
 public struct OpencodeProjectionMaterializer: Sendable {
+    private static let fileMarker = ".open-pet-agent-generated.opencode"
     private static let directoryMarker = ".open-pet-agent-generated"
 
     public init() {}
@@ -20,9 +21,27 @@ public struct OpencodeProjectionMaterializer: Sendable {
 
     private func apply(_ operation: ProjectionOperation) throws {
         switch operation {
+        case .writeFile(let contents, let destination):
+            try ensureSafeDestination(destination)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                guard isGeneratedFile(destination) else {
+                    throw OpencodeProjectionMaterializerError.unownedDestination(destination)
+                }
+            }
+            try FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try contents.write(to: destination, atomically: true, encoding: .utf8)
+            try "generated".write(to: fileMarkerURL(for: destination), atomically: true, encoding: .utf8)
+
         case .copyDirectory(let source, let destination):
             try replaceGeneratedDirectory(destination) {
-                try copyConfigData(from: source, to: destination)
+                if opencodeMaterializedRoot(for: destination) != nil {
+                    try copyConfigData(from: source, to: destination)
+                } else {
+                    try copyDirectory(from: source, to: destination)
+                }
             }
 
         case .symlinkDirectory(_, let destination):
@@ -33,9 +52,6 @@ public struct OpencodeProjectionMaterializer: Sendable {
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
             }
-
-        case .writeFile(_, let destination):
-            throw OpencodeProjectionMaterializerError.destinationEscapesProject(destination)
         }
     }
 
@@ -77,6 +93,16 @@ public struct OpencodeProjectionMaterializer: Sendable {
         }
     }
 
+    private func copyDirectory(from source: URL, to destination: URL) throws {
+        let lexicalSourceRoot = source.standardizedFileURL
+        let sourceRoot = lexicalSourceRoot.resolvingSymlinksInPath()
+        guard ProjectionTrust.isPath(sourceRoot, inside: lexicalSourceRoot) else {
+            throw OpencodeProjectionMaterializerError.sourceEscapesPlugin(source)
+        }
+        try ensureSourceTree(source, staysInside: sourceRoot)
+        try FileManager.default.copyItem(at: source, to: destination)
+    }
+
     private func ensureSourceTree(_ sourceItem: URL, staysInside sourceRoot: URL) throws {
         try ensureSource(sourceItem, staysInside: sourceRoot)
         guard let enumerator = FileManager.default.enumerator(at: sourceItem, includingPropertiesForKeys: [.isSymbolicLinkKey]) else {
@@ -101,21 +127,20 @@ public struct OpencodeProjectionMaterializer: Sendable {
         FileManager.default.fileExists(atPath: destination.appendingPathComponent(Self.directoryMarker).path)
     }
 
+    private func isGeneratedFile(_ destination: URL) -> Bool {
+        FileManager.default.fileExists(atPath: fileMarkerURL(for: destination).path)
+    }
+
+    private func fileMarkerURL(for destination: URL) -> URL {
+        destination.deletingLastPathComponent().appendingPathComponent(Self.fileMarker)
+    }
+
     private func ensureSafeDestination(_ destination: URL) throws {
-        guard let root = opencodeMaterializedRoot(for: destination) else {
+        guard let root = opencodeProjectRoot(for: destination) else {
             throw OpencodeProjectionMaterializerError.destinationEscapesProject(destination)
         }
-        let lexicalProjectRoot = root.projectRoot.standardizedFileURL
-        let resolvedProjectRoot = lexicalProjectRoot.resolvingSymlinksInPath()
-        try ensureExistingAncestorsStayInsideProject(
-            for: destination,
-            lexicalProjectRoot: lexicalProjectRoot,
-            resolvedProjectRoot: resolvedProjectRoot
-        )
-        let resolvedRoot = root.materializedRoot.standardizedFileURL.resolvingSymlinksInPath()
-        guard ProjectionTrust.isPath(resolvedRoot, inside: resolvedProjectRoot) else {
-            throw OpencodeProjectionMaterializerError.destinationEscapesProject(destination)
-        }
+        let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
+        try ensureExistingAncestorsStayInsideProject(for: destination, projectRoot: root, resolvedProjectRoot: resolvedRoot)
 
         let parent = destination.deletingLastPathComponent()
         if FileManager.default.fileExists(atPath: parent.path) {
@@ -139,9 +164,10 @@ public struct OpencodeProjectionMaterializer: Sendable {
 
     private func ensureExistingAncestorsStayInsideProject(
         for destination: URL,
-        lexicalProjectRoot: URL,
+        projectRoot: URL,
         resolvedProjectRoot: URL
     ) throws {
+        let lexicalProjectRoot = projectRoot.standardizedFileURL
         var current = destination.deletingLastPathComponent().standardizedFileURL
         while ProjectionTrust.isPath(current, inside: lexicalProjectRoot), current.path != lexicalProjectRoot.path {
             if let target = try symlinkTarget(for: current), !ProjectionTrust.isPath(target, inside: resolvedProjectRoot) {
@@ -164,6 +190,20 @@ public struct OpencodeProjectionMaterializer: Sendable {
             ? URL(fileURLWithPath: target)
             : url.deletingLastPathComponent().appendingPathComponent(target)
         return targetURL.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    private func opencodeProjectRoot(for destination: URL) -> URL? {
+        if destination.lastPathComponent == "opencode.json",
+           destination.deletingLastPathComponent().lastPathComponent != ".open-pet-agent" {
+            return destination.deletingLastPathComponent()
+        }
+
+        let skills = destination.deletingLastPathComponent()
+        let opencode = skills.deletingLastPathComponent()
+        if skills.lastPathComponent == "skills", opencode.lastPathComponent == ".opencode" {
+            return opencode.deletingLastPathComponent()
+        }
+        return opencodeMaterializedRoot(for: destination)?.projectRoot
     }
 
     private func opencodeMaterializedRoot(for destination: URL) -> (projectRoot: URL, materializedRoot: URL)? {

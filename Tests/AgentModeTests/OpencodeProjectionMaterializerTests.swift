@@ -219,10 +219,120 @@ final class OpencodeProjectionMaterializerTests: XCTestCase {
         }
     }
 
+    func testApplyWritesRootOpencodeConfigAndCopiesNativeSkills() throws {
+        let configURL = project.rootURL.appendingPathComponent("opencode.json")
+        let skillSource = try makeSourceSkill()
+        let skillDestination = project.rootURL.appendingPathComponent(".opencode/skills/dev-toolkit-code-review", isDirectory: true)
+        let plan = ProjectionPlan(
+            projectID: project.id,
+            engineID: AgentEngineKind.openCode.rawValue,
+            pluginID: "opencode",
+            operations: [
+                .writeFile(contents: #"{"mcp":{"filesystem":{"command":["npx"]}}}"#, destination: configURL),
+                .copyDirectory(source: skillSource, destination: skillDestination)
+            ]
+        )
+
+        try OpencodeProjectionMaterializer().apply([plan])
+
+        let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contentsOf: configURL))
+        XCTAssertNotNil(config.objectValue?["mcp"]?.objectValue?["filesystem"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: skillDestination.appendingPathComponent("SKILL.md").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: skillDestination.appendingPathComponent(".open-pet-agent-generated").path))
+    }
+
+    func testApplyRejectsExistingUserRootOpencodeConfig() throws {
+        let configURL = project.rootURL.appendingPathComponent("opencode.json")
+        try FileManager.default.createDirectory(at: project.rootURL, withIntermediateDirectories: true)
+        try #"{"model":"user/model"}"#.write(to: configURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try OpencodeProjectionMaterializer().apply([
+            ProjectionPlan(
+                projectID: project.id,
+                engineID: AgentEngineKind.openCode.rawValue,
+                pluginID: "opencode",
+                operations: [.writeFile(contents: #"{"mcp":{}}"#, destination: configURL)]
+            )
+        ])) { error in
+            XCTAssertEqual(error as? OpencodeProjectionMaterializerError, .unownedDestination(configURL))
+            XCTAssertEqual(try? String(contentsOf: configURL, encoding: .utf8), #"{"model":"user/model"}"#)
+        }
+    }
+
+    func testApplyRejectsExistingUserNativeSkillDirectory() throws {
+        let skillSource = try makeSourceSkill()
+        let destination = project.rootURL.appendingPathComponent(".opencode/skills/dev-toolkit-code-review", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try "user".write(to: destination.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try OpencodeProjectionMaterializer().apply([
+            ProjectionPlan(
+                projectID: project.id,
+                engineID: AgentEngineKind.openCode.rawValue,
+                pluginID: "opencode",
+                operations: [.copyDirectory(source: skillSource, destination: destination)]
+            )
+        ])) { error in
+            XCTAssertEqual(error as? OpencodeProjectionMaterializerError, .unownedDestination(destination))
+        }
+    }
+
+    func testApplyRejectsSymlinkedNativeSkillsDirectoryOutsideProject() throws {
+        let skillSource = try makeSourceSkill()
+        let opencodeDir = project.rootURL.appendingPathComponent(".opencode", isDirectory: true)
+        let skillsDir = opencodeDir.appendingPathComponent("skills", isDirectory: true)
+        let externalSkills = tmpHome.appendingPathComponent("external-opencode-skills", isDirectory: true)
+        try FileManager.default.createDirectory(at: opencodeDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: externalSkills, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: skillsDir, withDestinationURL: externalSkills)
+        let destination = skillsDir.appendingPathComponent("dev-toolkit-code-review", isDirectory: true)
+
+        XCTAssertThrowsError(try OpencodeProjectionMaterializer().apply([
+            ProjectionPlan(
+                projectID: project.id,
+                engineID: AgentEngineKind.openCode.rawValue,
+                pluginID: "opencode",
+                operations: [.copyDirectory(source: skillSource, destination: destination)]
+            )
+        ])) { error in
+            XCTAssertEqual(error as? OpencodeProjectionMaterializerError, .destinationEscapesProject(destination))
+        }
+    }
+
+    func testApplyRejectsSymlinkedRootOpencodeJSONOutsideProject() throws {
+        let configURL = project.rootURL.appendingPathComponent("opencode.json")
+        let externalConfig = tmpHome.appendingPathComponent("external-opencode.json")
+        try FileManager.default.createDirectory(at: project.rootURL, withIntermediateDirectories: true)
+        try "{}".write(to: externalConfig, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: configURL, withDestinationURL: externalConfig)
+
+        XCTAssertThrowsError(try OpencodeProjectionMaterializer().apply([
+            ProjectionPlan(
+                projectID: project.id,
+                engineID: AgentEngineKind.openCode.rawValue,
+                pluginID: "opencode",
+                operations: [.writeFile(contents: #"{"mcp":{}}"#, destination: configURL)]
+            )
+        ])) { error in
+            XCTAssertEqual(error as? OpencodeProjectionMaterializerError, .destinationEscapesProject(configURL))
+        }
+    }
+
     private func makeSourcePlugin(id: String, contents: String = "source") throws -> URL {
         let source = tmpHome.appendingPathComponent("source-\(id)", isDirectory: true)
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         try contents.write(to: source.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
+        return source
+    }
+
+    private func makeSourceSkill() throws -> URL {
+        let source = tmpHome.appendingPathComponent("source-skill", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "---\nname: code-review\ndescription: Review code\n---\n".write(
+            to: source.appendingPathComponent("SKILL.md"),
+            atomically: true,
+            encoding: .utf8
+        )
         return source
     }
 }

@@ -9,23 +9,45 @@ public struct OpencodeProjectAdapter: Sendable {
     public func plans(for project: AgentProject) throws -> [ProjectionPlan] {
         let catalog = ProjectPluginCatalog()
         let plugins = try catalog.listPlugins(for: project)
+        var operations: [ProjectionOperation] = []
         var diagnostics: [ProjectConfigDiagnostic] = []
+        var mcpServers: [(name: String, value: ACPJSON)] = []
         var seenMCPServers = Set<String>()
 
         for plugin in plugins where supportsOpencodeProjection(plugin) {
             diagnostics.append(contentsOf: catalog.validate(plugin))
+
             if plugin.capabilities.contains(.mcp) {
-                try collectMCPServers(from: plugin, seenNames: &seenMCPServers).forEach { _ in }
+                for ref in plugin.mcp {
+                    let (name, value) = try resolveMCPRef(ref, plugin: plugin)
+                    guard seenMCPServers.insert(name).inserted else {
+                        throw OpencodeProjectAdapterError.duplicateMCPServer(name)
+                    }
+                    mcpServers.append((name: name, value: value))
+                }
             }
-            diagnostics.append(Self.nativeProjectionDiagnostic(plugin))
+
+            if plugin.capabilities.contains(.skills) {
+                for ref in plugin.skills {
+                    let (source, destination) = try resolveSkillRef(ref, plugin: plugin, project: project)
+                    operations.append(.copyDirectory(source: source, destination: destination))
+                }
+            }
         }
 
-        guard !diagnostics.isEmpty else { return [] }
+        if !mcpServers.isEmpty {
+            operations.insert(.writeFile(
+                contents: try renderOpencodeConfig(mcpServers),
+                destination: project.rootURL.appendingPathComponent("opencode.json", isDirectory: false)
+            ), at: 0)
+        }
+
+        guard !operations.isEmpty || !diagnostics.isEmpty else { return [] }
         return [ProjectionPlan(
             projectID: project.id,
             engineID: AgentEngineKind.openCode.rawValue,
             pluginID: Self.planID,
-            operations: [],
+            operations: operations,
             diagnostics: diagnostics
         )]
     }
@@ -41,21 +63,13 @@ public struct OpencodeProjectAdapter: Sendable {
     private func supportsOpencodeProjection(_ plugin: ProjectPluginDescriptor) -> Bool {
         guard plugin.enabled else { return false }
         for engineID in Self.engineIDs {
-            if let policy = plugin.enginePolicies[engineID] { return policy == .pluginDir }
+            if let policy = plugin.enginePolicies[engineID] { return policy != .disabled }
         }
         return false
     }
 
     private func supportsOpencodeMCP(_ plugin: ProjectPluginDescriptor) -> Bool {
         supportsOpencodeProjection(plugin) && plugin.capabilities.contains(.mcp)
-    }
-
-    private static func nativeProjectionDiagnostic(_ plugin: ProjectPluginDescriptor) -> ProjectConfigDiagnostic {
-        ProjectConfigDiagnostic(
-            severity: .warning,
-            message: "opencode native projection targets verified as root opencode.json, .opencode/skills and .opencode/plugins; OpenPetAgent keeps canonical plugin data local until native target materialization is explicitly designed.",
-            path: plugin.rootURL.path
-        )
     }
 
     private func collectMCPServers(from plugin: ProjectPluginDescriptor, seenNames: inout Set<String>) throws -> [ACPJSON] {
@@ -91,6 +105,42 @@ public struct OpencodeProjectAdapter: Sendable {
         return (serverName, server)
     }
 
+    private func resolveSkillRef(_ ref: String, plugin: ProjectPluginDescriptor, project: AgentProject) throws -> (URL, URL) {
+        let rawSource = plugin.rootURL.appendingPathComponent(ref, isDirectory: true)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: rawSource.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw OpencodeProjectAdapterError.missingSkill(ref)
+        }
+
+        let source = try containedURL(
+            ref: ref,
+            subdirectory: "skills",
+            plugin: plugin,
+            isDirectory: true,
+            escape: { OpencodeProjectAdapterError.skillRefEscapesPlugin(ref) }
+        )
+        let skillName = source.lastPathComponent
+        let destination = project.rootURL
+            .appendingPathComponent(".opencode", isDirectory: true)
+            .appendingPathComponent("skills", isDirectory: true)
+            .appendingPathComponent("\(plugin.id)-\(skillName)", isDirectory: true)
+        return (source, destination)
+    }
+
+    private func renderOpencodeConfig(_ servers: [(name: String, value: ACPJSON)]) throws -> String {
+        var object: [String: ACPJSON] = [:]
+        for server in servers.sorted(by: { $0.name < $1.name }) {
+            guard server.value.objectValue != nil else {
+                throw OpencodeProjectAdapterError.invalidMCPServer(server.name)
+            }
+            object[server.name] = server.value
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(ACPJSON.object(["mcp": .object(object)]))
+        return String(decoding: data, as: UTF8.self)
+    }
+
     private func containedURL(
         ref: String,
         subdirectory: String,
@@ -122,6 +172,8 @@ public enum OpencodeProjectAdapterError: Error, Equatable, CustomStringConvertib
     case invalidMCPServer(String)
     case duplicateMCPServer(String)
     case mcpRefEscapesPlugin(String)
+    case skillRefEscapesPlugin(String)
+    case missingSkill(String)
 
     public var description: String {
         switch self {
@@ -130,6 +182,8 @@ public enum OpencodeProjectAdapterError: Error, Equatable, CustomStringConvertib
         case .invalidMCPServer(let name): return "无效 MCP server: \(name)"
         case .duplicateMCPServer(let name): return "重复 MCP server 投影: \(name)"
         case .mcpRefEscapesPlugin(let ref): return "MCP 引用越界: \(ref)"
+        case .skillRefEscapesPlugin(let ref): return "opencode skill 引用越界: \(ref)"
+        case .missingSkill(let ref): return "找不到 opencode skill: \(ref)"
         }
     }
 }

@@ -209,9 +209,8 @@ extension MinimalAppDelegate {
         }
     }
 
-    /// 显式刷新当前项目的 opencode projection 诊断。只响应用户点击,不在聊天时自动写项目文件。
-    /// opencode 原生读取 root `opencode.json` / `.opencode/skills` / `.opencode/plugins`；
-    /// native materializer 未设计前不把 canonical plugin 写到隐藏 materialized 目录。
+    /// 显式刷新当前项目的 opencode native projection。只响应用户点击,不在聊天时自动写项目文件。
+    /// opencode 原生读取 root `opencode.json` / `.opencode/skills`；`.opencode/plugins` executable runtime 后置。
     @MainActor func syncOpencodeProjectionForCurrentProject(project: AgentProject? = nil) -> String {
         let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
@@ -645,7 +644,10 @@ extension MinimalAppDelegate {
                         isDirectory: true
                     ).path
                 case .opencode:
-                    return nil
+                    return project.rootURL.appendingPathComponent(
+                        ".opencode/skills/\(plugin.id)-\(skill.name)",
+                        isDirectory: true
+                    ).path
                 }
             }.sorted()
             return ProjectCapabilityCardState.Item(
@@ -677,7 +679,10 @@ extension MinimalAppDelegate {
                         isDirectory: false
                     ).path
                 case .opencode:
-                    return nil
+                    return project.rootURL.appendingPathComponent(
+                        "opencode.json",
+                        isDirectory: false
+                    ).path
                 }
             }.sorted()
             return ProjectCapabilityCardState.Item(

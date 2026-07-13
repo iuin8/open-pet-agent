@@ -70,18 +70,33 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         }
     }
 
-    func testPlansReturnDiagnosticButNoOperationsForPluginDirPolicy() throws {
-        try writePlugin(id: "dev-toolkit", enabled: true)
+    func testPlansIncludeNativeOpencodeConfigAndSkillTargets() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, capabilities: ["mcp", "skills"], skills: ["skills/code-review"])
 
         let plans = try OpencodeProjectAdapter().plans(for: project)
 
         XCTAssertEqual(plans.count, 1)
         XCTAssertEqual(plans[0].engineID, AgentEngineKind.openCode.rawValue)
-        XCTAssertEqual(plans[0].operations, [])
-        XCTAssertTrue(plans[0].diagnostics.contains { diagnostic in
-            diagnostic.severity == .warning
-                && diagnostic.message.contains("opencode native")
-                && diagnostic.message.contains(".opencode/skills")
+        XCTAssertTrue(plans[0].operations.contains { operation in
+            if case let .writeFile(contents, destination) = operation {
+                return destination.path == project.rootURL.appendingPathComponent("opencode.json").path
+                    && contents.contains("\"mcp\"")
+                    && contents.contains("\"filesystem\"")
+            }
+            return false
+        })
+        XCTAssertTrue(plans[0].operations.contains { operation in
+            if case let .copyDirectory(source, destination) = operation {
+                return source.path.hasSuffix("skills/code-review")
+                    && destination.path == project.rootURL.appendingPathComponent(".opencode/skills/dev-toolkit-code-review", isDirectory: true).path
+            }
+            return false
+        })
+        XCTAssertFalse(plans[0].operations.contains { operation in
+            switch operation {
+            case .writeFile(_, let destination), .copyDirectory(_, let destination), .symlinkDirectory(_, let destination), .removeGenerated(let destination):
+                return destination.path.contains(".materialized/openCode")
+            }
         })
     }
 
@@ -102,12 +117,13 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         XCTAssertEqual(plans, [])
     }
 
-    func testPlansSkipSkillsAndMCPFilesPolicyUntilNativeTargetsAreVerified() throws {
+    func testPlansAcceptSkillsAndMCPFilesPolicy() throws {
         try writePlugin(id: "dev-toolkit", enabled: true, enginesJSON: #"{ "openCode": { "enabled": true, "projection": "skills-and-mcp-files" } }"#)
 
         let plans = try OpencodeProjectAdapter().plans(for: project)
 
-        XCTAssertEqual(plans, [])
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertFalse(plans[0].operations.isEmpty)
     }
 
     func testPlansRejectSymlinkedMCPRootOutsidePlugin() throws {
@@ -124,17 +140,54 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         }
     }
 
+    func testPlansRejectMissingSkillDirectory() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, capabilities: ["skills"], mcpRefs: [], skills: ["skills/missing"])
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .missingSkill("skills/missing"))
+        }
+    }
+
+    func testPlansRejectSkillRefOutsideSkillsDirectory() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, capabilities: ["skills"], mcpRefs: [], skills: ["skills/../outside"])
+        let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+        try FileManager.default.createDirectory(at: pluginRoot.appendingPathComponent("outside", isDirectory: true), withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .skillRefEscapesPlugin("skills/../outside"))
+        }
+    }
+
+    func testPlansRejectSymlinkedSkillsRootOutsidePlugin() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, capabilities: ["skills"], mcpRefs: [], skills: ["skills/code-review"])
+        let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+        try FileManager.default.removeItem(at: pluginRoot.appendingPathComponent("skills", isDirectory: true))
+        let externalSkills = tmpHome.appendingPathComponent("external-skills", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalSkills.appendingPathComponent("code-review", isDirectory: true), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: pluginRoot.appendingPathComponent("skills", isDirectory: true), withDestinationURL: externalSkills)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .skillRefEscapesPlugin("skills/code-review"))
+        }
+    }
+
     private func writePlugin(
         id: String,
         enabled: Bool,
+        capabilities: [String] = ["mcp"],
         mcpRefs: [String] = ["mcp/servers.json#filesystem"],
+        skills: [String] = [],
         enginesJSON: String = #"{ "openCode": { "enabled": true, "projection": "plugin-dir" } }"#
     ) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("skills/code-review", isDirectory: true), withIntermediateDirectories: true)
+        try "---\nname: code-review\ndescription: Review code\n---\n".write(to: dir.appendingPathComponent("skills/code-review/SKILL.md"), atomically: true, encoding: .utf8)
+        let capabilityJSON = capabilities.map { "\"\($0)\"" }.joined(separator: ", ")
         let refsJSON = mcpRefs.map { "\"\($0)\"" }.joined(separator: ", ")
+        let skillsJSON = skills.map { "\"\($0)\"" }.joined(separator: ", ")
         try """
-        { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "enabled": \(enabled), "capabilities": ["mcp"], "mcp": [\(refsJSON)], "engines": \(enginesJSON) }
+        { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "enabled": \(enabled), "capabilities": [\(capabilityJSON)], "mcp": [\(refsJSON)], "skills": [\(skillsJSON)], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: dir.appendingPathComponent("plugin.json"), options: .atomic)
         try mcpServersJSON.data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
     }

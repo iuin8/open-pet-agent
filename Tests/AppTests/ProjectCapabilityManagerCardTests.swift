@@ -40,6 +40,20 @@ struct ProjectCapabilityManagerCardTests {
         ].sorted())
     }
 
+    @Test("build：opencode policy 显示 native config target")
+    func buildsMCPItemsWithOpencodeNativeTarget() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(
+            enabled: true,
+            enginesJSON: #"{ "openCode": { "enabled": true, "projection": "skills-and-mcp-files" } }"#
+        )
+
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .mcp)
+
+        #expect(state.visibleItems.map(\.name) == ["filesystem"])
+        #expect(state.visibleItems.first?.targetPaths == [fixture.project.rootURL.appendingPathComponent("opencode.json").path])
+    }
+
     @Test("build：adapter 失败时转成卡片诊断")
     func adapterErrorsBecomeCardDiagnostics() throws {
         let fixture = try ProjectCapabilityManagerFixture()
@@ -622,13 +636,17 @@ private struct ProjectCapabilityManagerFixture {
         self.pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
     }
 
-    func writePlugin(enabled: Bool, mcpRef: String = "mcp/servers.json#filesystem") throws {
+    func writePlugin(
+        enabled: Bool,
+        mcpRef: String = "mcp/servers.json#filesystem",
+        enginesJSON: String = #"{ "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } }"#
+    ) throws {
         try FileManager.default.createDirectory(at: pluginRoot.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
         let skillRoot = pluginRoot.appendingPathComponent("skills/code-review", isDirectory: true)
         try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
         try "# code-review\n\nReview staged diffs.\n".data(using: .utf8)!.write(to: skillRoot.appendingPathComponent("SKILL.md"), options: .atomic)
         try """
-        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "enabled": \(enabled), "capabilities": ["mcp", "skills"], "mcp": ["\(mcpRef)"], "skills": ["skills/code-review"], "engines": { "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } } }
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "enabled": \(enabled), "capabilities": ["mcp", "skills"], "mcp": ["\(mcpRef)"], "skills": ["skills/code-review"], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("plugin.json"), options: .atomic)
         try """
         { "mcpServers": { "filesystem": { "type": "local", "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"], "enabled": true } } }
