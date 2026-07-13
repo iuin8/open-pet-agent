@@ -299,6 +299,58 @@ struct ProjectCapabilityColumnStateTests {
         #expect(detail.isEditing == false)
     }
 
+    @Test("MCP detail：删除成功后刷新 root/detail 并保留 tab")
+    func mcpDetailDeleteRefreshesRootAndMarksDetailDeleted() throws {
+        let skill = capabilitySkill(body: "正文")
+        let original = capabilityMCPServer(command: ["npx", "old"])
+        let originalCatalog = capabilityCatalog(skill: skill, server: original)
+        let refreshedCatalog = capabilityCatalog(skill: skill)
+        let item = mcpItem()
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: [item]),
+            catalog: originalCatalog,
+            onDeleteMCPServer: { pluginID, fileRef, serverName in
+                #expect(pluginID == "dev-toolkit")
+                #expect(fileRef == "mcp/servers.json")
+                #expect(serverName == "filesystem")
+                return ProjectCapabilitySnapshot(
+                    catalog: refreshedCatalog,
+                    card: ProjectCapabilityCardState(selectedTab: .skills, items: [])
+                )
+            }
+        )
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+
+        detail.delete()
+
+        #expect(detail.isDeleted)
+        #expect(detail.errorMessage == nil)
+        #expect(model.catalog == refreshedCatalog)
+        #expect(model.card.items.isEmpty)
+        #expect(model.card.selectedTab == .mcp)
+    }
+
+    @Test("MCP detail：删除失败时保留原 snapshot")
+    func mcpDetailDeleteFailureKeepsSnapshot() throws {
+        struct DeleteError: Error {}
+        let skill = capabilitySkill(body: "正文")
+        let original = capabilityMCPServer(command: ["npx", "old"])
+        let originalCatalog = capabilityCatalog(skill: skill, server: original)
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: [mcpItem()]),
+            catalog: originalCatalog,
+            onDeleteMCPServer: { _, _, _ in throw DeleteError() }
+        )
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+
+        detail.delete()
+
+        #expect(detail.isDeleted == false)
+        #expect(detail.errorMessage != nil)
+        #expect(model.catalog == originalCatalog)
+        #expect(model.card.items.count == 1)
+    }
+
     private func capabilitySkill(body: String) -> CapabilitySkill {
         CapabilitySkill(
             id: "dev-toolkit:skills/code-review",

@@ -158,6 +158,58 @@ struct ProjectCapabilityMCPDetailTests {
         #expect(detail.errorMessage?.contains("URL") == true)
     }
 
+    @Test("delete：成功后标记已删除并调用回调")
+    func deleteMarksDeletedAndCallsCallback() {
+        var deleteCount = 0
+        let detail = ProjectCapabilityMCPDetailState(
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/dev-toolkit/mcp/servers.json#filesystem",
+            server: mcpServer(),
+            onSave: { _ in mcpServer() },
+            onDelete: { deleteCount += 1 }
+        )
+
+        detail.delete()
+
+        #expect(deleteCount == 1)
+        #expect(detail.isDeleted)
+        #expect(detail.isEditing == false)
+        #expect(detail.errorMessage == nil)
+    }
+
+    @Test("delete：失败时保留 detail 状态")
+    func deleteFailureKeepsDetailState() {
+        struct DeleteError: Error {}
+        let detail = ProjectCapabilityMCPDetailState(
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/dev-toolkit/mcp/servers.json#filesystem",
+            server: mcpServer(),
+            onSave: { _ in mcpServer() },
+            onDelete: { throw DeleteError() }
+        )
+
+        detail.delete()
+
+        #expect(detail.isDeleted == false)
+        #expect(detail.server.name == "filesystem")
+        #expect(detail.errorMessage != nil)
+    }
+
+    @Test("delete：未接删除回调时不标记删除")
+    func deleteWithoutCallbackDoesNotMarkDeleted() {
+        let detail = ProjectCapabilityMCPDetailState(
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/dev-toolkit/mcp/servers.json#filesystem",
+            server: mcpServer(),
+            onSave: { _ in mcpServer() }
+        )
+
+        detail.delete()
+
+        #expect(detail.isDeleted == false)
+        #expect(detail.errorMessage != nil)
+    }
+
     private func mcpServer(rawJSON: String? = nil) -> CapabilityMCPServer {
         CapabilityMCPServer(
             id: "dev-toolkit:filesystem",

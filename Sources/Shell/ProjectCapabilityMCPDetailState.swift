@@ -25,6 +25,7 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
 
     @Published public private(set) var server: CapabilityMCPServer
     @Published public private(set) var isEditing = false
+    @Published public private(set) var isDeleted = false
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var editorMode: EditorMode = .basic
     @Published public var draftTransport: MCPTransport
@@ -38,17 +39,20 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
     public let pluginID: String
     public let sourcePath: String
     private let onSave: (ACPJSON) throws -> CapabilityMCPServer
+    private let onDelete: () throws -> Void
 
     public init(
         pluginID: String,
         sourcePath: String,
         server: CapabilityMCPServer,
-        onSave: @escaping (ACPJSON) throws -> CapabilityMCPServer
+        onSave: @escaping (ACPJSON) throws -> CapabilityMCPServer,
+        onDelete: @escaping () throws -> Void = { throw ProjectCapabilityMCPDetailError.savingUnavailable }
     ) {
         self.pluginID = pluginID
         self.sourcePath = sourcePath
         self.server = server
         self.onSave = onSave
+        self.onDelete = onDelete
         self.draftTransport = server.transport
         self.draftCommand = server.command.first ?? ""
         self.draftArguments = server.command.dropFirst().joined(separator: "\n")
@@ -91,6 +95,17 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
             server = try onSave(value)
             resetDrafts()
             isEditing = false
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func delete() {
+        do {
+            try onDelete()
+            isDeleted = true
+            isEditing = false
+            errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }

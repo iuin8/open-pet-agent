@@ -37,6 +37,41 @@ public struct ProjectCapabilityWriter: Sendable {
         }
     }
 
+    public func deleteMCPServer(project: AgentProject, pluginID: String, fileRef: String, serverName: String) throws {
+        guard !serverName.isEmpty else {
+            throw ProjectCapabilityValidationError("Missing MCP server name")
+        }
+        let plugin = try descriptor(project: project, pluginID: pluginID)
+        let fileURL = try ProjectCapabilityPath.containedURL(ref: fileRef, subdirectory: "mcp", plugin: plugin, isDirectory: false) {
+            "MCP reference escapes plugin: \(fileRef)#\(serverName)"
+        }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            throw ProjectCapabilityValidationError("Missing MCP server file: \(fileRef)")
+        }
+        let manifestURL = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("plugin.json")
+        let originalFile = try Data(contentsOf: fileURL)
+        let originalManifest = try Data(contentsOf: manifestURL)
+        var root = try readJSONObject(fileURL)
+        var servers = try mcpServers(in: root, fileURL: fileURL)
+        guard servers.removeValue(forKey: serverName) != nil else {
+            throw ProjectCapabilityValidationError("Missing MCP server: \(serverName)")
+        }
+        try backup(project: project, plugin: plugin, including: fileURL)
+        do {
+            root["mcpServers"] = servers
+            try writeJSONObject(root, to: fileURL)
+            try updateManifest(project: project, pluginID: pluginID) { manifest in
+                var mcp = manifest["mcp"] as? [String] ?? []
+                mcp.removeAll { $0 == "\(fileRef)#\(serverName)" }
+                manifest["mcp"] = mcp
+            }
+        } catch {
+            try? originalFile.write(to: fileURL, options: .atomic)
+            try? originalManifest.write(to: manifestURL, options: .atomic)
+            throw error
+        }
+    }
+
     public func deleteSkill(project: AgentProject, pluginID: String, skillRef: String) throws {
         let plugin = try descriptor(project: project, pluginID: pluginID)
         let skillURL = try deletableSkillDirectory(skillRef, plugin: plugin)

@@ -253,6 +253,43 @@ struct ProjectCapabilityManagerCardTests {
         #expect(detail.errorMessage == nil)
     }
 
+    @Test("MCP detail：删除只写 canonical catalog，不自动 materialize")
+    func mcpDetailDeletesCanonicalConfigWithoutMaterializing() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "MCPDelete")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try fixture.writePlugin(enabled: true)
+        let projected = fixture.project.rootURL.appendingPathComponent(".codex/config.toml")
+        try FileManager.default.createDirectory(at: projected.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("user projection stays".utf8).write(to: projected, options: .atomic)
+        let suite = "ProjectCapabilityMCPDeleteTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        let model = delegate.projectCapabilityColumnState(for: fixture.project)
+        let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+
+        detail.delete()
+
+        let serverFile = fixture.pluginRoot.appendingPathComponent("mcp/servers.json")
+        let data = try Data(contentsOf: serverFile)
+        let root = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let servers = try #require(root["mcpServers"] as? [String: Any])
+        #expect(servers["filesystem"] == nil)
+        #expect((try fixture.manifestJSON()["mcp"] as? [String]) == [])
+        #expect(model.card.items.contains { $0.kind == .mcp && $0.name == "filesystem" } == false)
+        #expect(detail.isDeleted)
+        #expect(try String(contentsOf: projected, encoding: .utf8) == "user projection stays")
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
+        let backupRoot = fixture.project.rootURL.appendingPathComponent(".open-pet-agent/backups/capabilities", isDirectory: true)
+        #expect((try FileManager.default.contentsOfDirectory(at: backupRoot, includingPropertiesForKeys: nil)).count == 1)
+    }
+
     @Test("column：Import Existing 扫描、确认后只写 canonical catalog")
     func importExistingDrillsInAndWritesCanonicalOnly() throws {
         let root = FileManager.default.temporaryDirectory

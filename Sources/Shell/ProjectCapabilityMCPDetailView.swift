@@ -1,3 +1,4 @@
+import AppKit
 import AgentMode
 import SwiftUI
 
@@ -9,7 +10,9 @@ struct ProjectCapabilityMCPDetailView: View {
             header
             metadata
             Divider()
-            if model.isEditing { editor } else { preview }
+            if model.isDeleted {
+                deletedNotice
+            } else if model.isEditing { editor } else { preview }
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -36,7 +39,9 @@ struct ProjectCapabilityMCPDetailView: View {
                 Button("取消") { model.cancelEditing() }
                 Button("保存") { model.save() }
                     .foregroundStyle(ChatCardTheme.accent)
-            } else {
+            } else if !model.isDeleted {
+                Button("删除", role: .destructive) { confirmDelete() }
+                    .foregroundStyle(Color.red.opacity(0.8))
                 Button("编辑") { model.beginEditing() }
                     .foregroundStyle(ChatCardTheme.accent)
             }
@@ -80,6 +85,12 @@ struct ProjectCapabilityMCPDetailView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var deletedNotice: some View {
+        Label("已从 canonical catalog 删除。显式同步前，现有投影文件不会自动变化。", systemImage: "checkmark.circle.fill")
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.7))
     }
 
     private var editor: some View {
@@ -127,6 +138,17 @@ struct ProjectCapabilityMCPDetailView: View {
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 8).fill(ChatCardTheme.inputFill.opacity(0.7)))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(ChatCardTheme.hairline, lineWidth: 0.5))
+    }
+
+    private func confirmDelete() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "删除 MCP server「\(model.server.name)」?"
+        alert.informativeText = "只会删除 canonical catalog 条目；Codex / Claude Code / opencode 投影文件不会自动变化。"
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        model.delete()
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {

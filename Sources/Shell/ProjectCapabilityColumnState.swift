@@ -30,6 +30,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
     private let onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)?
     private let onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)?
+    private let onDeleteMCPServer: ((String, String, String) throws -> ProjectCapabilitySnapshot?)?
     private let onScanImports: (() -> ProjectCapabilityImportScan)?
     private let onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)?
     private let onRefreshCard: (() -> ProjectCapabilityCardState)?
@@ -48,6 +49,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)? = nil,
         onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)? = nil,
         onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)? = nil,
+        onDeleteMCPServer: ((String, String, String) throws -> ProjectCapabilitySnapshot?)? = nil,
         onScanImports: (() -> ProjectCapabilityImportScan)? = nil,
         onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)? = nil,
         onRefreshCard: (() -> ProjectCapabilityCardState)? = nil,
@@ -65,6 +67,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onAddMCP = onAddMCP
         self.onUpdateSkillBody = onUpdateSkillBody
         self.onUpdateMCPServer = onUpdateMCPServer
+        self.onDeleteMCPServer = onDeleteMCPServer
         self.onScanImports = onScanImports
         self.onImportCandidates = onImportCandidates
         self.onRefreshCard = onRefreshCard
@@ -160,6 +163,17 @@ public final class ProjectCapabilityColumnState: ObservableObject {
                 let refreshed = try ProjectCapabilityMCPDetailState.updatedServer(server, with: value)
                 self.patchCatalog(pluginID: pluginID, server: refreshed)
                 return refreshed
+            },
+            onDelete: { [weak self] in
+                guard let self, let onDeleteMCPServer = self.onDeleteMCPServer else {
+                    throw ProjectCapabilityMCPDetailError.savingUnavailable
+                }
+                let snapshot = try onDeleteMCPServer(pluginID, server.fileRef, server.name)
+                if let snapshot {
+                    self.apply(snapshot)
+                    return
+                }
+                self.removeMCPServer(pluginID: pluginID, serverName: server.name)
             }
         )
     }
@@ -284,6 +298,25 @@ public final class ProjectCapabilityColumnState: ObservableObject {
             diagnostics: catalog.diagnostics,
             targets: catalog.targets,
             audit: catalog.audit
+        )
+    }
+
+    private func removeMCPServer(pluginID: String, serverName: String) {
+        guard let catalog,
+              let pluginIndex = catalog.plugins.firstIndex(where: { $0.id == pluginID }) else { return }
+        var plugins = catalog.plugins
+        plugins[pluginIndex].mcpServers.removeAll { $0.name == serverName }
+        self.catalog = ProjectCapabilityCatalogModel(
+            projectID: catalog.projectID,
+            plugins: plugins,
+            diagnostics: catalog.diagnostics,
+            targets: catalog.targets,
+            audit: catalog.audit
+        )
+        card = ProjectCapabilityCardState(
+            selectedTab: card.selectedTab,
+            items: card.items.filter { !($0.kind == .mcp && $0.pluginID == pluginID && $0.name == serverName) },
+            auditSummary: card.auditSummary
         )
     }
 

@@ -70,6 +70,81 @@ final class ProjectCapabilityWriterTests: XCTestCase {
         XCTAssertEqual(filesystem["command"] as? [String], ["npx", "-y", "@modelcontextprotocol/server-filesystem"])
     }
 
+    func testDeleteMCPServerBacksUpAndPreservesOtherServers() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#filesystem", "mcp/servers.json#other"], "engines": { "codex": { "enabled": true, "projection": "skills-and-mcp-files" } } }
+        """)
+        let mcpURL = pluginRoot("dev-toolkit").appendingPathComponent("mcp/servers.json")
+        try FileManager.default.createDirectory(at: mcpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx"], "enabled": true }, "other": { "type": "local", "command": ["other"], "enabled": false } }, "topLevel": "keep" }
+        """.data(using: .utf8)!.write(to: mcpURL, options: .atomic)
+
+        try ProjectCapabilityWriter().deleteMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "filesystem"
+        )
+
+        let json = try readJSONObject(mcpURL)
+        XCTAssertEqual(json["topLevel"] as? String, "keep")
+        let servers = try XCTUnwrap(json["mcpServers"] as? [String: Any])
+        XCTAssertNil(servers["filesystem"])
+        XCTAssertNotNil(servers["other"])
+        let manifest = try readJSONObject(pluginRoot("dev-toolkit").appendingPathComponent("plugin.json"))
+        XCTAssertEqual(manifest["mcp"] as? [String], ["mcp/servers.json#other"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.rootURL.appendingPathComponent(".codex/config.toml").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.rootURL.appendingPathComponent(".mcp.json").path))
+        let backupRoot = project.rootURL.appendingPathComponent(".open-pet-agent/backups/capabilities", isDirectory: true)
+        let backups = try FileManager.default.contentsOfDirectory(at: backupRoot, includingPropertiesForKeys: nil)
+        XCTAssertEqual(backups.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backups[0].appendingPathComponent("dev-toolkit/mcp/servers.json").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backups[0].appendingPathComponent("dev-toolkit/plugin.json").path))
+    }
+
+    func testDeleteMCPServerMissingServerDoesNotRewriteCanonicalFile() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#filesystem"], "engines": {} }
+        """)
+        let mcpURL = pluginRoot("dev-toolkit").appendingPathComponent("mcp/servers.json")
+        try FileManager.default.createDirectory(at: mcpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let original = Data("""
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx"], "enabled": true } } }
+        """.utf8)
+        try original.write(to: mcpURL, options: .atomic)
+        let manifestURL = pluginRoot("dev-toolkit").appendingPathComponent("plugin.json")
+        let manifestBefore = try Data(contentsOf: manifestURL)
+
+        XCTAssertThrowsError(try ProjectCapabilityWriter().deleteMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "missing"
+        ))
+
+        XCTAssertEqual(try Data(contentsOf: mcpURL), original)
+        XCTAssertEqual(try Data(contentsOf: manifestURL), manifestBefore)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.rootURL.appendingPathComponent(".open-pet-agent/backups/capabilities").path))
+    }
+
+    func testDeleteMCPServerRejectsPathEscapeWithoutTouchingOutsideFile() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["../outside.json#filesystem"], "engines": {} }
+        """)
+        let outside = tmpHome.appendingPathComponent("outside.json")
+        try Data("outside".utf8).write(to: outside, options: .atomic)
+
+        XCTAssertThrowsError(try ProjectCapabilityWriter().deleteMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "../outside.json",
+            serverName: "filesystem"
+        ))
+
+        XCTAssertEqual(try String(contentsOf: outside, encoding: .utf8), "outside")
+    }
+
     func testDeleteSkillBacksUpBeforeRemoving() throws {
         try writePlugin("dev-toolkit", """
         { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["skills"], "skills": ["skills/code-review"], "engines": {} }

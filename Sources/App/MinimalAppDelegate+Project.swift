@@ -321,6 +321,22 @@ extension MinimalAppDelegate {
                     card: refreshedCard
                 )
             },
+            onDeleteMCPServer: { pluginID, fileRef, serverName in
+                try ProjectCapabilityWriter().deleteMCPServer(
+                    project: project,
+                    pluginID: pluginID,
+                    fileRef: fileRef,
+                    serverName: serverName
+                )
+                guard let refreshedCatalog = try? ProjectCapabilityCatalogModel.build(for: project),
+                      let refreshedCard = try? Self.projectCapabilityCard(for: project, selectedTab: .mcp) else {
+                    return nil
+                }
+                return ProjectCapabilitySnapshot(
+                    catalog: refreshedCatalog,
+                    card: refreshedCard
+                )
+            },
             onScanImports: {
                 ProjectCapabilityImportScanner().scan(project: project)
             },
