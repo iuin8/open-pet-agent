@@ -70,27 +70,18 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         }
     }
 
-    func testPlansCreateMaterializedPluginDirectoryForEnabledPlugin() throws {
+    func testPlansReturnDiagnosticButNoOperationsForPluginDirPolicy() throws {
         try writePlugin(id: "dev-toolkit", enabled: true)
 
         let plans = try OpencodeProjectAdapter().plans(for: project)
 
         XCTAssertEqual(plans.count, 1)
         XCTAssertEqual(plans[0].engineID, AgentEngineKind.openCode.rawValue)
-        XCTAssertTrue(plans[0].operations.contains {
-            if case let .copyDirectory(source, destination) = $0 {
-                let expectedSource = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
-                    .standardizedFileURL
-                    .resolvingSymlinksInPath()
-                    .path
-                return source.standardizedFileURL.resolvingSymlinksInPath().path == expectedSource
-                    && destination.path == ProjectConfig.materializedPluginDirectory(
-                        for: project,
-                        engineID: AgentEngineKind.openCode.rawValue,
-                        pluginID: "dev-toolkit"
-                    ).path
-            }
-            return false
+        XCTAssertEqual(plans[0].operations, [])
+        XCTAssertTrue(plans[0].diagnostics.contains { diagnostic in
+            diagnostic.severity == .warning
+                && diagnostic.message.contains("opencode native")
+                && diagnostic.message.contains(".opencode/skills")
         })
     }
 

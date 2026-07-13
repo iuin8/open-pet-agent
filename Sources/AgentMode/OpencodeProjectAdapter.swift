@@ -9,7 +9,6 @@ public struct OpencodeProjectAdapter: Sendable {
     public func plans(for project: AgentProject) throws -> [ProjectionPlan] {
         let catalog = ProjectPluginCatalog()
         let plugins = try catalog.listPlugins(for: project)
-        var operations: [ProjectionOperation] = []
         var diagnostics: [ProjectConfigDiagnostic] = []
         var seenMCPServers = Set<String>()
 
@@ -18,22 +17,15 @@ public struct OpencodeProjectAdapter: Sendable {
             if plugin.capabilities.contains(.mcp) {
                 try collectMCPServers(from: plugin, seenNames: &seenMCPServers).forEach { _ in }
             }
-            operations.append(.copyDirectory(
-                source: plugin.rootURL,
-                destination: ProjectConfig.materializedPluginDirectory(
-                    for: project,
-                    engineID: AgentEngineKind.openCode.rawValue,
-                    pluginID: plugin.id
-                )
-            ))
+            diagnostics.append(Self.nativeProjectionDiagnostic(plugin))
         }
 
-        guard !operations.isEmpty || !diagnostics.isEmpty else { return [] }
+        guard !diagnostics.isEmpty else { return [] }
         return [ProjectionPlan(
             projectID: project.id,
             engineID: AgentEngineKind.openCode.rawValue,
             pluginID: Self.planID,
-            operations: operations,
+            operations: [],
             diagnostics: diagnostics
         )]
     }
@@ -56,6 +48,14 @@ public struct OpencodeProjectAdapter: Sendable {
 
     private func supportsOpencodeMCP(_ plugin: ProjectPluginDescriptor) -> Bool {
         supportsOpencodeProjection(plugin) && plugin.capabilities.contains(.mcp)
+    }
+
+    private static func nativeProjectionDiagnostic(_ plugin: ProjectPluginDescriptor) -> ProjectConfigDiagnostic {
+        ProjectConfigDiagnostic(
+            severity: .warning,
+            message: "opencode native projection targets verified as root opencode.json, .opencode/skills and .opencode/plugins; OpenPetAgent keeps canonical plugin data local until native target materialization is explicitly designed.",
+            path: plugin.rootURL.path
+        )
     }
 
     private func collectMCPServers(from plugin: ProjectPluginDescriptor, seenNames: inout Set<String>) throws -> [ACPJSON] {

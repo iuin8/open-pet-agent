@@ -209,8 +209,9 @@ extension MinimalAppDelegate {
         }
     }
 
-    /// 显式把当前项目的 opencode projection 落盘。只响应用户点击,不在聊天时自动写项目文件。
-    /// 只 materialize plugin/data 到 `.open-pet-agent/plugins/.materialized/openCode/`,不覆盖用户 opencode.json。
+    /// 显式刷新当前项目的 opencode projection 诊断。只响应用户点击,不在聊天时自动写项目文件。
+    /// opencode 原生读取 root `opencode.json` / `.opencode/skills` / `.opencode/plugins`；
+    /// native materializer 未设计前不把 canonical plugin 写到隐藏 materialized 目录。
     @MainActor func syncOpencodeProjectionForCurrentProject(project: AgentProject? = nil) -> String {
         let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
@@ -631,7 +632,7 @@ extension MinimalAppDelegate {
                     skill.relativePath,
                     isDirectory: true
                 ).path
-            let targets = skill.targets.map { target in
+            let targets = skill.targets.compactMap { target -> String? in
                 switch target {
                 case .claudeCode:
                     return project.rootURL.appendingPathComponent(
@@ -644,10 +645,7 @@ extension MinimalAppDelegate {
                         isDirectory: true
                     ).path
                 case .opencode:
-                    return project.rootURL.appendingPathComponent(
-                        ".open-pet-agent/plugins/.materialized/openCode/plugins/\(plugin.id)",
-                        isDirectory: true
-                    ).path
+                    return nil
                 }
             }.sorted()
             return ProjectCapabilityCardState.Item(
