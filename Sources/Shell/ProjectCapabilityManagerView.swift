@@ -7,11 +7,8 @@ struct ProjectCapabilityManagerView: View {
     let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
     let onSetEnabled: (String, Bool) -> Void
     var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
-    var onImportExisting: (() -> Void)? = nil
+    var onOpenAdd: (() -> Void)? = nil
     var onShowDiagnostics: (() -> Void)? = nil
-    let onCreatePlugin: (String, String) -> Void
-    let onAddSkill: (String, String, String, String) -> Void
-    let onAddMCP: (String, String, [String]) -> Void
     let onSyncCodex: () -> Void
     let onSyncClaudeCode: () -> Void
     let onSyncOpencode: () -> Void
@@ -20,22 +17,12 @@ struct ProjectCapabilityManagerView: View {
     var showsHeader = true
     var usesCardChrome = true
 
-    @State private var addAction: AddAction = .skill
-    @State private var pluginID = "dev-toolkit"
-    @State private var pluginName = "Dev Toolkit"
-    @State private var skillName = "code-review"
-    @State private var skillDescription = "Review staged diffs before commit."
-    @State private var skillBody = "Inspect git diff and report correctness issues before committing."
-    @State private var mcpServerName = "filesystem"
-    @State private var mcpCommand = "npx -y @modelcontextprotocol/server-filesystem"
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if showsHeader { header }
-            authoringControls
+            actionEntrypoints
             syncControls
             if let auditSummary = state.auditSummary { auditStatus(auditSummary) }
-            if let onShowDiagnostics { diagnosticsControl(onShowDiagnostics) }
             if !syncMessages.isEmpty { syncMessageList }
             tabBar
             if state.visibleItems.isEmpty {
@@ -81,142 +68,34 @@ struct ProjectCapabilityManagerView: View {
         }
     }
 
-    private var authoringControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                ForEach(addActions, id: \.self) { action in
-                    addActionButton(action)
-                }
+    private var actionEntrypoints: some View {
+        HStack(spacing: 6) {
+            if let onOpenAdd {
+                secondaryAction("添加能力", icon: "plus.square.fill", action: onOpenAdd)
             }
-            .padding(3)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.65)))
-
-            switch addAction {
-            case .plugin:
-                HStack(spacing: 6) {
-                    compactField("plugin id", text: $pluginID)
-                    compactField("display name", text: $pluginName)
-                }
-            case .skill:
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        compactField("plugin id", text: $pluginID)
-                        compactField("skill name", text: $skillName)
-                    }
-                    compactField("description", text: $skillDescription)
-                    TextEditor(text: $skillBody)
-                        .font(.system(size: 9, design: .rounded))
-                        .scrollContentBackground(.hidden)
-                        .frame(height: 58)
-                        .padding(5)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
-                }
-            case .mcp:
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        compactField("plugin id", text: $pluginID)
-                        compactField("server", text: $mcpServerName)
-                    }
-                    compactField("command", text: $mcpCommand)
-                }
-            case .importExisting:
-                Text("扫描当前项目已有 Claude / Codex Skill 与 MCP 配置，确认后写入 canonical catalog。")
-                    .font(.system(size: 9.5, design: .rounded))
-                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.62))
+            if let onShowDiagnostics {
+                secondaryAction("项目能力诊断", icon: "checklist", action: onShowDiagnostics)
             }
-
-            Button(actionTitle) { submitAddAction() }
-                .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(canSubmitAddAction ? ChatCardTheme.accent : ChatCardTheme.textPrimary.opacity(0.35))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.62)))
-                .disabled(!canSubmitAddAction)
         }
-        .padding(7)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.45)))
     }
 
-    private var addActions: [AddAction] {
-        onImportExisting == nil ? [.plugin, .skill, .mcp] : AddAction.allCases
-    }
-
-    private func addActionButton(_ action: AddAction) -> some View {
-        Button { addAction = action } label: {
-            HStack(spacing: 4) {
-                Image(systemName: action.icon)
-                Text(action.title).fixedSize(horizontal: true, vertical: false)
+    private func secondaryAction(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                Text(title).fixedSize(horizontal: true, vertical: false)
             }
             .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-            .foregroundStyle(addAction == action ? ChatCardTheme.textPrimary : ChatCardTheme.textPrimary.opacity(0.55))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(addAction == action ? Color.white.opacity(0.85) : Color.clear))
+            .foregroundStyle(ChatCardTheme.accent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.52)))
         }
         .buttonStyle(.plain)
     }
 
-    private var actionTitle: String {
-        switch addAction {
-        case .plugin: return "创建 Plugin"
-        case .skill: return "添加 Skill"
-        case .mcp: return "添加 MCP"
-        case .importExisting: return "导入现有"
-        }
-    }
-
-    private var canSubmitAddAction: Bool {
-        switch addAction {
-        case .plugin:
-            return isValidPluginID(pluginID) && !pluginName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .skill:
-            return isValidPluginID(pluginID)
-                && !skillName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !skillDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !skillBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .mcp:
-            return isValidPluginID(pluginID)
-                && !mcpServerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !mcpCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .importExisting:
-            return onImportExisting != nil
-        }
-    }
-
-    private func submitAddAction() {
-        switch addAction {
-        case .plugin:
-            onCreatePlugin(pluginID, pluginName)
-        case .skill:
-            onAddSkill(pluginID, skillName, skillDescription, skillBody)
-        case .mcp:
-            onAddMCP(pluginID, mcpServerName, mcpCommand.split(separator: " ").map(String.init))
-        case .importExisting:
-            onImportExisting?()
-        }
-    }
-
-    private func isValidPluginID(_ value: String) -> Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && !trimmed.contains("/") && trimmed != "." && trimmed != ".."
-    }
-
-    private func compactField(_ placeholder: String, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
-            .font(.system(size: 9, design: .rounded))
-            .textFieldStyle(.plain)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
-    }
-
     private var syncControls: some View {
         HStack(spacing: 5) {
-            if let onImportExisting {
-                Button("导入现有") { onImportExisting() }
-            }
             Button("同步 Codex") { onSyncCodex() }
             Button("同步 Claude") { onSyncClaudeCode() }
             Button("同步 opencode") { onSyncOpencode() }
@@ -224,26 +103,6 @@ struct ProjectCapabilityManagerView: View {
         .buttonStyle(.plain)
         .font(.system(size: 9, weight: .semibold, design: .rounded))
         .foregroundStyle(ChatCardTheme.accent)
-    }
-
-    private func diagnosticsControl(_ action: @escaping () -> Void) -> some View {
-        Button {
-            action()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "checklist")
-                Text("项目能力诊断")
-                Spacer()
-                Text("查看 dry-run / ownership")
-                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.45))
-            }
-            .font(.system(size: 9, weight: .semibold, design: .rounded))
-            .foregroundStyle(ChatCardTheme.accent)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.45)))
-        }
-        .buttonStyle(.plain)
     }
 
     private func auditStatus(_ summary: ProjectCapabilityCardState.AuditSummary) -> some View {
@@ -447,7 +306,6 @@ struct ProjectCapabilityManagerView: View {
     }
 }
 
-
 private enum AddAction: CaseIterable {
     case plugin
     case skill
@@ -470,5 +328,138 @@ private enum AddAction: CaseIterable {
         case .mcp: return "point.3.connected.trianglepath.dotted"
         case .importExisting: return "tray.and.arrow.down.fill"
         }
+    }
+}
+
+
+struct ProjectCapabilityAddFormView: View {
+    var onImportExisting: (() -> Void)? = nil
+    let onCreatePlugin: (String, String) -> Void
+    let onAddSkill: (String, String, String, String) -> Void
+    let onAddMCP: (String, String, [String]) -> Void
+
+    @State private var addAction: AddAction = .skill
+    @State private var pluginID = "dev-toolkit"
+    @State private var pluginName = "Dev Toolkit"
+    @State private var skillName = "code-review"
+    @State private var skillDescription = "Review staged diffs before commit."
+    @State private var skillBody = "Inspect git diff and report correctness issues before committing."
+    @State private var mcpServerName = "filesystem"
+    @State private var mcpCommand = "npx -y @modelcontextprotocol/server-filesystem"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                ForEach(addActions, id: \.self) { action in addActionButton(action) }
+            }
+            .padding(3)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.65)))
+
+            switch addAction {
+            case .plugin:
+                HStack(spacing: 6) {
+                    compactField("plugin id", text: $pluginID)
+                    compactField("display name", text: $pluginName)
+                }
+            case .skill:
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        compactField("plugin id", text: $pluginID)
+                        compactField("skill name", text: $skillName)
+                    }
+                    compactField("description", text: $skillDescription)
+                    TextEditor(text: $skillBody)
+                        .font(.system(size: 9, design: .rounded))
+                        .scrollContentBackground(.hidden)
+                        .frame(height: 112)
+                        .padding(5)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
+                }
+            case .mcp:
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        compactField("plugin id", text: $pluginID)
+                        compactField("server", text: $mcpServerName)
+                    }
+                    compactField("command", text: $mcpCommand)
+                }
+            case .importExisting:
+                Text("扫描当前项目已有 Claude / Codex Skill 与 MCP 配置，确认后写入 canonical catalog。")
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.62))
+            }
+
+            Button(actionTitle) { submitAddAction() }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(canSubmitAddAction ? ChatCardTheme.accent : ChatCardTheme.textPrimary.opacity(0.35))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.62)))
+                .disabled(!canSubmitAddAction)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.45)))
+    }
+
+    private var addActions: [AddAction] { onImportExisting == nil ? [.plugin, .skill, .mcp] : AddAction.allCases }
+
+    private func addActionButton(_ action: AddAction) -> some View {
+        Button { addAction = action } label: {
+            HStack(spacing: 4) {
+                Image(systemName: action.icon)
+                Text(action.title).fixedSize(horizontal: true, vertical: false)
+            }
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(addAction == action ? ChatCardTheme.textPrimary : ChatCardTheme.textPrimary.opacity(0.55))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(addAction == action ? Color.white.opacity(0.85) : Color.clear))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var actionTitle: String {
+        switch addAction {
+        case .plugin: return "创建 Plugin"
+        case .skill: return "添加 Skill"
+        case .mcp: return "添加 MCP"
+        case .importExisting: return "导入现有"
+        }
+    }
+
+    private var canSubmitAddAction: Bool {
+        switch addAction {
+        case .plugin: return isValidPluginID(pluginID) && !pluginName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .skill:
+            return isValidPluginID(pluginID) && !skillName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !skillDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !skillBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .mcp:
+            return isValidPluginID(pluginID) && !mcpServerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !mcpCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .importExisting: return onImportExisting != nil
+        }
+    }
+
+    private func submitAddAction() {
+        switch addAction {
+        case .plugin: onCreatePlugin(pluginID, pluginName)
+        case .skill: onAddSkill(pluginID, skillName, skillDescription, skillBody)
+        case .mcp: onAddMCP(pluginID, mcpServerName, mcpCommand.split(separator: " ").map(String.init))
+        case .importExisting: onImportExisting?()
+        }
+    }
+
+    private func isValidPluginID(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !trimmed.contains("/") && trimmed != "." && trimmed != ".."
+    }
+
+    private func compactField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .font(.system(size: 9.5, design: .rounded))
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
     }
 }

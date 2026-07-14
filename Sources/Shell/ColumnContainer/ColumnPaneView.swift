@@ -42,7 +42,9 @@ struct ColumnPaneView: View {
         case .projectCapabilityManager: return 380
         case .projectCapabilitySkillDetail,
              .projectCapabilityMCPDetail,
-             .projectCapabilityImport: return 520
+             .projectCapabilityImport,
+             .projectCapabilityAdd,
+             .projectCapabilityDiagnostics: return 520
         }
     }
 
@@ -50,7 +52,8 @@ struct ColumnPaneView: View {
         switch column.kind {
         case .list, .projectCapabilityManager: return true
         case .detail, .image, .projectCapabilitySkillDetail,
-             .projectCapabilityMCPDetail, .projectCapabilityImport: return false
+             .projectCapabilityMCPDetail, .projectCapabilityImport,
+             .projectCapabilityAdd, .projectCapabilityDiagnostics: return false
         }
     }
 
@@ -89,7 +92,8 @@ struct ColumnPaneView: View {
         case .projectCapabilityManager:
             columnHeader(glyph: "shippingbox.fill", title: "项目能力", subtitle: "Skills / MCP / Profiles")
         case .detail, .image, .projectCapabilitySkillDetail,
-             .projectCapabilityMCPDetail, .projectCapabilityImport:
+             .projectCapabilityMCPDetail, .projectCapabilityImport,
+             .projectCapabilityAdd, .projectCapabilityDiagnostics:
             EmptyView()
         }
     }
@@ -195,6 +199,11 @@ struct ColumnPaneView: View {
             ProjectCapabilityMCPDetailView(model: model)
         case .projectCapabilityImport(let model):
             ProjectCapabilityImportView(model: model)
+        case .projectCapabilityAdd(let model):
+            ProjectCapabilityAddView(model: model)
+        case .projectCapabilityDiagnostics(let panel):
+            ProjectCapabilityPanelView(panel: panel) { onClose() }
+                .padding(6)
         }
     }
 }
@@ -206,23 +215,14 @@ private struct ProjectCapabilityManagerColumnView: View {
 
     var body: some View {
         ScrollView {
-            if let panel = model.diagnosticPanel {
-                ProjectCapabilityPanelView(panel: panel) {
-                    model.dismissDiagnostics()
-                }
-                .padding(6)
-            }
             ProjectCapabilityManagerView(
                 state: model.card,
                 syncMessages: model.syncMessages,
                 onSelectTab: { model.selectTab($0) },
                 onSetEnabled: { model.setPluginEnabled(pluginID: $0, enabled: $1) },
                 onOpenItem: { model.openItem($1, rowID: $0) },
-                onImportExisting: { model.openImport() },
+                onOpenAdd: { model.openAdd() },
                 onShowDiagnostics: { model.showDiagnostics() },
-                onCreatePlugin: { model.createPlugin(pluginID: $0, name: $1) },
-                onAddSkill: { model.addSkill(pluginID: $0, skillName: $1, skillDescription: $2, body: $3) },
-                onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, command: $2) },
                 onSyncCodex: { model.syncCodex() },
                 onSyncClaudeCode: { model.syncClaudeCode() },
                 onSyncOpencode: { model.syncOpencode() },
@@ -232,6 +232,23 @@ private struct ProjectCapabilityManagerColumnView: View {
                 usesCardChrome: false
             )
             .padding(6)
+        }
+    }
+}
+
+
+private struct ProjectCapabilityAddView: View {
+    @ObservedObject var model: ProjectCapabilityColumnState
+
+    var body: some View {
+        ScrollView {
+            ProjectCapabilityAddFormView(
+                onImportExisting: { model.openImport() },
+                onCreatePlugin: { model.createPlugin(pluginID: $0, name: $1) },
+                onAddSkill: { model.addSkill(pluginID: $0, skillName: $1, skillDescription: $2, body: $3) },
+                onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, command: $2) }
+            )
+            .padding(10)
         }
     }
 }

@@ -103,8 +103,8 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.syncMessages == ["Codex 配置已同步", "Claude Code 配置已同步", "opencode 配置已同步"])
     }
 
-    @Test("diagnostics：项目能力列内打开并关闭诊断面板")
-    func diagnosticsLiveInManagerColumn() {
+    @Test("diagnostics：项目能力列打开二级诊断列")
+    func diagnosticsOpenSecondaryColumn() {
         let panel = ProjectCapabilityPanelState(
             fullText: "Codex",
             sections: [ProjectCapabilityPanelState.Section(
@@ -116,6 +116,7 @@ struct ProjectCapabilityColumnStateTests {
             )]
         )
         var requested = false
+        var opened: (rowID: Int, panel: ProjectCapabilityPanelState)?
         let model = ProjectCapabilityColumnState(
             card: ProjectCapabilityCardState(selectedTab: .skills, items: []),
             onShowDiagnostics: {
@@ -123,15 +124,13 @@ struct ProjectCapabilityColumnStateTests {
                 return panel
             }
         )
+        model.onOpenDiagnostics = { rowID, state in opened = (rowID, state) }
 
         model.showDiagnostics()
 
         #expect(requested == true)
-        #expect(model.diagnosticPanel == panel)
-
-        model.dismissDiagnostics()
-
-        #expect(model.diagnosticPanel == nil)
+        #expect(opened?.rowID == ProjectCapabilityColumnState.diagnosticsRowID)
+        #expect(opened?.panel == panel)
     }
 
     @Test("sync：同步后刷新 root 摘要但保留当前 tab")

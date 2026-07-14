@@ -407,6 +407,12 @@ extension MinimalAppDelegate {
         model.onOpenImport = { rowID, importState in
             drillIn(rowID, .projectCapabilityImport(importState))
         }
+        model.onOpenAdd = { rowID, addModel in
+            drillIn(rowID, .projectCapabilityAdd(addModel))
+        }
+        model.onOpenDiagnostics = { rowID, panel in
+            drillIn(rowID, .projectCapabilityDiagnostics(panel))
+        }
         columnContainerWindowController.openRoot(
             .projectCapabilityManager(model),
             sourceKey: "project-capability-manager",

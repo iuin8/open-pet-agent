@@ -15,15 +15,17 @@ public struct ProjectCapabilitySnapshot: Sendable, Equatable {
 @MainActor
 public final class ProjectCapabilityColumnState: ObservableObject {
     public static let importRowID = -1
+    public static let addRowID = -2
+    public static let diagnosticsRowID = -3
 
     @Published public private(set) var card: ProjectCapabilityCardState
     @Published public private(set) var catalog: ProjectCapabilityCatalogModel?
     @Published public private(set) var syncMessages: [String]
-    @Published public private(set) var diagnosticPanel: ProjectCapabilityPanelState?
-
     public var onOpenSkillDetail: ((Int, ProjectCapabilitySkillDetailState) -> Void)?
     public var onOpenMCPDetail: ((Int, ProjectCapabilityMCPDetailState) -> Void)?
     public var onOpenImport: ((Int, ProjectCapabilityImportState) -> Void)?
+    public var onOpenAdd: ((Int, ProjectCapabilityColumnState) -> Void)?
+    public var onOpenDiagnostics: ((Int, ProjectCapabilityPanelState) -> Void)?
 
     private let onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
     private let onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
@@ -64,7 +66,6 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.card = card
         self.catalog = catalog
         self.syncMessages = syncMessages
-        self.diagnosticPanel = nil
         self.onSetEnabled = onSetEnabled
         self.onCreatePlugin = onCreatePlugin
         self.onAddSkill = onAddSkill
@@ -209,30 +210,28 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onOpenImport?(Self.importRowID, state)
     }
 
-    public func showDiagnostics() {
-        diagnosticPanel = onShowDiagnostics?()
+    public func openAdd() {
+        onOpenAdd?(Self.addRowID, self)
     }
 
-    public func dismissDiagnostics() {
-        diagnosticPanel = nil
+    public func showDiagnostics() {
+        guard let panel = onShowDiagnostics?() else { return }
+        onOpenDiagnostics?(Self.diagnosticsRowID, panel)
     }
 
     public func syncCodex() {
-        diagnosticPanel = nil
         guard let onSyncCodex else { return }
         syncMessages.append(onSyncCodex())
         refreshCardAfterSync()
     }
 
     public func syncClaudeCode() {
-        diagnosticPanel = nil
         guard let onSyncClaudeCode else { return }
         syncMessages.append(onSyncClaudeCode())
         refreshCardAfterSync()
     }
 
     public func syncOpencode() {
-        diagnosticPanel = nil
         guard let onSyncOpencode else { return }
         syncMessages.append(onSyncOpencode())
         refreshCardAfterSync()

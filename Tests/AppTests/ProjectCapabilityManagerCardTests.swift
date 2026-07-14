@@ -385,6 +385,63 @@ struct ProjectCapabilityManagerCardTests {
         #expect(importState.errorMessage == nil)
     }
 
+    @Test("column：添加能力与诊断作为二级列打开")
+    func addCapabilityAndDiagnosticsOpenAsSecondaryColumns() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProjectCapabilitySecondaryColumnsTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let suite = "ProjectCapabilitySecondaryColumnsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        ProjectConfig.homeDirectoryOverride = root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let project = try ProjectStore.createExternal(
+            name: "Secondary Columns",
+            rootURL: root.appendingPathComponent("repo", isDirectory: true)
+        )
+        let fixture = ProjectCapabilityManagerFixture(project: project)
+        try fixture.writePlugin(enabled: true)
+        ProjectStore.setCurrent(project.id, defaults: defaults)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        defer { delegate.columnContainerWindowController.close() }
+
+        delegate.showProjectCapabilityManagerCard()
+        let rootColumn = try #require(delegate.columnContainerWindowController.state.stack.columns.first)
+        guard case .projectCapabilityManager(let model) = rootColumn.kind else {
+            Issue.record("根列不是项目能力管理")
+            return
+        }
+
+        model.openAdd()
+
+        #expect(delegate.columnContainerWindowController.state.stack.columns.count == 2)
+        let addColumn = try #require(delegate.columnContainerWindowController.state.stack.columns.last)
+        guard case .projectCapabilityAdd(let addModel) = addColumn.kind else {
+            Issue.record("未追加添加能力列")
+            return
+        }
+        #expect(addModel === model)
+
+        model.showDiagnostics()
+
+        #expect(delegate.columnContainerWindowController.state.stack.columns.count == 2)
+        let diagnosticColumn = try #require(delegate.columnContainerWindowController.state.stack.columns.last)
+        guard case .projectCapabilityDiagnostics(let panel) = diagnosticColumn.kind else {
+            Issue.record("未追加项目能力诊断列")
+            return
+        }
+        #expect(panel.sections.map(\.engineName).contains("Codex"))
+    }
+
     @Test("Import Existing：写入成功但全局刷新失败时局部更新 root")
     func importKeepsSuccessfulWriteWhenCatalogRefreshFails() throws {
         let root = FileManager.default.temporaryDirectory

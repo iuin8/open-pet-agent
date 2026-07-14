@@ -122,18 +122,10 @@ public final class ProjectCapabilityCardWindowController {
     private func rootView() -> AnyView {
         AnyView(
             ScrollView {
-                ProjectCapabilityManagerView(
-                    state: currentCard,
-                    syncMessages: syncMessages,
-                    onSelectTab: { [weak self] tab in self?.selectTab(tab) },
-                    onSetEnabled: { [weak self] pluginID, enabled in self?.setPluginEnabled(pluginID: pluginID, enabled: enabled) },
+                ProjectCapabilityAddFormView(
                     onCreatePlugin: { [weak self] pluginID, name in self?.createPlugin(pluginID: pluginID, name: name) },
                     onAddSkill: { [weak self] pluginID, skillName, skillDescription, body in self?.addSkill(pluginID: pluginID, skillName: skillName, skillDescription: skillDescription, body: body) },
-                    onAddMCP: { [weak self] pluginID, serverName, command in self?.addMCP(pluginID: pluginID, serverName: serverName, command: command) },
-                    onSyncCodex: { [weak self] in self?.syncCodex() },
-                    onSyncClaudeCode: { [weak self] in self?.syncClaudeCode() },
-                    onSyncOpencode: { [weak self] in self?.syncOpencode() },
-                    onClose: { [weak self] in self?.hide() }
+                    onAddMCP: { [weak self] pluginID, serverName, command in self?.addMCP(pluginID: pluginID, serverName: serverName, command: command) }
                 )
                 .frame(width: 360)
                 .padding(6)

@@ -17,6 +17,10 @@ public enum ColumnKind {
     case projectCapabilityMCPDetail(ProjectCapabilityMCPDetailState)
     /// Import Existing 列：扫描、选择、预览与显式确认导入。
     case projectCapabilityImport(ProjectCapabilityImportState)
+    /// 添加能力列：Plugin / Skill / MCP / Import 动作表单。
+    case projectCapabilityAdd(ProjectCapabilityColumnState)
+    /// 项目能力诊断列：dry-run / ownership / drift 只读面板。
+    case projectCapabilityDiagnostics(ProjectCapabilityPanelState)
 }
 
 /// 列视图里的一列。`selectedRowId` = 本列哪行被 drill-in（高亮 + 紧邻右列是它的展开）。
