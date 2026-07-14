@@ -16,7 +16,6 @@ struct ProjectMenu: View {
     let onRequestCreateExternal: () -> Void
     let onRequestRenameCurrent: () -> Void
     let onRequestDeleteCurrent: () -> Void
-    let onRequestShowProjectCapabilityDiagnostics: () -> Void
     let onRequestShowProjectCapabilityManager: () -> Void
 
     var body: some View {
@@ -44,11 +43,6 @@ struct ProjectMenu: View {
                 onRequestShowProjectCapabilityManager()
             } label: {
                 Label("管理项目能力", systemImage: "shippingbox.fill")
-            }
-            Button {
-                onRequestShowProjectCapabilityDiagnostics()
-            } label: {
-                Label("项目能力诊断", systemImage: "checklist")
             }
             Divider()
             Button {

@@ -206,6 +206,12 @@ private struct ProjectCapabilityManagerColumnView: View {
 
     var body: some View {
         ScrollView {
+            if let panel = model.diagnosticPanel {
+                ProjectCapabilityPanelView(panel: panel) {
+                    model.dismissDiagnostics()
+                }
+                .padding(6)
+            }
             ProjectCapabilityManagerView(
                 state: model.card,
                 syncMessages: model.syncMessages,
@@ -213,6 +219,7 @@ private struct ProjectCapabilityManagerColumnView: View {
                 onSetEnabled: { model.setPluginEnabled(pluginID: $0, enabled: $1) },
                 onOpenItem: { model.openItem($1, rowID: $0) },
                 onImportExisting: { model.openImport() },
+                onShowDiagnostics: { model.showDiagnostics() },
                 onCreatePlugin: { model.createPlugin(pluginID: $0, name: $1) },
                 onAddSkill: { model.addSkill(pluginID: $0, skillName: $1) },
                 onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, command: $2) },

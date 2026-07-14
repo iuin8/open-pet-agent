@@ -68,6 +68,37 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.syncMessages == ["Codex 配置已同步", "Claude Code 配置已同步", "opencode 配置已同步"])
     }
 
+    @Test("diagnostics：项目能力列内打开并关闭诊断面板")
+    func diagnosticsLiveInManagerColumn() {
+        let panel = ProjectCapabilityPanelState(
+            fullText: "Codex",
+            sections: [ProjectCapabilityPanelState.Section(
+                engineName: "Codex",
+                status: .ready,
+                ownership: "OpenPetAgent 生成内容",
+                rows: [],
+                diagnostics: []
+            )]
+        )
+        var requested = false
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .skills, items: []),
+            onShowDiagnostics: {
+                requested = true
+                return panel
+            }
+        )
+
+        model.showDiagnostics()
+
+        #expect(requested == true)
+        #expect(model.diagnosticPanel == panel)
+
+        model.dismissDiagnostics()
+
+        #expect(model.diagnosticPanel == nil)
+    }
+
     @Test("sync：同步后刷新 root 摘要但保留当前 tab")
     func syncRefreshesCardSummaryPreservingTab() {
         let refreshed = ProjectCapabilityCardState(

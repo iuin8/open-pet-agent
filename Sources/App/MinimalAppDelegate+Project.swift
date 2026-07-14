@@ -73,18 +73,6 @@ extension MinimalAppDelegate {
         cardCtrl.onRequestSyncOpencodeProjection = { [weak self] in
             self?.syncOpencodeProjectionForCurrentProject() ?? "同步 opencode 配置失败：App 已释放"
         }
-        cardCtrl.onRequestShowProjectCapabilityDiagnostics = { [weak self] in
-            self?.projectCapabilityPanelForCurrentProject() ?? ProjectCapabilityPanelState(
-                fullText: "项目能力诊断失败：App 已释放",
-                sections: [ProjectCapabilityPanelState.Section(
-                    engineName: "项目能力诊断",
-                    status: .failed,
-                    ownership: nil,
-                    rows: [],
-                    diagnostics: [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: "App 已释放", path: nil)]
-                )]
-            )
-        }
         cardCtrl.onRequestOpenProjectCapabilityManager = { [weak self] in
             self?.showProjectCapabilityManagerCard()
         }
@@ -369,6 +357,16 @@ extension MinimalAppDelegate {
             },
             onRefreshCard: { card(for: project) },
             onRefreshCatalog: { catalog(for: project) },
+            onShowDiagnostics: { [weak self] in self?.projectCapabilityPanel(for: project) ?? ProjectCapabilityPanelState(
+                fullText: "App 已释放",
+                sections: [ProjectCapabilityPanelState.Section(
+                    engineName: "App",
+                    status: .failed,
+                    ownership: nil,
+                    rows: [],
+                    diagnostics: [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: "App 已释放", path: nil)]
+                )]
+            ) },
             onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
             onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
             onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject(project: project) ?? "同步 opencode 配置失败：App 已释放" }
@@ -769,10 +767,6 @@ extension MinimalAppDelegate {
     }
 
     /// 只读汇总当前项目三路 projection dry-run:targets / ownership / diagnostics / plan 构建失败原因。
-    @MainActor func projectCapabilityPanelForCurrentProject() -> ProjectCapabilityPanelState {
-        projectCapabilityPanel(for: ProjectStore.current(defaults: userDefaults))
-    }
-
     @MainActor func projectCapabilityPanel(for project: AgentProject) -> ProjectCapabilityPanelState {
         let sections = [
             Self.projectCapabilitySection(engineName: "opencode", project: project) { try OpencodeProjectAdapter().plans(for: project) },

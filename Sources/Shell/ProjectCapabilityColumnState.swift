@@ -19,6 +19,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     @Published public private(set) var card: ProjectCapabilityCardState
     @Published public private(set) var catalog: ProjectCapabilityCatalogModel?
     @Published public private(set) var syncMessages: [String]
+    @Published public private(set) var diagnosticPanel: ProjectCapabilityPanelState?
 
     public var onOpenSkillDetail: ((Int, ProjectCapabilitySkillDetailState) -> Void)?
     public var onOpenMCPDetail: ((Int, ProjectCapabilityMCPDetailState) -> Void)?
@@ -35,6 +36,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)?
     private let onRefreshCard: (() -> ProjectCapabilityCardState)?
     private let onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)?
+    private let onShowDiagnostics: (() -> ProjectCapabilityPanelState)?
     private let onSyncCodex: (() -> String)?
     private let onSyncClaudeCode: (() -> String)?
     private let onSyncOpencode: (() -> String)?
@@ -54,6 +56,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onImportCandidates: (([ProjectCapabilityImportCandidate], String, String) throws -> ProjectCapabilityImportOutcome)? = nil,
         onRefreshCard: (() -> ProjectCapabilityCardState)? = nil,
         onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)? = nil,
+        onShowDiagnostics: (() -> ProjectCapabilityPanelState)? = nil,
         onSyncCodex: (() -> String)? = nil,
         onSyncClaudeCode: (() -> String)? = nil,
         onSyncOpencode: (() -> String)? = nil
@@ -61,6 +64,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.card = card
         self.catalog = catalog
         self.syncMessages = syncMessages
+        self.diagnosticPanel = nil
         self.onSetEnabled = onSetEnabled
         self.onCreatePlugin = onCreatePlugin
         self.onAddSkill = onAddSkill
@@ -72,6 +76,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onImportCandidates = onImportCandidates
         self.onRefreshCard = onRefreshCard
         self.onRefreshCatalog = onRefreshCatalog
+        self.onShowDiagnostics = onShowDiagnostics
         self.onSyncCodex = onSyncCodex
         self.onSyncClaudeCode = onSyncClaudeCode
         self.onSyncOpencode = onSyncOpencode
@@ -204,19 +209,30 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onOpenImport?(Self.importRowID, state)
     }
 
+    public func showDiagnostics() {
+        diagnosticPanel = onShowDiagnostics?()
+    }
+
+    public func dismissDiagnostics() {
+        diagnosticPanel = nil
+    }
+
     public func syncCodex() {
+        diagnosticPanel = nil
         guard let onSyncCodex else { return }
         syncMessages.append(onSyncCodex())
         refreshCardAfterSync()
     }
 
     public func syncClaudeCode() {
+        diagnosticPanel = nil
         guard let onSyncClaudeCode else { return }
         syncMessages.append(onSyncClaudeCode())
         refreshCardAfterSync()
     }
 
     public func syncOpencode() {
+        diagnosticPanel = nil
         guard let onSyncOpencode else { return }
         syncMessages.append(onSyncOpencode())
         refreshCardAfterSync()

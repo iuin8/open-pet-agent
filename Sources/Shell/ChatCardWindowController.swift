@@ -71,8 +71,6 @@ public final class ChatCardWindowController {
     public var onRequestSyncClaudeCodeProjection: (@MainActor () -> String)?
     /// App 注入:用户点「同步 opencode 配置」→ 显式 materialize 当前项目的 opencode projection，并返回状态文案。
     public var onRequestSyncOpencodeProjection: (@MainActor () -> String)?
-    /// App 注入:用户点「项目能力诊断」→ 只读汇总 projection targets / diagnostics，并返回面板状态。
-    public var onRequestShowProjectCapabilityDiagnostics: (@MainActor () -> ProjectCapabilityPanelState)?
     /// App 注入:用户点「管理项目能力」→ 打开独立项目能力管理卡片。
     public var onRequestOpenProjectCapabilityManager: (@MainActor () -> Void)?
 
@@ -208,7 +206,6 @@ public final class ChatCardWindowController {
         if let cfg = projectProvider?() {
             if state.currentProject?.id != cfg.current.id {
                 state.codexProjectionSyncMessage = nil
-                state.projectCapabilityPanel = nil
             }
             state.currentProject = cfg.current
             state.projects = cfg.projects
@@ -221,7 +218,6 @@ public final class ChatCardWindowController {
         state.onRequestSyncCodexProjection = onRequestSyncCodexProjection
         state.onRequestSyncClaudeCodeProjection = onRequestSyncClaudeCodeProjection
         state.onRequestSyncOpencodeProjection = onRequestSyncOpencodeProjection
-        state.onRequestShowProjectCapabilityDiagnostics = onRequestShowProjectCapabilityDiagnostics
         state.onRequestShowProjectCapabilityManager = onRequestOpenProjectCapabilityManager
     }
 

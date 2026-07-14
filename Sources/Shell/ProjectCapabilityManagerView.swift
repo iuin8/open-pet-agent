@@ -8,6 +8,7 @@ struct ProjectCapabilityManagerView: View {
     let onSetEnabled: (String, Bool) -> Void
     var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
     var onImportExisting: (() -> Void)? = nil
+    var onShowDiagnostics: (() -> Void)? = nil
     let onCreatePlugin: (String, String) -> Void
     let onAddSkill: (String, String) -> Void
     let onAddMCP: (String, String, [String]) -> Void
@@ -31,6 +32,7 @@ struct ProjectCapabilityManagerView: View {
             authoringControls
             syncControls
             if let auditSummary = state.auditSummary { auditStatus(auditSummary) }
+            if let onShowDiagnostics { diagnosticsControl(onShowDiagnostics) }
             if !syncMessages.isEmpty { syncMessageList }
             tabBar
             if state.visibleItems.isEmpty {
@@ -127,6 +129,26 @@ struct ProjectCapabilityManagerView: View {
         .buttonStyle(.plain)
         .font(.system(size: 9, weight: .semibold, design: .rounded))
         .foregroundStyle(ChatCardTheme.accent)
+    }
+
+    private func diagnosticsControl(_ action: @escaping () -> Void) -> some View {
+        Button {
+            action()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "checklist")
+                Text("项目能力诊断")
+                Spacer()
+                Text("查看 dry-run / ownership")
+                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.45))
+            }
+            .font(.system(size: 9, weight: .semibold, design: .rounded))
+            .foregroundStyle(ChatCardTheme.accent)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.45)))
+        }
+        .buttonStyle(.plain)
     }
 
     private func auditStatus(_ summary: ProjectCapabilityCardState.AuditSummary) -> some View {
