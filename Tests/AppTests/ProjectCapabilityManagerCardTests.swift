@@ -65,6 +65,22 @@ struct ProjectCapabilityManagerCardTests {
         #expect(state.visibleItems.first?.diagnostics.contains { $0.severity == "error" && $0.message.contains("missing") } == true)
     }
 
+    @Test("build：MCP 缺失只标记 MCP 行")
+    func missingMCPDiagnosticsOnlyMarkMCPItem() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(enabled: true, mcpRef: "mcp/servers.json#missing")
+
+        let skillState = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+        let skillItem = try #require(skillState.visibleItems.first)
+        #expect(skillItem.status == .enabled)
+        #expect(skillItem.diagnostics.contains { $0.message.contains("MCP server") } == false)
+
+        let mcpState = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .mcp)
+        let mcpItem = try #require(mcpState.visibleItems.first)
+        #expect(mcpItem.status == .failed)
+        #expect(mcpItem.diagnostics.contains { $0.severity == "error" && $0.message.contains("missing") } == true)
+    }
+
     @Test("toggle：禁用 plugin 只改 plugin.json enabled，不 materialize engine 文件")
     func disablesPluginManifestOnly() throws {
         let fixture = try ProjectCapabilityManagerFixture()

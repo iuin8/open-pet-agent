@@ -736,23 +736,28 @@ extension MinimalAppDelegate {
         targetsBySource: [String: [String]],
         mcpTargets: [String]
     ) -> [ProjectCapabilityCardState.Item] {
-        let itemDiagnostics = diagnostics.map { ProjectCapabilityPanelState.Diagnostic(
+        let pluginDiagnostics = diagnostics.map { ProjectCapabilityPanelState.Diagnostic(
             severity: $0.severity.rawValue,
             message: $0.message,
             path: $0.path
-        ) } + projectionDiagnostics
-        let status = capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics)
+        ) }
         let skillItems = plugin.skills.map { ref in
             let source = plugin.rootURL.appendingPathComponent(ref, isDirectory: true).path
+            let name = URL(fileURLWithPath: ref).lastPathComponent
+            let itemDiagnostics = diagnosticsForCapabilityItem(
+                pluginDiagnostics,
+                sourcePath: source,
+                itemName: name
+            )
             return ProjectCapabilityCardState.Item(
                 id: "skill:\(plugin.id):\(source)",
                 kind: .skill,
-                name: URL(fileURLWithPath: ref).lastPathComponent,
+                name: name,
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targetsBySource[source] ?? [],
                 isEnabled: plugin.enabled,
-                status: status,
+                status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics
             )
         }
@@ -761,6 +766,11 @@ extension MinimalAppDelegate {
             let file = parts.first ?? ref
             let name = parts.count == 2 ? parts[1] : ref
             let source = plugin.rootURL.appendingPathComponent(file, isDirectory: false).path + (parts.count == 2 ? "#\(name)" : "")
+            let itemDiagnostics = diagnosticsForCapabilityItem(
+                pluginDiagnostics + projectionDiagnostics,
+                sourcePath: source,
+                itemName: name
+            )
             return ProjectCapabilityCardState.Item(
                 id: "mcp:\(plugin.id):\(name)",
                 kind: .mcp,
@@ -769,11 +779,22 @@ extension MinimalAppDelegate {
                 sourcePath: source,
                 targetPaths: mcpTargets,
                 isEnabled: plugin.enabled,
-                status: status,
+                status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics
             )
         }
         return skillItems + mcpItems
+    }
+
+    private static func diagnosticsForCapabilityItem(
+        _ diagnostics: [ProjectCapabilityPanelState.Diagnostic],
+        sourcePath: String,
+        itemName: String
+    ) -> [ProjectCapabilityPanelState.Diagnostic] {
+        diagnostics.filter { diagnostic in
+            if let path = diagnostic.path, path == sourcePath { return true }
+            return diagnostic.message.contains(itemName)
+        }
     }
 
     private static func projectCapabilityAuditSummary(

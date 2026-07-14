@@ -6,30 +6,33 @@ struct ProjectCapabilityPanelView: View {
     let onClose: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             header
-            ForEach(Array(panel.sections.enumerated()), id: \.offset) { _, section in
-                sectionView(section)
+            metadata
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(panel.sections.enumerated()), id: \.offset) { _, section in
+                        sectionView(section)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius, style: .continuous)
-                .fill(ChatCardTheme.petBubbleFill.opacity(0.95))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: ChatCardTheme.bubbleRadius, style: .continuous)
-                .stroke(ChatCardTheme.petBubbleStroke, lineWidth: 1)
-        )
+        .padding(14)
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "checklist")
                 .foregroundStyle(ChatCardTheme.accent)
-            Text("项目能力诊断")
-                .font(ChatCardTheme.chip)
-                .foregroundStyle(ChatCardTheme.textPrimary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("项目能力诊断")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                Text("dry-run / ownership / drift")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
+            }
             Spacer()
             Button {
                 copy(panel.fullText)
@@ -38,11 +41,32 @@ struct ProjectCapabilityPanelView: View {
             }
             .buttonStyle(.plain)
             .help("复制完整诊断")
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.plain)
-            .help("关闭诊断")
+        }
+    }
+
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            metadataRow("引擎", panel.sections.map(\.engineName).joined(separator: " · "))
+            metadataRow("状态", statusSummary)
+        }
+        .font(.system(size: 10, design: .rounded))
+    }
+
+    private var statusSummary: String {
+        let failed = panel.sections.filter { $0.status == .failed }.count
+        let warning = panel.sections.filter { $0.status == .warning }.count
+        if failed > 0 { return "\(failed) 个失败" }
+        if warning > 0 { return "\(warning) 个警告" }
+        return "全部正常"
+    }
+
+    private func metadataRow(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).fontWeight(.semibold)
+            Text(value.isEmpty ? "—" : value)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.58))
+                .textSelection(.enabled)
         }
     }
 

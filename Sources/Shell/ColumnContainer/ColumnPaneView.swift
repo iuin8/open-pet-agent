@@ -203,7 +203,6 @@ struct ColumnPaneView: View {
             ProjectCapabilityAddView(model: model)
         case .projectCapabilityDiagnostics(let panel):
             ProjectCapabilityPanelView(panel: panel) { onClose() }
-                .padding(6)
         }
     }
 }
