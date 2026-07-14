@@ -52,6 +52,41 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.card.selectedTab == .mcp)
     }
 
+    @Test("addSkill：完整草稿传递给写入回调并保留当前 tab")
+    func addSkillPassesFullDraftPreservingSelectedTab() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:review",
+            kind: .skill,
+            name: "review",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/skills/review",
+            targetPaths: [],
+            status: .enabled,
+            diagnostics: []
+        )
+        var captured: (pluginID: String, skillName: String, description: String, body: String)?
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: []),
+            onAddSkill: { pluginID, skillName, description, body in
+                captured = (pluginID, skillName, description, body)
+                return ProjectCapabilityCardState(selectedTab: .skills, items: [item])
+            }
+        )
+
+        model.addSkill(
+            pluginID: "dev-toolkit",
+            skillName: "review",
+            skillDescription: "Review staged diffs.",
+            body: "Inspect git diff before commit."
+        )
+
+        #expect(captured?.pluginID == "dev-toolkit")
+        #expect(captured?.skillName == "review")
+        #expect(captured?.description == "Review staged diffs.")
+        #expect(captured?.body == "Inspect git diff before commit.")
+        #expect(model.card.selectedTab == .mcp)
+    }
+
     @Test("sync：三路同步结果记录在列状态内")
     func syncActionsRecordMessages() {
         let model = ProjectCapabilityColumnState(

@@ -27,7 +27,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
 
     private let onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
     private let onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
-    private let onAddSkill: ((String, String) -> ProjectCapabilityCardState)?
+    private let onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)?
     private let onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
     private let onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)?
     private let onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)?
@@ -47,7 +47,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         syncMessages: [String] = [],
         onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)? = nil,
         onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)? = nil,
-        onAddSkill: ((String, String) -> ProjectCapabilityCardState)? = nil,
+        onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)? = nil,
         onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)? = nil,
         onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)? = nil,
         onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)? = nil,
@@ -100,9 +100,9 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         refreshPreservingTab(onCreatePlugin(pluginID, name))
     }
 
-    public func addSkill(pluginID: String, skillName: String) {
+    public func addSkill(pluginID: String, skillName: String, skillDescription: String, body: String) {
         guard let onAddSkill else { return }
-        refreshPreservingTab(onAddSkill(pluginID, skillName))
+        refreshPreservingTab(onAddSkill(pluginID, skillName, skillDescription, body))
     }
 
     public func addMCP(pluginID: String, serverName: String, command: [String]) {

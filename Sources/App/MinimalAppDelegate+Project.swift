@@ -258,10 +258,16 @@ extension MinimalAppDelegate {
                 }
                 return card(for: project)
             },
-            onAddSkill: { [weak self] pluginID, skillName in
+            onAddSkill: { [weak self] pluginID, skillName, skillDescription, body in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
                 do {
-                    try Self.addProjectCapabilitySkill(project: project, pluginID: pluginID, skillName: skillName)
+                    try Self.addProjectCapabilitySkill(
+                        project: project,
+                        pluginID: pluginID,
+                        skillName: skillName,
+                        skillDescription: skillDescription,
+                        body: body
+                    )
                 } catch {
                     self.showProjectError(title: "添加 Skill 失败", error: error)
                 }
@@ -484,15 +490,34 @@ extension MinimalAppDelegate {
         try data.write(to: manifestURL, options: .atomic)
     }
 
-    static func addProjectCapabilitySkill(project: AgentProject, pluginID: String, skillName: String) throws {
+    static func addProjectCapabilitySkill(
+        project: AgentProject,
+        pluginID: String,
+        skillName: String,
+        skillDescription: String = "项目级 Skill",
+        body: String = "描述这个 Skill 应该如何工作。"
+    ) throws {
         try createProjectCapabilityPlugin(project: project, pluginID: pluginID, name: pluginID)
         let safeSkill = sanitizedCapabilityName(skillName)
+        let trimmedDescription = skillDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         let skillRef = "skills/\(safeSkill)"
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent(skillRef, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let skillFile = dir.appendingPathComponent("SKILL.md", isDirectory: false)
         if !FileManager.default.fileExists(atPath: skillFile.path) {
-            try "# \(safeSkill)\n\n项目级 Skill，占位内容。\n".data(using: .utf8)!.write(to: skillFile, options: .atomic)
+            let contents = """
+            ---
+            name: \(safeSkill)
+            description: \(trimmedDescription.isEmpty ? "项目级 Skill" : trimmedDescription)
+            ---
+
+            # \(safeSkill)
+
+            \(trimmedBody.isEmpty ? "描述这个 Skill 应该如何工作。" : trimmedBody)
+
+            """
+            try contents.data(using: .utf8)!.write(to: skillFile, options: .atomic)
         }
         try updateProjectCapabilityManifest(project: project, pluginID: pluginID) { manifest in
             var capabilities = manifest["capabilities"] as? [String] ?? []

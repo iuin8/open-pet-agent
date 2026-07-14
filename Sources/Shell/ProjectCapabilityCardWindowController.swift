@@ -13,7 +13,7 @@ public final class ProjectCapabilityCardWindowController {
     private var lastScreen: NSRect = .zero
     private var onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
     private var onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
-    private var onAddSkill: ((String, String) -> ProjectCapabilityCardState)?
+    private var onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)?
     private var onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
     private var onSyncCodex: (() -> String)?
     private var onSyncClaudeCode: (() -> String)?
@@ -28,7 +28,7 @@ public final class ProjectCapabilityCardWindowController {
         screen: NSRect,
         onSetEnabled: @escaping (String, Bool) -> ProjectCapabilityCardState,
         onCreatePlugin: @escaping (String, String) -> ProjectCapabilityCardState,
-        onAddSkill: @escaping (String, String) -> ProjectCapabilityCardState,
+        onAddSkill: @escaping (String, String, String, String) -> ProjectCapabilityCardState,
         onAddMCP: @escaping (String, String, [String]) -> ProjectCapabilityCardState,
         onSyncCodex: @escaping () -> String,
         onSyncClaudeCode: @escaping () -> String,
@@ -72,10 +72,10 @@ public final class ProjectCapabilityCardWindowController {
         renderAndPlace()
     }
 
-    private func addSkill(pluginID: String, skillName: String) {
+    private func addSkill(pluginID: String, skillName: String, skillDescription: String, body: String) {
         guard let onAddSkill else { return }
         let tab = currentCard.selectedTab
-        let refreshed = onAddSkill(pluginID, skillName)
+        let refreshed = onAddSkill(pluginID, skillName, skillDescription, body)
         currentCard = ProjectCapabilityCardState(selectedTab: tab, items: refreshed.items)
         renderAndPlace()
     }
@@ -128,7 +128,7 @@ public final class ProjectCapabilityCardWindowController {
                     onSelectTab: { [weak self] tab in self?.selectTab(tab) },
                     onSetEnabled: { [weak self] pluginID, enabled in self?.setPluginEnabled(pluginID: pluginID, enabled: enabled) },
                     onCreatePlugin: { [weak self] pluginID, name in self?.createPlugin(pluginID: pluginID, name: name) },
-                    onAddSkill: { [weak self] pluginID, skillName in self?.addSkill(pluginID: pluginID, skillName: skillName) },
+                    onAddSkill: { [weak self] pluginID, skillName, skillDescription, body in self?.addSkill(pluginID: pluginID, skillName: skillName, skillDescription: skillDescription, body: body) },
                     onAddMCP: { [weak self] pluginID, serverName, command in self?.addMCP(pluginID: pluginID, serverName: serverName, command: command) },
                     onSyncCodex: { [weak self] in self?.syncCodex() },
                     onSyncClaudeCode: { [weak self] in self?.syncClaudeCode() },
