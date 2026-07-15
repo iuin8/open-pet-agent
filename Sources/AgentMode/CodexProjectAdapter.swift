@@ -67,35 +67,11 @@ public struct CodexProjectAdapter: Sendable {
     }
 
     private func resolveMCPRef(_ ref: String, plugin: ProjectPluginDescriptor) throws -> (String, ACPJSON) {
-        let parts = ref.split(separator: "#", maxSplits: 1).map(String.init)
-        guard parts.count == 2 else { throw CodexProjectAdapterError.invalidMCPRef(ref) }
-        let fileURL = try readableMCPFileURL(
-            ref: parts[0],
-            fullRef: ref,
-            plugin: plugin
-        )
-
-        let serverName = parts[1]
-        let data: Data
         do {
-            data = try Data(contentsOf: fileURL)
-        } catch {
-            throw CodexProjectAdapterError.unreadableMCPServer(ref)
+            return try ProjectProjectionMCPResolver.resolve(ref, plugin: plugin)
+        } catch let error as ProjectProjectionMCPResolutionError {
+            throw CodexProjectAdapterError(error)
         }
-        let object: [String: ACPJSON]
-        do {
-            object = try JSONDecoder().decode(ACPJSON.self, from: data).objectValue ?? [:]
-        } catch {
-            throw CodexProjectAdapterError.unreadableMCPServer(ref)
-        }
-        guard let servers = object["mcpServers"]?.objectValue,
-              let server = servers[serverName] else {
-            throw CodexProjectAdapterError.missingMCPServer(serverName)
-        }
-        guard server.objectValue != nil else {
-            throw CodexProjectAdapterError.invalidMCPServer(serverName)
-        }
-        return (serverName, server)
     }
 
     private func resolveSkillRef(_ ref: String, plugin: ProjectPluginDescriptor, project: AgentProject) throws -> (URL, URL) {
@@ -126,40 +102,6 @@ public struct CodexProjectAdapter: Sendable {
             .appendingPathComponent("skills", isDirectory: true)
             .appendingPathComponent("\(plugin.id)-\(skillName)", isDirectory: true)
         return (source, destination)
-    }
-
-    private func readableMCPFileURL(ref: String, fullRef: String, plugin: ProjectPluginDescriptor) throws -> URL {
-        let parts = ref.split(separator: "/").map(String.init)
-        guard parts.first == "mcp",
-              parts.count > 1,
-              parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
-            throw CodexProjectAdapterError.mcpRefEscapesPlugin(fullRef)
-        }
-
-        let pluginRoot = plugin.rootURL.standardizedFileURL.resolvingSymlinksInPath()
-        let lexicalRoot = plugin.rootURL.appendingPathComponent("mcp", isDirectory: true).standardizedFileURL
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: lexicalRoot.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw CodexProjectAdapterError.unreadableMCPServer(fullRef)
-        }
-        let resolvedRoot = lexicalRoot.resolvingSymlinksInPath()
-        if (try? lexicalRoot.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-            guard ProjectionTrust.isPath(resolvedRoot, inside: pluginRoot) else {
-                throw CodexProjectAdapterError.mcpRefEscapesPlugin(fullRef)
-            }
-        }
-
-        let lexicalURL = parts.dropFirst().reduce(lexicalRoot) { url, component in
-            url.appendingPathComponent(component, isDirectory: false)
-        }.standardizedFileURL
-        guard FileManager.default.fileExists(atPath: lexicalURL.path) else {
-            throw CodexProjectAdapterError.unreadableMCPServer(fullRef)
-        }
-        let resolvedURL = lexicalURL.resolvingSymlinksInPath()
-        guard ProjectionTrust.isPath(resolvedURL, inside: resolvedRoot) else {
-            throw CodexProjectAdapterError.mcpRefEscapesPlugin(fullRef)
-        }
-        return resolvedURL
     }
 
     private func validateMCPServer(_ server: ACPJSON, name: String) throws {
@@ -270,6 +212,16 @@ public enum CodexProjectAdapterError: Error, Equatable, CustomStringConvertible 
     case mcpRefEscapesPlugin(String)
     case skillRefEscapesPlugin(String)
     case missingSkill(String)
+
+    init(_ error: ProjectProjectionMCPResolutionError) {
+        switch error {
+        case .invalidRef(let ref): self = .invalidMCPRef(ref)
+        case .unreadableServer(let ref): self = .unreadableMCPServer(ref)
+        case .missingServer(let name): self = .missingMCPServer(name)
+        case .invalidServer(let name): self = .invalidMCPServer(name)
+        case .refEscapesPlugin(let ref): self = .mcpRefEscapesPlugin(ref)
+        }
+    }
 
     var isRecoverableMCPConfigurationError: Bool {
         switch self {
