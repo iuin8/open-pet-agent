@@ -89,6 +89,86 @@ final class CodexProjectAdapterTests: XCTestCase {
         }
     }
 
+    func testPlanIncludesSkillCopyAndDiagnosticWhenMCPServerMissing() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            capabilities: ["mcp", "skills"],
+            mcpRefs: ["mcp/servers.json#missing"],
+            skills: ["skills/code-review"]
+        )
+
+        let plans = try CodexProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertTrue(plans[0].operations.contains {
+            if case let .copyDirectory(source, destination) = $0 {
+                return source.path.hasSuffix("skills/code-review")
+                    && destination.path == project.rootURL.appendingPathComponent(".agents/skills/dev-toolkit-code-review", isDirectory: true).path
+            }
+            return false
+        })
+        XCTAssertFalse(plans[0].operations.contains {
+            if case .writeFile = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(plans[0].diagnostics.contains {
+            $0.severity == .error && $0.message.contains("找不到 Codex MCP server: missing")
+        })
+    }
+
+    func testPlanIncludesSkillCopyAndDiagnosticWhenMCPServerInvalidForCodex() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            capabilities: ["mcp", "skills"],
+            skills: ["skills/code-review"],
+            serverName: "bad",
+            commandJSON: #"[]"#
+        )
+
+        let plans = try CodexProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertTrue(plans[0].operations.contains {
+            if case let .copyDirectory(source, destination) = $0 {
+                return source.path.hasSuffix("skills/code-review")
+                    && destination.path == project.rootURL.appendingPathComponent(".agents/skills/dev-toolkit-code-review", isDirectory: true).path
+            }
+            return false
+        })
+        XCTAssertFalse(plans[0].operations.contains {
+            if case .writeFile = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(plans[0].diagnostics.contains {
+            $0.severity == .error && $0.message.contains("无效 Codex MCP server: bad")
+        })
+    }
+
+    func testPlanIncludesSkillCopyAndDiagnosticWhenMCPFileMissing() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            capabilities: ["mcp", "skills"],
+            skills: ["skills/code-review"]
+        )
+        try FileManager.default.removeItem(
+            at: ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit").appendingPathComponent("mcp/servers.json")
+        )
+
+        let plans = try CodexProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertTrue(plans[0].operations.contains {
+            if case let .copyDirectory(source, destination) = $0 {
+                return source.path.hasSuffix("skills/code-review")
+                    && destination.path == project.rootURL.appendingPathComponent(".agents/skills/dev-toolkit-code-review", isDirectory: true).path
+            }
+            return false
+        })
+        XCTAssertTrue(plans[0].diagnostics.contains {
+            $0.severity == .error && $0.message.contains("无法读取 Codex MCP server 文件: mcp/servers.json#filesystem")
+        })
+    }
+
     func testPlanIncludesSkillCopyOperations() throws {
         try writePlugin(id: "dev-toolkit", capabilities: ["skills"], mcpRefs: [], skills: ["skills/code-review"])
 

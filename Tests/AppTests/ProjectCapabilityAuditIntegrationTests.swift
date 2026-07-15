@@ -77,6 +77,64 @@ struct ProjectCapabilityAuditIntegrationTests {
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path))
     }
 
+    @Test("sync：缺失 MCP 不阻断 Codex 和 Claude Code Skill 同步")
+    func syncMissingMCPDoesNotBlockSkillProjection() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "MissingMCP")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true)
+        try """
+        { "mcpServers": {} }
+        """.data(using: .utf8)!.write(to: fixture.pluginRoot.appendingPathComponent("mcp/servers.json"), options: .atomic)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let codexMessage = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+        let claudeMessage = delegate.syncClaudeCodeProjectionForCurrentProject(project: fixture.project)
+
+        #expect(codexMessage.contains("Codex 配置已同步"))
+        #expect(codexMessage.contains("失败") == false)
+        #expect(claudeMessage.contains("Claude Code 配置已同步"))
+        #expect(claudeMessage.contains("失败") == false)
+        #expect(FileManager.default.fileExists(
+            atPath: fixture.project.rootURL.appendingPathComponent(".agents/skills/dev-toolkit-code-review/SKILL.md").path
+        ))
+        #expect(FileManager.default.fileExists(
+            atPath: fixture.project.rootURL.appendingPathComponent(".claude/skills/dev-toolkit-code-review/SKILL.md").path
+        ))
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
+    }
+
+    @Test("sync：缺失 MCP 文件也不阻断 Skill 同步")
+    func syncMissingMCPFileDoesNotBlockSkillProjection() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "MissingMCPFile")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true)
+        try FileManager.default.removeItem(at: fixture.pluginRoot.appendingPathComponent("mcp/servers.json"))
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let codexMessage = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+        let claudeMessage = delegate.syncClaudeCodeProjectionForCurrentProject(project: fixture.project)
+
+        #expect(codexMessage.contains("失败") == false)
+        #expect(claudeMessage.contains("失败") == false)
+        #expect(FileManager.default.fileExists(
+            atPath: fixture.project.rootURL.appendingPathComponent(".agents/skills/dev-toolkit-code-review/SKILL.md").path
+        ))
+        #expect(FileManager.default.fileExists(
+            atPath: fixture.project.rootURL.appendingPathComponent(".claude/skills/dev-toolkit-code-review/SKILL.md").path
+        ))
+    }
+
     @Test("doctor：打开诊断列会记录最近 validation 时间")
     func diagnosticsPanelRecordsLastValidation() throws {
         let fixture = try ProjectCapabilityAuditFixture(prefix: "Validation")
