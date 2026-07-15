@@ -154,7 +154,7 @@ private struct ProjectCapabilityModelBuilder {
             enabled: descriptor.enabled,
             source: .local(path: descriptor.rootURL.path),
             skills: descriptor.skills.map { buildSkill($0, plugin: descriptor) },
-            mcpServers: descriptor.mcp.compactMap { try? buildMCP($0, plugin: descriptor) },
+            mcpServers: descriptor.mcp.map { buildMCP($0, plugin: descriptor) },
             profiles: [],
             diagnostics: catalog.validate(descriptor)
         )
@@ -175,22 +175,74 @@ private struct ProjectCapabilityModelBuilder {
         )
     }
 
-    private func buildMCP(_ ref: String, plugin: ProjectPluginDescriptor) throws -> CapabilityMCPServer {
-        let resolved = try ProjectCapabilityMCPResolver.resolve(ref, plugin: plugin)
-        let object = resolved.value.objectValue ?? [:]
-        let fileRef = String(ref.split(separator: "#", maxSplits: 1)[0])
-        return CapabilityMCPServer(
-            id: "\(plugin.id):\(resolved.name)",
-            name: resolved.name,
+    private func buildMCP(_ ref: String, plugin: ProjectPluginDescriptor) -> CapabilityMCPServer {
+        let parts = ref.split(separator: "#", maxSplits: 1).map(String.init)
+        let fileRef = parts.first ?? ref
+        let fallbackName = parts.count == 2 ? parts[1] : URL(fileURLWithPath: ref).lastPathComponent
+        do {
+            let resolved = try ProjectCapabilityMCPResolver.resolve(ref, plugin: plugin)
+            let object = resolved.value.objectValue ?? [:]
+            return CapabilityMCPServer(
+                id: "\(plugin.id):\(resolved.name)",
+                name: resolved.name,
+                fileRef: fileRef,
+                transport: Self.transport(for: object),
+                command: ProjectCapabilityMCPResolver.commandParts(for: resolved.value) ?? [],
+                url: object["url"]?.stringValue,
+                env: Self.stringMap(object["env"]),
+                cwd: object["cwd"]?.stringValue,
+                rawJSON: Self.rawJSON(resolved.value),
+                targets: targets(for: plugin),
+                diagnostics: []
+            )
+        } catch let error as ProjectCapabilityValidationError {
+            return unresolvedMCP(
+                ref: ref,
+                fileRef: fileRef,
+                name: fallbackName,
+                plugin: plugin,
+                diagnostic: mcpDiagnostic(for: error.message, path: plugin.rootURL.path)
+            )
+        } catch {
+            return unresolvedMCP(
+                ref: ref,
+                fileRef: fileRef,
+                name: fallbackName,
+                plugin: plugin,
+                diagnostic: .error("Malformed MCP reference: \(ref)", path: plugin.rootURL.path)
+            )
+        }
+    }
+
+    private func unresolvedMCP(
+        ref: String,
+        fileRef: String,
+        name: String,
+        plugin: ProjectPluginDescriptor,
+        diagnostic: ProjectConfigDiagnostic
+    ) -> CapabilityMCPServer {
+        CapabilityMCPServer(
+            id: "\(plugin.id):\(ref)",
+            name: name,
             fileRef: fileRef,
-            transport: Self.transport(for: object),
-            command: ProjectCapabilityMCPResolver.commandParts(for: resolved.value) ?? [],
-            url: object["url"]?.stringValue,
-            env: Self.stringMap(object["env"]),
-            cwd: object["cwd"]?.stringValue,
-            rawJSON: Self.rawJSON(resolved.value),
+            transport: .stdio,
+            command: [],
+            url: nil,
+            env: [:],
+            cwd: nil,
+            rawJSON: "{}",
             targets: targets(for: plugin),
-            diagnostics: []
+            diagnostics: [diagnostic]
+        )
+    }
+
+    private func mcpDiagnostic(for message: String, path: String?) -> ProjectConfigDiagnostic {
+        let isRecoverableInputProblem = message.hasPrefix("Missing MCP server:")
+            || message.hasPrefix("Missing MCP server file:")
+        return ProjectConfigDiagnostic(
+            severity: isRecoverableInputProblem ? .warning : .error,
+            message: message,
+            path: path
         )
     }
 

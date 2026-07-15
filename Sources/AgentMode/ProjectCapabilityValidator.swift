@@ -75,10 +75,20 @@ public struct ProjectCapabilityValidator: Sendable {
                 diagnostics.append(.error("Malformed MCP command: \(resolved.name)", path: plugin.rootURL.path))
             }
         } catch let error as ProjectCapabilityValidationError {
-            diagnostics.append(.error(error.message, path: plugin.rootURL.path))
+            diagnostics.append(mcpDiagnostic(for: error.message, path: plugin.rootURL.path))
         } catch {
             diagnostics.append(.error("Malformed MCP reference: \(ref)", path: plugin.rootURL.path))
         }
+    }
+
+    private func mcpDiagnostic(for message: String, path: String?) -> ProjectConfigDiagnostic {
+        let isRecoverableInputProblem = message.hasPrefix("Missing MCP server:")
+            || message.hasPrefix("Missing MCP server file:")
+        return ProjectConfigDiagnostic(
+            severity: isRecoverableInputProblem ? .warning : .error,
+            message: message,
+            path: path
+        )
     }
 }
 
@@ -89,7 +99,12 @@ enum ProjectCapabilityMCPResolver {
         let fileURL = try ProjectCapabilityPath.containedURL(ref: parts[0], subdirectory: "mcp", plugin: plugin, isDirectory: false) {
             "MCP reference escapes plugin: \(ref)"
         }
-        let data = try Data(contentsOf: fileURL)
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            throw ProjectCapabilityValidationError("Missing MCP server file: \(ref)")
+        }
         guard let object = try JSONDecoder().decode(ACPJSON.self, from: data).objectValue,
               let servers = object["mcpServers"]?.objectValue else {
             throw ProjectCapabilityValidationError("Malformed MCP server file: \(ref)")
@@ -192,5 +207,9 @@ struct ProjectCapabilityValidationError: LocalizedError {
 extension ProjectConfigDiagnostic {
     static func error(_ message: String, path: String?) -> ProjectConfigDiagnostic {
         ProjectConfigDiagnostic(severity: .error, message: message, path: path)
+    }
+
+    static func warning(_ message: String, path: String?) -> ProjectConfigDiagnostic {
+        ProjectConfigDiagnostic(severity: .warning, message: message, path: path)
     }
 }

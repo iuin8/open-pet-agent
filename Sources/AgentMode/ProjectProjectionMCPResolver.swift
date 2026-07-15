@@ -3,6 +3,7 @@ import Foundation
 enum ProjectProjectionMCPResolutionError: Error, Equatable {
     case invalidRef(String)
     case unreadableServer(String)
+    case malformedServerFile(String)
     case missingServer(String)
     case invalidServer(String)
     case refEscapesPlugin(String)
@@ -22,9 +23,15 @@ enum ProjectProjectionMCPResolver {
         }
         let object: [String: ACPJSON]
         do {
-            object = try JSONDecoder().decode(ACPJSON.self, from: data).objectValue ?? [:]
+            guard let decoded = try JSONDecoder().decode(ACPJSON.self, from: data).objectValue,
+                  decoded["mcpServers"]?.objectValue != nil else {
+                throw ProjectProjectionMCPResolutionError.malformedServerFile(ref)
+            }
+            object = decoded
+        } catch let error as ProjectProjectionMCPResolutionError {
+            throw error
         } catch {
-            throw ProjectProjectionMCPResolutionError.unreadableServer(ref)
+            throw ProjectProjectionMCPResolutionError.malformedServerFile(ref)
         }
         guard let servers = object["mcpServers"]?.objectValue,
               let server = servers[serverName] else {

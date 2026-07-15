@@ -42,31 +42,33 @@ public struct ProjectCapabilityWriter: Sendable {
             throw ProjectCapabilityValidationError("Missing MCP server name")
         }
         let plugin = try descriptor(project: project, pluginID: pluginID)
+        let manifestRef = "\(fileRef)#\(serverName)"
         let fileURL = try ProjectCapabilityPath.containedURL(ref: fileRef, subdirectory: "mcp", plugin: plugin, isDirectory: false) {
-            "MCP reference escapes plugin: \(fileRef)#\(serverName)"
-        }
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            throw ProjectCapabilityValidationError("Missing MCP server file: \(fileRef)")
+            "MCP reference escapes plugin: \(manifestRef)"
         }
         let manifestURL = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID).appendingPathComponent("plugin.json")
-        let originalFile = try Data(contentsOf: fileURL)
+        let originalFile = try? Data(contentsOf: fileURL)
         let originalManifest = try Data(contentsOf: manifestURL)
-        var root = try readJSONObject(fileURL)
-        var servers = try mcpServers(in: root, fileURL: fileURL)
-        guard servers.removeValue(forKey: serverName) != nil else {
+        let manifest = try readJSONObject(manifestURL)
+        let manifestRefs = manifest["mcp"] as? [String] ?? []
+        guard manifestRefs.contains(manifestRef) else {
             throw ProjectCapabilityValidationError("Missing MCP server: \(serverName)")
         }
+        let hasFile = FileManager.default.fileExists(atPath: fileURL.path)
+        var root = hasFile ? try readJSONObject(fileURL) : ["mcpServers": [String: Any]()] as [String: Any]
+        var servers = try mcpServers(in: root, fileURL: fileURL)
+        let removedServer = servers.removeValue(forKey: serverName) != nil
         try backup(project: project, plugin: plugin, including: fileURL)
         do {
-            root["mcpServers"] = servers
-            try writeJSONObject(root, to: fileURL)
-            try updateManifest(project: project, pluginID: pluginID) { manifest in
-                var mcp = manifest["mcp"] as? [String] ?? []
-                mcp.removeAll { $0 == "\(fileRef)#\(serverName)" }
-                manifest["mcp"] = mcp
+            if hasFile, removedServer {
+                root["mcpServers"] = servers
+                try writeJSONObject(root, to: fileURL)
             }
+            try removeMCPManifestRef(manifestRef, project: project, pluginID: pluginID)
         } catch {
-            try? originalFile.write(to: fileURL, options: .atomic)
+            if let originalFile {
+                try? originalFile.write(to: fileURL, options: .atomic)
+            }
             try? originalManifest.write(to: manifestURL, options: .atomic)
             throw error
         }
@@ -192,6 +194,19 @@ public struct ProjectCapabilityWriter: Sendable {
         try writeJSONObject(object, to: manifestURL)
     }
 
+    private func removeMCPManifestRef(_ ref: String, project: AgentProject, pluginID: String) throws {
+        try updateManifest(project: project, pluginID: pluginID) { manifest in
+            var mcp = manifest["mcp"] as? [String] ?? []
+            mcp.removeAll { $0 == ref }
+            manifest["mcp"] = mcp
+            if mcp.isEmpty {
+                var capabilities = manifest["capabilities"] as? [String] ?? []
+                capabilities.removeAll { $0 == ProjectPluginCapability.mcp.rawValue }
+                manifest["capabilities"] = capabilities
+            }
+        }
+    }
+
     private func appendUnique(_ value: String, to key: String, in object: inout [String: Any]) {
         var values = object[key] as? [String] ?? []
         if !values.contains(value) { values.append(value) }
@@ -214,7 +229,9 @@ public struct ProjectCapabilityWriter: Sendable {
             partial.appendingPathComponent(component, isDirectory: false)
         }
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: url, to: destination)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.copyItem(at: url, to: destination)
+        }
     }
 
     private func capabilities(in manifest: [String: Any]) -> Set<ProjectPluginCapability> {

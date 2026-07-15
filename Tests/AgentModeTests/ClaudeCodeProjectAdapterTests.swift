@@ -112,7 +112,7 @@ final class ClaudeCodeProjectAdapterTests: XCTestCase {
             return false
         })
         XCTAssertTrue(plans[0].diagnostics.contains {
-            $0.severity == .error && $0.message.contains("找不到 Claude Code MCP server: missing")
+            $0.severity == .warning && $0.message.contains("找不到 Claude Code MCP server: missing")
         })
     }
 
@@ -137,7 +137,7 @@ final class ClaudeCodeProjectAdapterTests: XCTestCase {
             return false
         })
         XCTAssertTrue(plans[0].diagnostics.contains {
-            $0.severity == .error && $0.message.contains("无法读取 Claude Code MCP server 文件: mcp/servers.json#filesystem")
+            $0.severity == .warning && $0.message.contains("无法读取 Claude Code MCP server 文件: mcp/servers.json#filesystem")
         })
     }
 

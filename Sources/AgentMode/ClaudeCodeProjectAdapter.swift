@@ -27,7 +27,11 @@ public struct ClaudeCodeProjectAdapter: Sendable {
                         mcpServers.append((name: name, value: value))
                     } catch let error as ClaudeCodeProjectAdapterError {
                         guard error.isRecoverableMCPConfigurationError else { throw error }
-                        diagnostics.append(.error(error.description, path: plugin.rootURL.path))
+                        diagnostics.append(ProjectConfigDiagnostic(
+                            severity: error.diagnosticSeverity,
+                            message: error.description,
+                            path: plugin.rootURL.path
+                        ))
                     }
                 }
             }
@@ -154,6 +158,7 @@ public enum ClaudeCodeProjectAdapterError: Error, Equatable, CustomStringConvert
         switch error {
         case .invalidRef(let ref): self = .invalidMCPRef(ref)
         case .unreadableServer(let ref): self = .unreadableMCPServer(ref)
+        case .malformedServerFile(let ref): self = .invalidMCPServer(ref)
         case .missingServer(let name): self = .missingMCPServer(name)
         case .invalidServer(let name): self = .invalidMCPServer(name)
         case .refEscapesPlugin(let ref): self = .mcpRefEscapesPlugin(ref)
@@ -162,10 +167,19 @@ public enum ClaudeCodeProjectAdapterError: Error, Equatable, CustomStringConvert
 
     var isRecoverableMCPConfigurationError: Bool {
         switch self {
-        case .unreadableMCPServer, .missingMCPServer, .invalidMCPServer, .invalidMCPRef:
+        case .unreadableMCPServer, .missingMCPServer:
             return true
-        case .duplicateMCPServer, .mcpRefEscapesPlugin, .skillRefEscapesPlugin, .missingSkill:
+        case .invalidMCPRef, .invalidMCPServer, .duplicateMCPServer, .mcpRefEscapesPlugin, .skillRefEscapesPlugin, .missingSkill:
             return false
+        }
+    }
+
+    var diagnosticSeverity: ProjectConfigDiagnostic.Severity {
+        switch self {
+        case .unreadableMCPServer, .missingMCPServer:
+            return .warning
+        case .invalidMCPRef, .invalidMCPServer, .duplicateMCPServer, .mcpRefEscapesPlugin, .skillRefEscapesPlugin, .missingSkill:
+            return .error
         }
     }
 

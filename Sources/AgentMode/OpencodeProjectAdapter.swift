@@ -19,11 +19,20 @@ public struct OpencodeProjectAdapter: Sendable {
 
             if plugin.capabilities.contains(.mcp) {
                 for ref in plugin.mcp {
-                    let (name, value) = try resolveMCPRef(ref, plugin: plugin)
-                    guard seenMCPServers.insert(name).inserted else {
-                        throw OpencodeProjectAdapterError.duplicateMCPServer(name)
+                    do {
+                        let (name, value) = try resolveMCPRef(ref, plugin: plugin)
+                        guard seenMCPServers.insert(name).inserted else {
+                            throw OpencodeProjectAdapterError.duplicateMCPServer(name)
+                        }
+                        mcpServers.append((name: name, value: value))
+                    } catch let error as OpencodeProjectAdapterError {
+                        guard error.isRecoverableMCPConfigurationError else { throw error }
+                        diagnostics.append(ProjectConfigDiagnostic(
+                            severity: error.diagnosticSeverity,
+                            message: error.description,
+                            path: plugin.rootURL.path
+                        ))
                     }
-                    mcpServers.append((name: name, value: value))
                 }
             }
 
@@ -83,26 +92,12 @@ public struct OpencodeProjectAdapter: Sendable {
     }
 
     private func resolveMCPRef(_ ref: String, plugin: ProjectPluginDescriptor) throws -> (String, ACPJSON) {
-        let parts = ref.split(separator: "#", maxSplits: 1).map(String.init)
-        guard parts.count == 2 else { throw OpencodeProjectAdapterError.invalidMCPRef(ref) }
-        let fileURL = try containedURL(
-            ref: parts[0],
-            subdirectory: "mcp",
-            plugin: plugin,
-            isDirectory: false,
-            escape: { OpencodeProjectAdapterError.mcpRefEscapesPlugin(ref) }
-        )
-        let serverName = parts[1]
-        let data = try Data(contentsOf: fileURL)
-        guard let object = try JSONDecoder().decode(ACPJSON.self, from: data).objectValue,
-              let servers = object["mcpServers"]?.objectValue,
-              let server = servers[serverName] else {
-            throw OpencodeProjectAdapterError.missingMCPServer(serverName)
+        do {
+            let (name, value) = try ProjectProjectionMCPResolver.resolve(ref, plugin: plugin)
+            return (name, value)
+        } catch let error as ProjectProjectionMCPResolutionError {
+            throw OpencodeProjectAdapterError(error)
         }
-        guard server.objectValue != nil else {
-            throw OpencodeProjectAdapterError.invalidMCPServer(serverName)
-        }
-        return (serverName, server)
     }
 
     private func resolveSkillRef(_ ref: String, plugin: ProjectPluginDescriptor, project: AgentProject) throws -> (URL, URL) {
@@ -168,6 +163,7 @@ public struct OpencodeProjectAdapter: Sendable {
 
 public enum OpencodeProjectAdapterError: Error, Equatable, CustomStringConvertible {
     case invalidMCPRef(String)
+    case unreadableMCPServer(String)
     case missingMCPServer(String)
     case invalidMCPServer(String)
     case duplicateMCPServer(String)
@@ -175,9 +171,39 @@ public enum OpencodeProjectAdapterError: Error, Equatable, CustomStringConvertib
     case skillRefEscapesPlugin(String)
     case missingSkill(String)
 
+    init(_ error: ProjectProjectionMCPResolutionError) {
+        switch error {
+        case .invalidRef(let ref): self = .invalidMCPRef(ref)
+        case .unreadableServer(let ref): self = .unreadableMCPServer(ref)
+        case .malformedServerFile(let ref): self = .invalidMCPServer(ref)
+        case .missingServer(let name): self = .missingMCPServer(name)
+        case .invalidServer(let name): self = .invalidMCPServer(name)
+        case .refEscapesPlugin(let ref): self = .mcpRefEscapesPlugin(ref)
+        }
+    }
+
+    var isRecoverableMCPConfigurationError: Bool {
+        switch self {
+        case .unreadableMCPServer, .missingMCPServer:
+            return true
+        case .invalidMCPRef, .invalidMCPServer, .duplicateMCPServer, .mcpRefEscapesPlugin, .skillRefEscapesPlugin, .missingSkill:
+            return false
+        }
+    }
+
+    var diagnosticSeverity: ProjectConfigDiagnostic.Severity {
+        switch self {
+        case .unreadableMCPServer, .missingMCPServer:
+            return .warning
+        case .invalidMCPRef, .invalidMCPServer, .duplicateMCPServer, .mcpRefEscapesPlugin, .skillRefEscapesPlugin, .missingSkill:
+            return .error
+        }
+    }
+
     public var description: String {
         switch self {
         case .invalidMCPRef(let ref): return "无效 MCP 引用: \(ref)"
+        case .unreadableMCPServer(let ref): return "无法读取 MCP server 文件: \(ref)"
         case .missingMCPServer(let name): return "找不到 MCP server: \(name)"
         case .invalidMCPServer(let name): return "无效 MCP server: \(name)"
         case .duplicateMCPServer(let name): return "重复 MCP server 投影: \(name)"

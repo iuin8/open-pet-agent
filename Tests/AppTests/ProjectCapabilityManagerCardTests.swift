@@ -61,8 +61,8 @@ struct ProjectCapabilityManagerCardTests {
 
         let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .mcp)
 
-        #expect(state.visibleItems.first?.status == .failed)
-        #expect(state.visibleItems.first?.diagnostics.contains { $0.severity == "error" && $0.message.contains("missing") } == true)
+        #expect(state.visibleItems.first?.status == .warning)
+        #expect(state.visibleItems.first?.diagnostics.contains { $0.severity == "warning" && $0.message.contains("missing") } == true)
     }
 
     @Test("build：MCP 缺失只标记 MCP 行")
@@ -77,8 +77,9 @@ struct ProjectCapabilityManagerCardTests {
 
         let mcpState = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .mcp)
         let mcpItem = try #require(mcpState.visibleItems.first)
-        #expect(mcpItem.status == .failed)
-        #expect(mcpItem.diagnostics.contains { $0.severity == "error" && $0.message.contains("missing") } == true)
+        #expect(mcpItem.status == .warning)
+        #expect(mcpItem.diagnostics.contains { $0.severity == "warning" && $0.message.contains("missing") } == true)
+        #expect(mcpItem.diagnostics.contains { $0.severity == "error" && $0.message.contains("missing") } == false)
     }
 
     @Test("toggle：禁用 plugin 只改 plugin.json enabled，不 materialize engine 文件")

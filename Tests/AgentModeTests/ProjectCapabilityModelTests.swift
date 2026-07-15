@@ -84,7 +84,21 @@ final class ProjectCapabilityModelTests: XCTestCase {
 
         let diagnostics = try ProjectCapabilityValidator().validate(project: project)
 
-        XCTAssertTrue(diagnostics.containsDiagnostic("Missing MCP server: missing"))
+        XCTAssertTrue(diagnostics.containsDiagnostic("Missing MCP server: missing", severity: .warning))
+    }
+
+    func testBuildKeepsMissingMCPRefAsWarningPlaceholder() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#missing"], "engines": {} }
+        """)
+        try writeMCP("dev-toolkit", "filesystem", command: ["npx"])
+
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertEqual(server.name, "missing")
+        XCTAssertEqual(server.fileRef, "mcp/servers.json")
+        XCTAssertEqual(server.command, [])
+        XCTAssertTrue(server.diagnostics.contains { $0.severity == .warning && $0.message.contains("Missing MCP server: missing") })
     }
 
     func testValidatorReportsMalformedMCPCommand() throws {
@@ -180,7 +194,7 @@ final class ProjectCapabilityModelTests: XCTestCase {
 }
 
 private extension Array where Element == ProjectConfigDiagnostic {
-    func containsDiagnostic(_ text: String) -> Bool {
-        contains { $0.severity == .error && $0.message.contains(text) }
+    func containsDiagnostic(_ text: String, severity: ProjectConfigDiagnostic.Severity = .error) -> Bool {
+        contains { $0.severity == severity && $0.message.contains(text) }
     }
 }

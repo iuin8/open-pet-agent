@@ -126,6 +126,44 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         XCTAssertFalse(plans[0].operations.isEmpty)
     }
 
+    func testPlansIncludeSkillCopyAndWarningWhenMCPServerMissing() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            enabled: true,
+            capabilities: ["mcp", "skills"],
+            mcpRefs: ["mcp/servers.json#missing"],
+            skills: ["skills/code-review"]
+        )
+
+        let plans = try OpencodeProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertTrue(plans[0].operations.contains { operation in
+            if case let .copyDirectory(source, destination) = operation {
+                return source.path.hasSuffix("skills/code-review")
+                    && destination.path == project.rootURL.appendingPathComponent(".opencode/skills/dev-toolkit-code-review", isDirectory: true).path
+            }
+            return false
+        })
+        XCTAssertFalse(plans[0].operations.contains { operation in
+            if case .writeFile = operation { return true }
+            return false
+        })
+        XCTAssertTrue(plans[0].diagnostics.contains {
+            $0.severity == .warning && $0.message.contains("找不到 MCP server: missing")
+        })
+    }
+
+    func testPlansRejectMalformedMCPFile() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, capabilities: ["mcp", "skills"], skills: ["skills/code-review"])
+        let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+        try Data("not json".utf8).write(to: pluginRoot.appendingPathComponent("mcp/servers.json"), options: .atomic)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .invalidMCPServer("mcp/servers.json#filesystem"))
+        }
+    }
+
     func testPlansRejectSymlinkedMCPRootOutsidePlugin() throws {
         try writePlugin(id: "dev-toolkit", enabled: true)
         let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
