@@ -1,6 +1,16 @@
 import Foundation
+import AgentMode
 
 public struct ProjectCapabilityCardState: Sendable, Equatable {
+    public struct ProjectionTargetState: Sendable, Equatable {
+        public let target: CapabilityTarget
+        public let isEnabled: Bool
+
+        public init(target: CapabilityTarget, isEnabled: Bool) {
+            self.target = target
+            self.isEnabled = isEnabled
+        }
+    }
     public struct AuditSummary: Sendable, Equatable {
         public let lastValidationDescription: String?
         public let lastSyncDescription: String?
@@ -32,6 +42,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
     }
 
     public enum Tab: String, Sendable, Equatable, CaseIterable {
+        case overview
         case skills
         case mcp
         case profiles
@@ -57,6 +68,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
         public let pluginID: String
         public let sourcePath: String
         public let targetPaths: [String]
+        public let targets: [ProjectionTargetState]
         public let isEnabled: Bool
         public let status: Status
         public let diagnostics: [ProjectCapabilityPanelState.Diagnostic]
@@ -68,6 +80,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             pluginID: String,
             sourcePath: String,
             targetPaths: [String],
+            targets: [ProjectionTargetState] = [],
             isEnabled: Bool = true,
             status: Status,
             diagnostics: [ProjectCapabilityPanelState.Diagnostic]
@@ -78,6 +91,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             self.pluginID = pluginID
             self.sourcePath = sourcePath
             self.targetPaths = targetPaths
+            self.targets = targets
             self.isEnabled = isEnabled
             self.status = status
             self.diagnostics = diagnostics
@@ -113,6 +127,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
 
     private func isVisible(_ item: Item) -> Bool {
         switch selectedTab {
+        case .overview: return true
         case .skills: return item.kind == .skill
         case .mcp: return item.kind == .mcp
         case .profiles: return item.kind == .profile

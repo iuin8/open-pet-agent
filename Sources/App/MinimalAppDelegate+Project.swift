@@ -232,7 +232,7 @@ extension MinimalAppDelegate {
 
     @MainActor func projectCapabilityColumnState(for project: AgentProject) -> ProjectCapabilityColumnState {
         func card(for project: AgentProject) -> ProjectCapabilityCardState {
-            (try? Self.projectCapabilityCard(for: project, selectedTab: .skills)) ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
+            (try? Self.projectCapabilityCard(for: project, selectedTab: .overview)) ?? ProjectCapabilityCardState(selectedTab: .overview, items: [])
         }
         func catalog(for project: AgentProject) -> ProjectCapabilityCatalogModel? {
             try? ProjectCapabilityCatalogModel.build(for: project)
@@ -246,6 +246,15 @@ extension MinimalAppDelegate {
                     try Self.setProjectPluginEnabled(project: project, pluginID: pluginID, enabled: enabled)
                 } catch {
                     self.showProjectError(title: "更新项目能力失败", error: error)
+                }
+                return card(for: project)
+            },
+            onSetTargetEnabled: { [weak self] pluginID, target, enabled in
+                guard let self else { return ProjectCapabilityCardState(selectedTab: .overview, items: []) }
+                do {
+                    try Self.setProjectPluginTarget(project: project, pluginID: pluginID, target: target, enabled: enabled)
+                } catch {
+                    self.showProjectError(title: "更新项目能力目标失败", error: error)
                 }
                 return card(for: project)
             },
@@ -423,7 +432,7 @@ extension MinimalAppDelegate {
 
     /// 只读汇总当前项目的项目能力管理卡片:catalog + dry-run projection targets,不执行 materializer。
     @MainActor func projectCapabilityCardForCurrentProject() -> ProjectCapabilityCardState {
-        (try? Self.projectCapabilityCard(for: ProjectStore.current(defaults: userDefaults), selectedTab: .skills)) ?? ProjectCapabilityCardState(selectedTab: .skills, items: [])
+        (try? Self.projectCapabilityCard(for: ProjectStore.current(defaults: userDefaults), selectedTab: .overview)) ?? ProjectCapabilityCardState(selectedTab: .overview, items: [])
     }
 
     static func projectCapabilityCard(for project: AgentProject, selectedTab: ProjectCapabilityCardState.Tab) throws -> ProjectCapabilityCardState {
@@ -620,6 +629,53 @@ extension MinimalAppDelegate {
         try output.write(to: manifestURL, options: .atomic)
     }
 
+    static func setProjectPluginTarget(
+        project: AgentProject,
+        pluginID: String,
+        target: CapabilityTarget,
+        enabled: Bool
+    ) throws {
+        try updateProjectCapabilityManifest(project: project, pluginID: pluginID) { manifest in
+            var engines = manifest["engines"] as? [String: Any] ?? [:]
+            let canonicalKey = engineKey(for: target)
+            for key in engineKeys(for: target) where engines[key] != nil || key == canonicalKey {
+                var policy = engines[key] as? [String: Any] ?? [:]
+                policy["enabled"] = enabled
+                if policy["projection"] == nil {
+                    policy["projection"] = ProjectionPolicy.skillsAndMCPFiles.rawValue
+                }
+                engines[key] = policy
+            }
+            manifest["engines"] = engines
+        }
+    }
+
+    private static func engineKey(for target: CapabilityTarget) -> String {
+        switch target {
+        case .codex: return AgentEngineKind.codex.rawValue
+        case .claudeCode: return "claude-code"
+        case .opencode: return AgentEngineKind.openCode.rawValue
+        }
+    }
+
+    private static func targetStates(for plugin: ProjectPluginDescriptor) -> [ProjectCapabilityCardState.ProjectionTargetState] {
+        CapabilityTarget.allCases.map { target in
+            let policies = engineKeys(for: target).compactMap { plugin.enginePolicies[$0] }
+            return ProjectCapabilityCardState.ProjectionTargetState(
+                target: target,
+                isEnabled: policies.contains { $0 != .disabled }
+            )
+        }
+    }
+
+    private static func engineKeys(for target: CapabilityTarget) -> [String] {
+        switch target {
+        case .codex: return [AgentEngineKind.codex.rawValue, "codex"]
+        case .claudeCode: return [AgentEngineKind.claudeCode.rawValue, "claude-code", "claude"]
+        case .opencode: return [AgentEngineKind.openCode.rawValue, "opencode"]
+        }
+    }
+
     private static func projectionTargetsBySource(_ sections: [ProjectCapabilityDiagnosticSection]) -> [String: [String]] {
         var result: [String: [String]] = [:]
         for operation in sections.flatMap(\.plans).flatMap(\.operations) {
@@ -686,6 +742,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targets,
+                targets: skill.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isEnabled: plugin.enabled,
                 status: .warning,
                 diagnostics: diagnostics
@@ -721,6 +778,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targets,
+                targets: server.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isEnabled: plugin.enabled,
                 status: .warning,
                 diagnostics: diagnostics
@@ -756,6 +814,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targetsBySource[source] ?? [],
+                targets: targetStates(for: plugin),
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics
@@ -778,6 +837,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: mcpTargets,
+                targets: targetStates(for: plugin),
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics

@@ -658,6 +658,73 @@ struct ProjectCapabilityManagerCardTests {
         #expect(try fixtureA.manifestJSON()["enabled"] as? Bool == false)
         #expect(try fixtureB.manifestJSON()["enabled"] as? Bool == true)
     }
+    @Test("build：target states 显示 manifest 中声明的 engine 开关")
+    func buildsTargetStatesFromManifestEngines() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(
+            enabled: true,
+            enginesJSON: #"{ "codex": { "enabled": true, "projection": "skills-and-mcp-files" } }"#
+        )
+
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .overview)
+        let item = try #require(state.visibleItems.first { $0.kind == .skill })
+        let states = Dictionary(uniqueKeysWithValues: item.targets.map { ($0.target, $0.isEnabled) })
+
+        #expect(states[.codex] == true)
+        #expect(states[.claudeCode] == false)
+        #expect(states[.opencode] == false)
+    }
+
+    @Test("target toggle：关闭目标时同步禁用 legacy engine aliases")
+    func targetToggleDisablesLegacyAliases() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(
+            enabled: true,
+            enginesJSON: #"{ "openCode": { "enabled": true, "projection": "skills-and-mcp-files" }, "opencode": { "enabled": true, "projection": "skills-and-mcp-files" } }"#
+        )
+
+        try MinimalAppDelegate.setProjectPluginTarget(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            target: .opencode,
+            enabled: false
+        )
+
+        let manifest = try fixture.manifestJSON()
+        let engines = try #require(manifest["engines"] as? [String: Any])
+        let openCode = try #require(engines["openCode"] as? [String: Any])
+        let opencode = try #require(engines["opencode"] as? [String: Any])
+        #expect(openCode["enabled"] as? Bool == false)
+        #expect(opencode["enabled"] as? Bool == false)
+    }
+
+    @Test("target toggle：只改 manifest engine policy，不 materialize engine 文件")
+    func targetToggleUpdatesManifestOnly() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(
+            enabled: true,
+            enginesJSON: #"{ "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } }"#
+        )
+
+        try MinimalAppDelegate.setProjectPluginTarget(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            target: .codex,
+            enabled: false
+        )
+
+        let manifest = try fixture.manifestJSON()
+        let engines = try #require(manifest["engines"] as? [String: Any])
+        let codex = try #require(engines["codex"] as? [String: Any])
+        let claude = try #require(engines["claude-code"] as? [String: Any])
+        #expect(codex["enabled"] as? Bool == false)
+        #expect(codex["projection"] as? String == "skills-and-mcp-files")
+        #expect(claude["enabled"] as? Bool == true)
+        #expect(claude["projection"] as? String == "skills-and-mcp-files")
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents").path) == false)
+    }
 }
 
 private extension AppRootSystem {

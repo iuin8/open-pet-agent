@@ -1,3 +1,4 @@
+import AgentMode
 import AppKit
 import SwiftUI
 
@@ -8,10 +9,11 @@ public final class ProjectCapabilityCardWindowController {
 
     private var panel: ProjectCapabilityCardPanel?
     private var host: NSHostingView<AnyView>?
-    private var currentCard = ProjectCapabilityCardState(selectedTab: .skills, items: [])
+    private var currentCard = ProjectCapabilityCardState(selectedTab: .overview, items: [])
     private var lastPetRect: NSRect = .zero
     private var lastScreen: NSRect = .zero
     private var onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
+    private var onSetTargetEnabled: ((String, CapabilityTarget, Bool) -> ProjectCapabilityCardState)?
     private var onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
     private var onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)?
     private var onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
@@ -27,6 +29,7 @@ public final class ProjectCapabilityCardWindowController {
         petRect: NSRect,
         screen: NSRect,
         onSetEnabled: @escaping (String, Bool) -> ProjectCapabilityCardState,
+        onSetTargetEnabled: @escaping (String, CapabilityTarget, Bool) -> ProjectCapabilityCardState = { _, _, _ in ProjectCapabilityCardState(selectedTab: .overview, items: []) },
         onCreatePlugin: @escaping (String, String) -> ProjectCapabilityCardState,
         onAddSkill: @escaping (String, String, String, String) -> ProjectCapabilityCardState,
         onAddMCP: @escaping (String, String, [String]) -> ProjectCapabilityCardState,
@@ -38,6 +41,7 @@ public final class ProjectCapabilityCardWindowController {
         lastPetRect = petRect
         lastScreen = screen
         self.onSetEnabled = onSetEnabled
+        self.onSetTargetEnabled = onSetTargetEnabled
         self.onCreatePlugin = onCreatePlugin
         self.onAddSkill = onAddSkill
         self.onAddMCP = onAddMCP
@@ -63,6 +67,14 @@ public final class ProjectCapabilityCardWindowController {
         let tab = currentCard.selectedTab
         let refreshed = onSetEnabled(pluginID, enabled)
         currentCard = ProjectCapabilityCardState(selectedTab: tab, items: refreshed.items)
+        renderAndPlace()
+    }
+
+    public func setTargetEnabled(pluginID: String, target: CapabilityTarget, enabled: Bool) {
+        guard let onSetTargetEnabled else { return }
+        let tab = currentCard.selectedTab
+        let refreshed = onSetTargetEnabled(pluginID, target, enabled)
+        currentCard = ProjectCapabilityCardState(selectedTab: tab, items: refreshed.items, auditSummary: refreshed.auditSummary)
         renderAndPlace()
     }
 

@@ -28,6 +28,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     public var onOpenDiagnostics: ((Int, ProjectCapabilityPanelState) -> Void)?
 
     private let onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
+    private let onSetTargetEnabled: ((String, CapabilityTarget, Bool) -> ProjectCapabilityCardState)?
     private let onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
     private let onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)?
     private let onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
@@ -48,6 +49,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         catalog: ProjectCapabilityCatalogModel? = nil,
         syncMessages: [String] = [],
         onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)? = nil,
+        onSetTargetEnabled: ((String, CapabilityTarget, Bool) -> ProjectCapabilityCardState)? = nil,
         onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)? = nil,
         onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)? = nil,
         onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)? = nil,
@@ -67,6 +69,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.catalog = catalog
         self.syncMessages = syncMessages
         self.onSetEnabled = onSetEnabled
+        self.onSetTargetEnabled = onSetTargetEnabled
         self.onCreatePlugin = onCreatePlugin
         self.onAddSkill = onAddSkill
         self.onAddMCP = onAddMCP
@@ -94,6 +97,11 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     public func setPluginEnabled(pluginID: String, enabled: Bool) {
         guard let onSetEnabled else { return }
         refreshPreservingTab(onSetEnabled(pluginID, enabled))
+    }
+
+    public func setTargetEnabled(pluginID: String, target: CapabilityTarget, enabled: Bool) {
+        guard let onSetTargetEnabled else { return }
+        refreshPreservingTab(onSetTargetEnabled(pluginID, target, enabled))
     }
 
     public func createPlugin(pluginID: String, name: String) {

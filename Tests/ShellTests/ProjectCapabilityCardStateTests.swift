@@ -1,4 +1,5 @@
 import Testing
+import AgentMode
 @testable import Shell
 
 @Suite("ProjectCapabilityCardState")
@@ -67,5 +68,57 @@ struct ProjectCapabilityCardStateTests {
         )
 
         #expect(item.nextEnabledValue == true)
+    }
+
+    @Test("State：overview 显示全部能力并保留原始 rowID")
+    func overviewShowsAllCapabilityItems() {
+        let skill = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:lint",
+            kind: .skill,
+            name: "lint",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/skills/lint",
+            targetPaths: [],
+            targets: [ProjectCapabilityCardState.ProjectionTargetState(target: .codex, isEnabled: true)],
+            status: .enabled,
+            diagnostics: []
+        )
+        let mcp = ProjectCapabilityCardState.Item(
+            id: "mcp:dev-toolkit:filesystem",
+            kind: .mcp,
+            name: "filesystem",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/mcp/servers.json#filesystem",
+            targetPaths: [],
+            targets: [ProjectCapabilityCardState.ProjectionTargetState(target: .codex, isEnabled: true)],
+            status: .warning,
+            diagnostics: []
+        )
+
+        let state = ProjectCapabilityCardState(selectedTab: .overview, items: [mcp, skill])
+
+        #expect(state.visibleItems == [mcp, skill])
+        #expect(state.visibleRows.map(\.rowID) == [0, 1])
+    }
+
+    @Test("Item：target states 记录每个投影目标的启用态")
+    func itemStoresProjectionTargetStates() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:lint",
+            kind: .skill,
+            name: "lint",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/skills/lint",
+            targetPaths: [],
+            targets: [
+                ProjectCapabilityCardState.ProjectionTargetState(target: .codex, isEnabled: true),
+                ProjectCapabilityCardState.ProjectionTargetState(target: .claudeCode, isEnabled: false)
+            ],
+            status: .enabled,
+            diagnostics: []
+        )
+
+        #expect(item.targets.map(\.target) == [.codex, .claudeCode])
+        #expect(item.targets.map(\.isEnabled) == [true, false])
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import AgentMode
 import SwiftUI
 
 struct ProjectCapabilityManagerView: View {
@@ -6,6 +7,7 @@ struct ProjectCapabilityManagerView: View {
     let syncMessages: [String]
     let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
     let onSetEnabled: (String, Bool) -> Void
+    var onSetTargetEnabled: (String, CapabilityTarget, Bool) -> Void = { _, _, _ in }
     var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
     var onOpenAdd: (() -> Void)? = nil
     var onShowDiagnostics: (() -> Void)? = nil
@@ -21,6 +23,7 @@ struct ProjectCapabilityManagerView: View {
         VStack(alignment: .leading, spacing: 8) {
             if showsHeader { header }
             actionEntrypoints
+            capabilitySummary
             syncControls
             if let auditSummary = state.auditSummary { auditStatus(auditSummary) }
             if !syncMessages.isEmpty { syncMessageList }
@@ -105,6 +108,19 @@ struct ProjectCapabilityManagerView: View {
         .foregroundStyle(ChatCardTheme.accent)
     }
 
+    private var capabilitySummary: some View {
+        let pluginCount = Set(state.items.map(\.pluginID)).count
+        let skillCount = state.items.filter { $0.kind == .skill }.count
+        let mcpCount = state.items.filter { $0.kind == .mcp }.count
+        let issueCount = state.items.filter { $0.status == .warning || $0.status == .failed }.count
+        return Text("\(pluginCount) plugins · \(skillCount) skills · \(mcpCount) MCP · \(issueCount) diagnostics")
+            .font(.system(size: 9, weight: .semibold, design: .rounded))
+            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.58))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.42)))
+    }
+
     private func auditStatus(_ summary: ProjectCapabilityCardState.AuditSummary) -> some View {
         HStack(spacing: 5) {
             Image(systemName: summary.errorCount > 0 ? "exclamationmark.triangle.fill" : summary.warningCount > 0 ? "exclamationmark.circle.fill" : "checkmark.seal.fill")
@@ -136,6 +152,7 @@ struct ProjectCapabilityManagerView: View {
 
     private var tabBar: some View {
         HStack(spacing: 4) {
+            tabButton(.overview, title: "全部", icon: "square.grid.2x2.fill")
             tabButton(.skills, title: "Skills", icon: "sparkles")
             tabButton(.mcp, title: "MCP", icon: "point.3.connected.trianglepath.dotted")
             tabButton(.profiles, title: "Profiles", icon: "square.stack.3d.up")
@@ -185,6 +202,8 @@ struct ProjectCapabilityManagerView: View {
                     Text(item.name)
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(ChatCardTheme.textPrimary)
+                    smallBadge(kindLabel(for: item.kind), color: color(for: item.status))
+                    smallBadge("project", color: ChatCardTheme.textPrimary.opacity(0.45))
                     Text(item.pluginID)
                         .font(.system(size: 8, weight: .medium, design: .rounded))
                         .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
@@ -195,6 +214,13 @@ struct ProjectCapabilityManagerView: View {
                     .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.52))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if !item.targets.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(item.targets, id: \.target) { target in
+                            targetToggle(item.pluginID, target: target)
+                        }
+                    }
+                }
                 ForEach(item.targetPaths, id: \.self) { target in
                     Text("→ \(target)")
                         .font(.system(size: 8.5, design: .monospaced))
@@ -210,13 +236,17 @@ struct ProjectCapabilityManagerView: View {
                         .lineLimit(2)
                 }
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                guard item.kind == .skill || item.kind == .mcp else { return }
-                onOpenItem(rowID, item)
-            }
             Spacer(minLength: 4)
             VStack(spacing: 5) {
+                if item.kind == .skill || item.kind == .mcp {
+                    Button {
+                        onOpenItem(rowID, item)
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                    }
+                    .buttonStyle(.plain)
+                    .help("打开详情")
+                }
                 Button {
                     onSetEnabled(item.pluginID, item.nextEnabledValue)
                 } label: {
@@ -261,11 +291,65 @@ struct ProjectCapabilityManagerView: View {
             .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(color(for: status).opacity(0.12)))
     }
 
+    private func smallBadge(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 7.5, weight: .bold, design: .rounded))
+            .foregroundStyle(color)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1.5)
+            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(color.opacity(0.10)))
+    }
+
+    private func targetToggle(_ pluginID: String, target: ProjectCapabilityCardState.ProjectionTargetState) -> some View {
+        Button {
+            onSetTargetEnabled(pluginID, target.target, !target.isEnabled)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: targetIcon(for: target.target))
+                Text(targetLabel(for: target.target))
+            }
+            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .foregroundStyle(target.isEnabled ? ChatCardTheme.accent : ChatCardTheme.textPrimary.opacity(0.35))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(target.isEnabled ? ChatCardTheme.accent.opacity(0.12) : Color.white.opacity(0.42))
+            )
+        }
+        .buttonStyle(.plain)
+        .help(target.isEnabled ? "停止投影到 \(targetLabel(for: target.target))" : "投影到 \(targetLabel(for: target.target))")
+    }
+
+    private func targetLabel(for target: CapabilityTarget) -> String {
+        switch target {
+        case .codex: return "Codex"
+        case .claudeCode: return "Claude"
+        case .opencode: return "opencode"
+        }
+    }
+
+    private func targetIcon(for target: CapabilityTarget) -> String {
+        switch target {
+        case .codex: return "terminal.fill"
+        case .claudeCode: return "sparkles"
+        case .opencode: return "shippingbox.fill"
+        }
+    }
+
     private func icon(for kind: ProjectCapabilityCardState.Item.Kind) -> String {
         switch kind {
         case .skill: return "sparkles"
         case .mcp: return "point.3.connected.trianglepath.dotted"
         case .profile: return "square.stack.3d.up"
+        }
+    }
+
+    private func kindLabel(for kind: ProjectCapabilityCardState.Item.Kind) -> String {
+        switch kind {
+        case .skill: return "Skill"
+        case .mcp: return "MCP"
+        case .profile: return "Profile"
         }
     }
 
