@@ -142,13 +142,13 @@ public final class ProjectCapabilityCardWindowController {
             backing: .buffered,
             defer: true
         )
-        p.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = true
+        ShellWindowPolicy.applyCompanionOverlayStyle(
+            to: p,
+            interactive: true,
+            behavior: ShellWindowPolicy.transientCompanionBehavior,
+            hasShadow: true
+        )
         p.isMovableByWindowBackground = true
-        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        p.isReleasedWhenClosed = false
         p.hidesOnDeactivate = false
         p.animationBehavior = .none
 

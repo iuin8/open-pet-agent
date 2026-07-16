@@ -125,12 +125,12 @@ public final class PermissionCardWindowController {
             styleMask: [.nonactivatingPanel, .borderless],
             backing: .buffered, defer: true
         )
-        p.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = true   // 系统按带尖角的 alpha mask 精确绘制阴影(随尖角)
-        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        p.isReleasedWhenClosed = false
+        ShellWindowPolicy.applyCompanionOverlayStyle(
+            to: p,
+            interactive: true,
+            behavior: ShellWindowPolicy.transientCompanionBehavior,
+            hasShadow: true
+        )
         p.hidesOnDeactivate = false
         p.animationBehavior = .none
 
