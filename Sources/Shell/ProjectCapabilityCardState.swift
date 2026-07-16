@@ -2,6 +2,25 @@ import Foundation
 import AgentMode
 
 public struct ProjectCapabilityCardState: Sendable, Equatable {
+    public struct SyncPreview: Sendable, Equatable {
+        public let target: CapabilityTarget
+        public let operationSummaries: [String]
+        public let diagnosticSummaries: [String]
+        public let failureMessage: String?
+
+        public init(
+            target: CapabilityTarget,
+            operationSummaries: [String],
+            diagnosticSummaries: [String],
+            failureMessage: String?
+        ) {
+            self.target = target
+            self.operationSummaries = operationSummaries
+            self.diagnosticSummaries = diagnosticSummaries
+            self.failureMessage = failureMessage
+        }
+    }
+
     public struct ProjectionTargetState: Sendable, Equatable {
         public let target: CapabilityTarget
         public let isEnabled: Bool
@@ -108,11 +127,18 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
     public let selectedTab: Tab
     public let items: [Item]
     public let auditSummary: AuditSummary?
+    public let syncPreview: SyncPreview?
 
-    public init(selectedTab: Tab, items: [Item], auditSummary: AuditSummary? = nil) {
+    public init(
+        selectedTab: Tab,
+        items: [Item],
+        auditSummary: AuditSummary? = nil,
+        syncPreview: SyncPreview? = nil
+    ) {
         self.selectedTab = selectedTab
         self.items = items
         self.auditSummary = auditSummary
+        self.syncPreview = syncPreview
     }
 
     public var visibleRows: [VisibleRow] {

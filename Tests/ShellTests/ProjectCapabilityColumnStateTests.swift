@@ -103,6 +103,36 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.syncMessages == ["Codex 配置已同步", "Claude Code 配置已同步", "opencode 配置已同步"])
     }
 
+    @Test("preview：预览只更新卡片摘要，不触发同步写入")
+    func previewCodexUpdatesCardWithoutSyncing() {
+        let preview = ProjectCapabilityCardState.SyncPreview(
+            target: .codex,
+            operationSummaries: ["写入生成文件: /tmp/repo/.codex/config.toml"],
+            diagnosticSummaries: [],
+            failureMessage: nil
+        )
+        var previewCount = 0
+        var syncCount = 0
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: []),
+            onPreviewCodex: {
+                previewCount += 1
+                return preview
+            },
+            onSyncCodex: {
+                syncCount += 1
+                return "Codex 配置已同步"
+            }
+        )
+
+        model.previewCodex()
+
+        #expect(previewCount == 1)
+        #expect(syncCount == 0)
+        #expect(model.card.selectedTab == .mcp)
+        #expect(model.card.syncPreview == preview)
+    }
+
     @Test("diagnostics：项目能力列打开二级诊断列")
     func diagnosticsOpenSecondaryColumn() {
         let panel = ProjectCapabilityPanelState(

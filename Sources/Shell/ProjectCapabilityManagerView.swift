@@ -11,6 +11,9 @@ struct ProjectCapabilityManagerView: View {
     var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
     var onOpenAdd: (() -> Void)? = nil
     var onShowDiagnostics: (() -> Void)? = nil
+    var onPreviewCodex: () -> Void = {}
+    var onPreviewClaudeCode: () -> Void = {}
+    var onPreviewOpencode: () -> Void = {}
     let onSyncCodex: () -> Void
     let onSyncClaudeCode: () -> Void
     let onSyncOpencode: () -> Void
@@ -25,6 +28,7 @@ struct ProjectCapabilityManagerView: View {
             actionEntrypoints
             capabilitySummary
             syncControls
+            if let preview = state.syncPreview { syncPreview(preview) }
             if let auditSummary = state.auditSummary { auditStatus(auditSummary) }
             if !syncMessages.isEmpty { syncMessageList }
             tabBar
@@ -99,13 +103,44 @@ struct ProjectCapabilityManagerView: View {
 
     private var syncControls: some View {
         HStack(spacing: 5) {
-            Button("同步 Codex") { onSyncCodex() }
-            Button("同步 Claude") { onSyncClaudeCode() }
-            Button("同步 opencode") { onSyncOpencode() }
+            syncPair(title: "Codex", preview: onPreviewCodex, sync: onSyncCodex)
+            syncPair(title: "Claude", preview: onPreviewClaudeCode, sync: onSyncClaudeCode)
+            syncPair(title: "opencode", preview: onPreviewOpencode, sync: onSyncOpencode)
         }
         .buttonStyle(.plain)
         .font(.system(size: 9, weight: .semibold, design: .rounded))
         .foregroundStyle(ChatCardTheme.accent)
+    }
+
+    private func syncPair(title: String, preview: @escaping () -> Void, sync: @escaping () -> Void) -> some View {
+        HStack(spacing: 3) {
+            Button("预览 \(title)", action: preview)
+            Button("同步", action: sync)
+        }
+    }
+
+    private func syncPreview(_ preview: ProjectCapabilityCardState.SyncPreview) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: preview.failureMessage == nil ? "doc.text.magnifyingglass" : "exclamationmark.triangle.fill")
+                Text("\(targetLabel(for: preview.target)) 预览 · \(preview.operationSummaries.count) operations · \(preview.diagnosticSummaries.count) diagnostics")
+            }
+            if let failure = preview.failureMessage {
+                Text(failure).lineLimit(2)
+            } else {
+                ForEach(Array(preview.operationSummaries.prefix(3).enumerated()), id: \.offset) { _, summary in
+                    Text(summary).lineLimit(1).truncationMode(.middle)
+                }
+                ForEach(Array(preview.diagnosticSummaries.prefix(2).enumerated()), id: \.offset) { _, summary in
+                    Text(summary).lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .font(.system(size: 8.5, weight: .medium, design: .rounded))
+        .foregroundStyle(preview.failureMessage == nil ? ChatCardTheme.textPrimary.opacity(0.62) : Color.red.opacity(0.75))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.45)))
     }
 
     private var capabilitySummary: some View {

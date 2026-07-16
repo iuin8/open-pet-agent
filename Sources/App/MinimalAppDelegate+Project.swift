@@ -230,6 +230,60 @@ extension MinimalAppDelegate {
         }
     }
 
+    static func projectCapabilitySyncPreview(
+        for project: AgentProject,
+        target: CapabilityTarget
+    ) -> ProjectCapabilityCardState.SyncPreview {
+        do {
+            let plans = try projectCapabilityPlans(for: project, target: target)
+            return ProjectCapabilityCardState.SyncPreview(
+                target: target,
+                operationSummaries: plans.flatMap(\.operations).map(previewSummary),
+                diagnosticSummaries: plans.flatMap(\.diagnostics).map(previewSummary),
+                failureMessage: nil
+            )
+        } catch {
+            return ProjectCapabilityCardState.SyncPreview(
+                target: target,
+                operationSummaries: [],
+                diagnosticSummaries: [],
+                failureMessage: "\(error)"
+            )
+        }
+    }
+
+    private static func projectCapabilityPlans(
+        for project: AgentProject,
+        target: CapabilityTarget
+    ) throws -> [ProjectionPlan] {
+        switch target {
+        case .codex:
+            return try CodexProjectAdapter().plans(for: project)
+        case .claudeCode:
+            return try ClaudeCodeProjectAdapter().plans(for: project)
+        case .opencode:
+            return try OpencodeProjectAdapter().plans(for: project)
+        }
+    }
+
+    private static func previewSummary(_ operation: ProjectionOperation) -> String {
+        switch operation {
+        case .writeFile(_, let destination):
+            return "写入生成文件: \(destination.path)"
+        case .copyDirectory(let source, let destination):
+            return "复制生成目录: \(source.path) → \(destination.path)"
+        case .symlinkDirectory(let source, let destination):
+            return "链接生成目录: \(source.path) → \(destination.path)"
+        case .removeGenerated(let url):
+            return "移除生成内容: \(url.path)"
+        }
+    }
+
+    private static func previewSummary(_ diagnostic: ProjectConfigDiagnostic) -> String {
+        let path = diagnostic.path.map { " (\($0))" } ?? ""
+        return "\(diagnostic.severity.rawValue): \(diagnostic.message)\(path)"
+    }
+
     @MainActor func projectCapabilityColumnState(for project: AgentProject) -> ProjectCapabilityColumnState {
         func card(for project: AgentProject) -> ProjectCapabilityCardState {
             (try? Self.projectCapabilityCard(for: project, selectedTab: .overview)) ?? ProjectCapabilityCardState(selectedTab: .overview, items: [])
@@ -382,6 +436,9 @@ extension MinimalAppDelegate {
                     diagnostics: [ProjectCapabilityPanelState.Diagnostic(severity: "error", message: "App 已释放", path: nil)]
                 )]
             ) },
+            onPreviewCodex: { Self.projectCapabilitySyncPreview(for: project, target: .codex) },
+            onPreviewClaudeCode: { Self.projectCapabilitySyncPreview(for: project, target: .claudeCode) },
+            onPreviewOpencode: { Self.projectCapabilitySyncPreview(for: project, target: .opencode) },
             onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
             onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
             onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject(project: project) ?? "同步 opencode 配置失败：App 已释放" }

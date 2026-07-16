@@ -40,6 +40,9 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onRefreshCard: (() -> ProjectCapabilityCardState)?
     private let onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)?
     private let onShowDiagnostics: (() -> ProjectCapabilityPanelState)?
+    private let onPreviewCodex: (() -> ProjectCapabilityCardState.SyncPreview)?
+    private let onPreviewClaudeCode: (() -> ProjectCapabilityCardState.SyncPreview)?
+    private let onPreviewOpencode: (() -> ProjectCapabilityCardState.SyncPreview)?
     private let onSyncCodex: (() -> String)?
     private let onSyncClaudeCode: (() -> String)?
     private let onSyncOpencode: (() -> String)?
@@ -61,6 +64,9 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onRefreshCard: (() -> ProjectCapabilityCardState)? = nil,
         onRefreshCatalog: (() -> ProjectCapabilityCatalogModel?)? = nil,
         onShowDiagnostics: (() -> ProjectCapabilityPanelState)? = nil,
+        onPreviewCodex: (() -> ProjectCapabilityCardState.SyncPreview)? = nil,
+        onPreviewClaudeCode: (() -> ProjectCapabilityCardState.SyncPreview)? = nil,
+        onPreviewOpencode: (() -> ProjectCapabilityCardState.SyncPreview)? = nil,
         onSyncCodex: (() -> String)? = nil,
         onSyncClaudeCode: (() -> String)? = nil,
         onSyncOpencode: (() -> String)? = nil
@@ -81,6 +87,9 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onRefreshCard = onRefreshCard
         self.onRefreshCatalog = onRefreshCatalog
         self.onShowDiagnostics = onShowDiagnostics
+        self.onPreviewCodex = onPreviewCodex
+        self.onPreviewClaudeCode = onPreviewClaudeCode
+        self.onPreviewOpencode = onPreviewOpencode
         self.onSyncCodex = onSyncCodex
         self.onSyncClaudeCode = onSyncClaudeCode
         self.onSyncOpencode = onSyncOpencode
@@ -90,7 +99,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         card = ProjectCapabilityCardState(
             selectedTab: tab,
             items: card.items,
-            auditSummary: card.auditSummary
+            auditSummary: card.auditSummary,
+            syncPreview: card.syncPreview
         )
     }
 
@@ -227,6 +237,21 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onOpenDiagnostics?(Self.diagnosticsRowID, panel)
     }
 
+    public func previewCodex() {
+        guard let onPreviewCodex else { return }
+        setSyncPreview(onPreviewCodex())
+    }
+
+    public func previewClaudeCode() {
+        guard let onPreviewClaudeCode else { return }
+        setSyncPreview(onPreviewClaudeCode())
+    }
+
+    public func previewOpencode() {
+        guard let onPreviewOpencode else { return }
+        setSyncPreview(onPreviewOpencode())
+    }
+
     public func syncCodex() {
         guard let onSyncCodex else { return }
         syncMessages.append(onSyncCodex())
@@ -250,6 +275,15 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         refreshPreservingTab(refreshed)
     }
 
+    private func setSyncPreview(_ preview: ProjectCapabilityCardState.SyncPreview) {
+        card = ProjectCapabilityCardState(
+            selectedTab: card.selectedTab,
+            items: card.items,
+            auditSummary: card.auditSummary,
+            syncPreview: preview
+        )
+    }
+
     private func applyImport(_ outcome: ProjectCapabilityImportOutcome) {
         switch outcome {
         case .snapshot(let snapshot):
@@ -271,7 +305,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
             card = ProjectCapabilityCardState(
                 selectedTab: card.selectedTab,
                 items: retained + items,
-                auditSummary: card.auditSummary
+                auditSummary: card.auditSummary,
+                syncPreview: card.syncPreview
             )
         }
     }
@@ -281,7 +316,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         card = ProjectCapabilityCardState(
             selectedTab: card.selectedTab,
             items: snapshot.card.items,
-            auditSummary: snapshot.card.auditSummary
+            auditSummary: snapshot.card.auditSummary,
+            syncPreview: snapshot.card.syncPreview
         )
     }
 
@@ -289,7 +325,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         card = ProjectCapabilityCardState(
             selectedTab: card.selectedTab,
             items: refreshed.items,
-            auditSummary: refreshed.auditSummary
+            auditSummary: refreshed.auditSummary,
+            syncPreview: refreshed.syncPreview
         )
         if let refreshedCatalog = onRefreshCatalog?() { catalog = refreshedCatalog }
     }
@@ -339,7 +376,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         card = ProjectCapabilityCardState(
             selectedTab: card.selectedTab,
             items: card.items.filter { !($0.kind == .mcp && $0.pluginID == pluginID && $0.name == serverName) },
-            auditSummary: card.auditSummary
+            auditSummary: card.auditSummary,
+            syncPreview: card.syncPreview
         )
     }
 

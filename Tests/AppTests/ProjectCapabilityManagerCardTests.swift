@@ -675,6 +675,56 @@ struct ProjectCapabilityManagerCardTests {
         #expect(states[.opencode] == false)
     }
 
+    @Test("preview：Codex 同步预览列出操作但不 materialize engine 文件")
+    func codexPreviewListsOperationsWithoutMaterializing() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(enabled: true)
+
+        let preview = MinimalAppDelegate.projectCapabilitySyncPreview(
+            for: fixture.project,
+            target: .codex
+        )
+
+        #expect(preview.target == .codex)
+        #expect(preview.failureMessage == nil)
+        #expect(preview.operationSummaries.contains { $0.contains(".codex/config.toml") })
+        #expect(preview.operationSummaries.contains { $0.contains(".agents/skills/dev-toolkit-code-review") })
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".open-pet-agent/opencode.json").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents").path) == false)
+    }
+
+    @Test("preview：项目能力列先预览不写文件，确认同步后才 materialize")
+    func columnPreviewDoesNotMaterializeUntilConfirmedSync() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "PreviewThenSync")
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try fixture.writePlugin(enabled: true)
+        let suite = "ProjectCapabilityPreviewThenSyncTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        let model = delegate.projectCapabilityColumnState(for: fixture.project)
+
+        model.previewCodex()
+
+        #expect(model.card.syncPreview?.target == .codex)
+        #expect(model.card.syncPreview?.operationSummaries.isEmpty == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".open-pet-agent/opencode.json").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents").path) == false)
+
+        model.syncCodex()
+
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path))
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents/skills/dev-toolkit-code-review").path))
+    }
+
     @Test("target toggle：关闭目标时同步禁用 legacy engine aliases")
     func targetToggleDisablesLegacyAliases() throws {
         let fixture = try ProjectCapabilityManagerFixture()
