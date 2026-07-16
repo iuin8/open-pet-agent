@@ -57,24 +57,15 @@ public final class PetEmotionBubble {
             backing: .buffered,
             defer: false
         )
-        panel.title = "OpenPetAgent Pet Emotion"
-        panel.isReleasedWhenClosed = false
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = .floating
-        panel.collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
-            .stationary,
-            .ignoresCycle,
-        ]
-        panel.isExcludedFromWindowsMenu = true
         // Critical: never intercept clicks. The pet sits under this panel
         // and must keep getting mouseDown for drag + showChat.
-        panel.ignoresMouseEvents = true
+        ShellWindowPolicy.applyCompanionOverlayStyle(
+            to: panel,
+            title: "OpenPetAgent Pet Emotion",
+            interactive: false,
+            behavior: ShellWindowPolicy.passiveCompanionBehavior
+        )
+        panel.isExcludedFromWindowsMenu = true
         panel.animationBehavior = .none
         panel.alphaValue = 0  // start hidden; first state change fades in
 

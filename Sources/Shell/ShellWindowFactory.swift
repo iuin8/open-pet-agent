@@ -94,24 +94,12 @@ enum ShellWindowFactory {
             backing: .buffered,
             defer: false
         )
-        window.title = "OpenPetAgent Overlay"
-        window.isReleasedWhenClosed = false
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.ignoresMouseEvents = !descriptor.isInteractive
-        // `.floating` (3) instead of `.screenSaver` (1000) so the overlay
-        // still sits above normal app windows (level 0) — keeping the
-        // snow visible on top of the user's desktop — but stays below
-        // the system menu popups (`.popUpMenu` = 101) and the menu bar
-        // / status item windows (`.mainMenu`/.statusBar` = 24/25). That
-        // way clicking a menu bar item or right-clicking a status icon
-        // brings the popup *above* the snow instead of letting the
-        // snow cover the menu the user is trying to read.
-        window.level = .floating
-        // `.fullScreenAuxiliary` 让桌面 overlay（雪/天气）也能出现在全屏 app（如 VSCode 全屏）
-        // 的独立 Space 上 —— 否则用户全屏编辑器时桌面内容整片消失（情绪/主动气泡因配了此项仍显示，
-        // 形成「气泡孤零零浮着、内容不见」的断裂）。对齐 HermesPet ClawdWalkOverlay 的窗口配置。
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        ShellWindowPolicy.applyCompanionOverlayStyle(
+            to: window,
+            title: "OpenPetAgent Overlay",
+            interactive: descriptor.isInteractive,
+            behavior: ShellWindowPolicy.passiveCompanionBehavior
+        )
         window.contentView = DesktopOverlayView(frame: NSRect(origin: .zero, size: screenFrame.size))
         return window
     }
@@ -176,27 +164,14 @@ enum ShellWindowFactory {
         )
         // Title is still set for accessibility / window menus / tests that
         // identify the chat window. It is not visible (no titlebar).
-        panel.title = "OpenPetAgent Chat"
-        panel.isReleasedWhenClosed = false
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
+        ShellWindowPolicy.applyCompanionOverlayStyle(
+            to: panel,
+            title: "OpenPetAgent Chat",
+            interactive: descriptor.isInteractive,
+            behavior: ShellWindowPolicy.passiveCompanionBehavior
+        )
         panel.isMovableByWindowBackground = true
-        // Transparent host: the bubble draws its own background + shadow.
-        // System window shadow would draw a rectangle around the content,
-        // not the bubble outline — turn it off.
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        // Float above normal app windows, visible across spaces + fullscreen.
-        panel.level = .floating
-        panel.collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
-            .stationary,
-            .ignoresCycle,
-        ]
         panel.isExcludedFromWindowsMenu = true
-        panel.ignoresMouseEvents = !descriptor.isInteractive
         panel.animationBehavior = .none
         panel.contentView = ChatShellView(replyHandler: replyHandler)
         return panel
@@ -207,24 +182,13 @@ enum ShellWindowFactory {
         descriptor: WindowDescriptor,
         title: String
     ) {
-        window.title = title
-        window.isReleasedWhenClosed = false
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
+        ShellWindowPolicy.applyCompanionOverlayStyle(
+            to: window,
+            title: title,
+            interactive: descriptor.isInteractive,
+            behavior: ShellWindowPolicy.activeCompanionBehavior
+        )
         window.isMovableByWindowBackground = true
-        window.level = .floating
-        // 补 `.stationary`（对齐 HermesPet ClawdWalkOverlay + 本项目情绪/主动气泡的配置）：
-        // 让桌宠在全屏 app（VSCode 全屏等）的独立 Space 上稳定显示，不随 Space 切换漂移。
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        window.ignoresMouseEvents = !descriptor.isInteractive
-        // Transparent host — without this the `.titled` styleMask's default
-        // NSWindow backgroundColor (controlBackgroundColor / off-white) and
-        // rectangular system shadow leak around the Orb's circular SDF as
-        // a visible white box. Pet's Orb is round, its window must be
-        // fully transparent and not draw a system shadow.
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
     }
 
     static func makePlaceholderView(

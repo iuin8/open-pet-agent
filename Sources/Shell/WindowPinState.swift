@@ -10,7 +10,7 @@ public enum WindowPinState {
         guard let panel else { return }
         panel.level = pinned ? NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1) : .normal
         panel.collectionBehavior = pinned
-            ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-            : [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+            ? ShellWindowPolicy.activeCompanionBehavior
+            : ShellWindowPolicy.transientCompanionBehavior
     }
 }

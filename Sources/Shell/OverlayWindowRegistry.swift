@@ -66,12 +66,11 @@ public final class OverlayWindowRegistry {
                 backing: .buffered,
                 defer: false
             )
-            w.isReleasedWhenClosed = false
-            w.isOpaque = false
-            w.backgroundColor = .clear
-            w.ignoresMouseEvents = true
-            w.level = .floating
-            w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+            ShellWindowPolicy.applyCompanionOverlayStyle(
+                to: w,
+                interactive: false,
+                behavior: ShellWindowPolicy.passiveCompanionBehavior
+            )
             return w
         }
     }

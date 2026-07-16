@@ -116,22 +116,13 @@ public final class BondedBubble {
             backing: .buffered,
             defer: false
         )
-        panel.title = "OpenPetAgent Bonded Bubble"
-        panel.isReleasedWhenClosed = false
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = .floating
-        panel.collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
-            .stationary,
-            .ignoresCycle,
-        ]
+        ShellWindowPolicy.applyCompanionOverlayStyle(
+            to: panel,
+            title: "OpenPetAgent Bonded Bubble",
+            interactive: false,
+            behavior: ShellWindowPolicy.passiveCompanionBehavior
+        )
         panel.isExcludedFromWindowsMenu = true
-        panel.ignoresMouseEvents = true
         panel.animationBehavior = .none
         panel.alphaValue = 0
 
