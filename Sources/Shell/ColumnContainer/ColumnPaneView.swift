@@ -230,6 +230,7 @@ private struct ProjectCapabilityManagerColumnView: View {
                 onPreviewCodex: { model.previewCodex() },
                 onPreviewClaudeCode: { model.previewClaudeCode() },
                 onPreviewOpencode: { model.previewOpencode() },
+                onRestoreLatestBackup: { model.restoreLatestBackup() },
                 onSyncCodex: { model.syncCodex() },
                 onSyncClaudeCode: { model.syncClaudeCode() },
                 onSyncOpencode: { model.syncOpencode() },

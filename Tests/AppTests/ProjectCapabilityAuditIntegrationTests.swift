@@ -32,6 +32,58 @@ struct ProjectCapabilityAuditIntegrationTests {
         #expect(state.lastSyncDescription != nil)
     }
 
+    @Test("sync：再次同步前备份现有 generated target")
+    func codexSyncBacksUpExistingGeneratedTargetBeforeOverwrite() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "Backup")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        _ = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+        let target = fixture.project.rootURL.appendingPathComponent(".codex/config.toml")
+        let firstContents = try String(contentsOf: target, encoding: .utf8)
+        try """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["uvx", "changed"], "enabled": true } } }
+        """.data(using: .utf8)!.write(to: fixture.pluginRoot.appendingPathComponent("mcp/servers.json"), options: .atomic)
+
+        _ = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        let state = try ProjectCapabilityAuditStore().load(project: fixture.project)
+        let backup = try #require(state.backups.last { $0.targetPath == target.path })
+        #expect(FileManager.default.fileExists(atPath: backup.backupPath))
+        #expect(try String(contentsOf: URL(fileURLWithPath: backup.backupPath), encoding: .utf8) == firstContents)
+        #expect(try String(contentsOf: target, encoding: .utf8).contains("changed"))
+    }
+
+    @Test("restore：恢复上次同步前的 generated target")
+    func restoreLatestProjectCapabilityBackupRestoresPreviousGeneratedTarget() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "Restore")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+        _ = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+        let target = fixture.project.rootURL.appendingPathComponent(".codex/config.toml")
+        let firstContents = try String(contentsOf: target, encoding: .utf8)
+        try """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["uvx", "changed"], "enabled": true } } }
+        """.data(using: .utf8)!.write(to: fixture.pluginRoot.appendingPathComponent("mcp/servers.json"), options: .atomic)
+        _ = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        let message = delegate.restoreLatestProjectCapabilityBackup(project: fixture.project)
+
+        #expect(message == "已恢复上次项目能力同步备份")
+        #expect(try String(contentsOf: target, encoding: .utf8) == firstContents)
+    }
+
     @Test("root：能力管理卡片显示最近同步与 doctor 诊断摘要")
     func rootCardShowsAuditSummary() throws {
         let fixture = try ProjectCapabilityAuditFixture(prefix: "Root")

@@ -35,17 +35,20 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
         public let lastSyncDescription: String?
         public let warningCount: Int
         public let errorCount: Int
+        public let backupCount: Int
 
         public init(
             lastValidationDescription: String? = nil,
             lastSyncDescription: String? = nil,
             warningCount: Int = 0,
-            errorCount: Int = 0
+            errorCount: Int = 0,
+            backupCount: Int = 0
         ) {
             self.lastValidationDescription = lastValidationDescription
             self.lastSyncDescription = lastSyncDescription
             self.warningCount = warningCount
             self.errorCount = errorCount
+            self.backupCount = backupCount
         }
 
         public var statusText: String {

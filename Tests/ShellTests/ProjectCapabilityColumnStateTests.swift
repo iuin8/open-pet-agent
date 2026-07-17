@@ -182,6 +182,26 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.card.auditSummary?.lastSyncDescription == "1970-01-01T00:00:01Z")
     }
 
+    @Test("restore：恢复动作记录消息并刷新 root 摘要")
+    func restoreLatestBackupRecordsMessageAndRefreshesCard() {
+        let refreshed = ProjectCapabilityCardState(
+            selectedTab: .skills,
+            items: [],
+            auditSummary: .init(lastSyncDescription: "1970-01-01T00:00:01Z", backupCount: 1)
+        )
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: []),
+            onRefreshCard: { refreshed },
+            onRestoreLatestBackup: { "已恢复上次项目能力同步备份" }
+        )
+
+        model.restoreLatestBackup()
+
+        #expect(model.syncMessages == ["已恢复上次项目能力同步备份"])
+        #expect(model.card.selectedTab == .mcp)
+        #expect(model.card.auditSummary?.backupCount == 1)
+    }
+
     @Test("Skill detail：保存成功后刷新 root/detail 并保留 tab")
     func skillDetailSaveRefreshesRootAndDetail() throws {
         let original = capabilitySkill(body: "旧正文")

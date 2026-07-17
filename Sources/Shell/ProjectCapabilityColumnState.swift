@@ -46,6 +46,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onSyncCodex: (() -> String)?
     private let onSyncClaudeCode: (() -> String)?
     private let onSyncOpencode: (() -> String)?
+    private let onRestoreLatestBackup: (() -> String)?
 
     public init(
         card: ProjectCapabilityCardState,
@@ -69,7 +70,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onPreviewOpencode: (() -> ProjectCapabilityCardState.SyncPreview)? = nil,
         onSyncCodex: (() -> String)? = nil,
         onSyncClaudeCode: (() -> String)? = nil,
-        onSyncOpencode: (() -> String)? = nil
+        onSyncOpencode: (() -> String)? = nil,
+        onRestoreLatestBackup: (() -> String)? = nil
     ) {
         self.card = card
         self.catalog = catalog
@@ -93,6 +95,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onSyncCodex = onSyncCodex
         self.onSyncClaudeCode = onSyncClaudeCode
         self.onSyncOpencode = onSyncOpencode
+        self.onRestoreLatestBackup = onRestoreLatestBackup
     }
 
     public func selectTab(_ tab: ProjectCapabilityCardState.Tab) {
@@ -267,6 +270,12 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     public func syncOpencode() {
         guard let onSyncOpencode else { return }
         syncMessages.append(onSyncOpencode())
+        refreshCardAfterSync()
+    }
+
+    public func restoreLatestBackup() {
+        guard let onRestoreLatestBackup else { return }
+        syncMessages.append(onRestoreLatestBackup())
         refreshCardAfterSync()
     }
 

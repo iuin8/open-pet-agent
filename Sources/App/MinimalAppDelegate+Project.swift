@@ -166,6 +166,7 @@ extension MinimalAppDelegate {
             try ProjectConfig.ensure(for: project)
             let plans = try CodexProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
+            try ProjectCapabilityAuditStore().recordBackup(project: project, plans: plans)
             try CodexProjectionMaterializer().apply(plans)
             return Self.syncResultMessage(
                 success: operationCount == 0 ? "没有可同步的 Codex 配置" : "Codex 配置已同步",
@@ -185,6 +186,7 @@ extension MinimalAppDelegate {
             try ProjectConfig.ensure(for: project)
             let plans = try ClaudeCodeProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
+            try ProjectCapabilityAuditStore().recordBackup(project: project, plans: plans)
             try ClaudeCodeProjectionMaterializer().apply(plans)
             return Self.syncResultMessage(
                 success: operationCount == 0 ? "没有可同步的 Claude Code 配置" : "Claude Code 配置已同步",
@@ -205,6 +207,7 @@ extension MinimalAppDelegate {
             try ProjectConfig.ensure(for: project)
             let plans = try OpencodeProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
+            try ProjectCapabilityAuditStore().recordBackup(project: project, plans: plans)
             try OpencodeProjectionMaterializer().apply(plans)
             return Self.syncResultMessage(
                 success: operationCount == 0 ? "没有可同步的 opencode 配置" : "opencode 配置已同步",
@@ -227,6 +230,17 @@ extension MinimalAppDelegate {
             return success
         } catch {
             return "\(success)；审计状态记录失败：\(error)"
+        }
+    }
+
+    @MainActor func restoreLatestProjectCapabilityBackup(project: AgentProject? = nil) -> String {
+        let project = project ?? ProjectStore.current(defaults: userDefaults)
+        do {
+            try ProjectCapabilityAuditStore().restoreLatestBackup(project: project)
+            return "已恢复上次项目能力同步备份"
+        } catch {
+            showProjectError(title: "恢复项目能力备份失败", error: error)
+            return "恢复项目能力备份失败：\(error)"
         }
     }
 
@@ -441,7 +455,8 @@ extension MinimalAppDelegate {
             onPreviewOpencode: { Self.projectCapabilitySyncPreview(for: project, target: .opencode) },
             onSyncCodex: { [weak self] in self?.syncCodexProjectionForCurrentProject(project: project) ?? "同步 Codex 配置失败：App 已释放" },
             onSyncClaudeCode: { [weak self] in self?.syncClaudeCodeProjectionForCurrentProject(project: project) ?? "同步 Claude Code 配置失败：App 已释放" },
-            onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject(project: project) ?? "同步 opencode 配置失败：App 已释放" }
+            onSyncOpencode: { [weak self] in self?.syncOpencodeProjectionForCurrentProject(project: project) ?? "同步 opencode 配置失败：App 已释放" },
+            onRestoreLatestBackup: { [weak self] in self?.restoreLatestProjectCapabilityBackup(project: project) ?? "恢复项目能力备份失败：App 已释放" }
         )
     }
 
@@ -925,7 +940,8 @@ extension MinimalAppDelegate {
             lastValidationDescription: audit?.lastValidationDescription,
             lastSyncDescription: audit?.lastSyncDescription,
             warningCount: diagnostics.filter { $0.severity == .warning }.count,
-            errorCount: diagnostics.filter { $0.severity == .error }.count
+            errorCount: diagnostics.filter { $0.severity == .error }.count,
+            backupCount: audit?.backups.count ?? 0
         )
     }
 

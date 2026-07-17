@@ -14,6 +14,7 @@ struct ProjectCapabilityManagerView: View {
     var onPreviewCodex: () -> Void = {}
     var onPreviewClaudeCode: () -> Void = {}
     var onPreviewOpencode: () -> Void = {}
+    var onRestoreLatestBackup: () -> Void = {}
     let onSyncCodex: () -> Void
     let onSyncClaudeCode: () -> Void
     let onSyncOpencode: () -> Void
@@ -30,6 +31,7 @@ struct ProjectCapabilityManagerView: View {
             syncControls
             if let preview = state.syncPreview { syncPreview(preview) }
             if let auditSummary = state.auditSummary { auditStatus(auditSummary) }
+            if state.auditSummary?.backupCount ?? 0 > 0 { restoreControl }
             if !syncMessages.isEmpty { syncMessageList }
             tabBar
             if state.visibleItems.isEmpty {
@@ -119,6 +121,10 @@ struct ProjectCapabilityManagerView: View {
         }
     }
 
+    private var restoreControl: some View {
+        secondaryAction("恢复上次同步", icon: "arrow.uturn.backward.circle.fill", action: onRestoreLatestBackup)
+    }
+
     private func syncPreview(_ preview: ProjectCapabilityCardState.SyncPreview) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
@@ -160,6 +166,10 @@ struct ProjectCapabilityManagerView: View {
         HStack(spacing: 5) {
             Image(systemName: summary.errorCount > 0 ? "exclamationmark.triangle.fill" : summary.warningCount > 0 ? "exclamationmark.circle.fill" : "checkmark.seal.fill")
             Text(summary.statusText)
+            if summary.backupCount > 0 {
+                Text("备份 \(summary.backupCount)")
+                    .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.45))
+            }
             if let lastSync = summary.lastSyncDescription {
                 Text("同步 \(lastSync)")
                     .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.45))

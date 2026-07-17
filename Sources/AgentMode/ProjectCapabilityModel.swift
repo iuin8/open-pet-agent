@@ -112,21 +112,66 @@ public struct CapabilityAuditState: Sendable, Equatable, Codable {
         }
     }
 
+    public struct Backup: Sendable, Equatable, Codable {
+        public let engineID: String
+        public let pluginID: String
+        public let targetPath: String
+        public let backupPath: String
+        public let recordedAtDescription: String
+        public let batchID: String?
+
+        public init(
+            engineID: String,
+            pluginID: String,
+            targetPath: String,
+            backupPath: String,
+            recordedAtDescription: String,
+            batchID: String? = nil
+        ) {
+            self.engineID = engineID
+            self.pluginID = pluginID
+            self.targetPath = targetPath
+            self.backupPath = backupPath
+            self.recordedAtDescription = recordedAtDescription
+            self.batchID = batchID
+        }
+    }
+
     public let lastValidationDescription: String?
     public let lastSyncDescription: String?
     public let generatedTargets: [GeneratedTarget]
+    public let backups: [Backup]
     public let acknowledgedDiagnostics: Set<String>
 
     public init(
         lastValidationDescription: String? = nil,
         lastSyncDescription: String? = nil,
         generatedTargets: [GeneratedTarget] = [],
+        backups: [Backup] = [],
         acknowledgedDiagnostics: Set<String> = []
     ) {
         self.lastValidationDescription = lastValidationDescription
         self.lastSyncDescription = lastSyncDescription
         self.generatedTargets = generatedTargets
+        self.backups = backups
         self.acknowledgedDiagnostics = acknowledgedDiagnostics
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case lastValidationDescription
+        case lastSyncDescription
+        case generatedTargets
+        case backups
+        case acknowledgedDiagnostics
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.lastValidationDescription = try container.decodeIfPresent(String.self, forKey: .lastValidationDescription)
+        self.lastSyncDescription = try container.decodeIfPresent(String.self, forKey: .lastSyncDescription)
+        self.generatedTargets = try container.decodeIfPresent([GeneratedTarget].self, forKey: .generatedTargets) ?? []
+        self.backups = try container.decodeIfPresent([Backup].self, forKey: .backups) ?? []
+        self.acknowledgedDiagnostics = try container.decodeIfPresent(Set<String>.self, forKey: .acknowledgedDiagnostics) ?? []
     }
 }
 
