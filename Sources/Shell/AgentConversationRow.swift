@@ -40,7 +40,14 @@ struct AgentConversationRow: View {
         case .assistantTurn(let turn):
             turnRow(turn)
         case .compactBoundary:
-            compactBoundaryRow
+            if item.detailAffordance == .sideCard {
+                Button { onExpandToSide?() } label: { compactBoundaryRow }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .expandable(onAccentFill: false)
+            } else {
+                compactBoundaryRow
+            }
         }
     }
 

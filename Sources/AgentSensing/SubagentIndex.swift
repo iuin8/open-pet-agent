@@ -40,7 +40,7 @@ public enum SubagentIndex {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil) else { return [:] }
         var map: [String: SubagentRef] = [:]
-        for meta in entries where meta.lastPathComponent.hasSuffix(".meta.json") {
+        for meta in entries where meta.lastPathComponent.hasSuffix(".meta.json") && !meta.lastPathComponent.hasPrefix("agent-acompact") {
             if let ref = parseMeta(meta) { map[ref.toolUseId] = ref }
         }
         return map
@@ -55,7 +55,7 @@ public enum SubagentIndex {
         guard let entries = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         else { return [] }
         return entries
-            .filter { $0.lastPathComponent.hasPrefix("agent-") && $0.pathExtension == "jsonl" }
+            .filter { $0.lastPathComponent.hasPrefix("agent-") && !$0.lastPathComponent.hasPrefix("agent-acompact") && $0.pathExtension == "jsonl" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .map { jsonl in
                 let meta = jsonl.deletingPathExtension().appendingPathExtension("meta.json")

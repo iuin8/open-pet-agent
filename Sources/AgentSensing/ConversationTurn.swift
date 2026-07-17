@@ -15,11 +15,14 @@ public struct ConversationTurn: Sendable, Equatable, Identifiable {
     public let id: Int
     public let kind: Kind
     public let timestamp: Date
+    /// `/compact` 边界携带的压缩摘要;仅 `kind == .compactBoundary` 使用。
+    public let compactSummary: String?
 
-    public init(id: Int, kind: Kind, timestamp: Date) {
+    public init(id: Int, kind: Kind, timestamp: Date, compactSummary: String? = nil) {
         self.id = id
         self.kind = kind
         self.timestamp = timestamp
+        self.compactSummary = compactSummary
     }
 }
 
@@ -217,9 +220,9 @@ extension AgentConversation {
                 lastTs = event.timestamp
                 if firstId != nil { flushAssistant(interrupted: true) }
             case .compactBoundary:
-                // /compact 边界:收尾当前轮,插一条独立「上下文已压缩」分割线行(不折进任何轮)。
+                // /compact 边界:收尾当前轮,插一条独立「上下文已压缩」分割线行;摘要保留到侧卡。
                 flushAssistant()
-                turns.append(ConversationTurn(id: id, kind: .compactBoundary, timestamp: event.timestamp))
+                turns.append(ConversationTurn(id: id, kind: .compactBoundary, timestamp: event.timestamp, compactSummary: event.detail))
             case .sessionStart, .done:
                 // P1-8:Codex `token_count`(映射为不可见 `.sessionStart`)携本轮 usage → attach 到**进行中**的轮,
                 // 统一与 Claude `message.usage` 的 contextTokens 口径。不启新轮(firstId 须已由本轮可见事件置位)、不出项。
@@ -243,7 +246,7 @@ extension AgentConversation {
             case .awaiting(let r):       kind = .awaiting(r)
             case .compactBoundary:       kind = .compactBoundary
             }
-            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, attachments: attachments)
+            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, attachments: attachments, compactSummary: turn.compactSummary)
         }
     }
 

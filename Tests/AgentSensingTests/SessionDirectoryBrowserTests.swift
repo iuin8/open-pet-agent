@@ -25,6 +25,7 @@ struct SessionDirectoryBrowserTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try "{}".write(to: dir.appendingPathComponent("aaa.jsonl"), atomically: true, encoding: .utf8)
         try "{}".write(to: dir.appendingPathComponent("bbb.jsonl"), atomically: true, encoding: .utf8)
+        try "{}".write(to: dir.appendingPathComponent("agent-acompact123.jsonl"), atomically: true, encoding: .utf8)
         try "x".write(to: dir.appendingPathComponent("note.txt"), atomically: true, encoding: .utf8)
         let refs = SessionDirectoryBrowser.scan(directory: dir, agent: .claudeCode)
         #expect(Set(refs.map(\.sessionId)) == ["aaa", "bbb"])

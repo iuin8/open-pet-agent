@@ -228,10 +228,12 @@ struct ClaudeTranscriptParserTests {
         #expect(parser.parse(line: mixed)?.attachments.count == 1)
     }
 
-    @Test("#30:/compact 后 isCompactSummary 超长摘要 → .compactBoundary 分割线(不当用户消息整屏显示)")
+    @Test("#30:/compact 后 isCompactSummary 超长摘要 → compactBoundary 保留摘要给展开")
     func compactSummaryFiltered() {
-        let line = #"{"type":"user","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation that ran out of context. The summary below covers..."}}"#
-        #expect(parser.parse(line: line)?.kind == .compactBoundary)   // 不显摘要全文,只插边界分割线
+        let summary = "This session is being continued from a previous conversation that ran out of context. The summary below covers..."
+        let line = #"{"type":"user","isCompactSummary":true,"message":{"role":"user","content":"\#(summary)"}}"#
+        #expect(parser.parse(line: line)?.kind == .compactBoundary)
+        #expect(parser.parse(line: line)?.detail == summary)
     }
 
     @Test("**P1-6**:中断标记 [Request interrupted by user] → .interrupted(标记轮,非整条丢弃)")

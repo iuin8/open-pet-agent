@@ -134,6 +134,7 @@ struct SessionDiscoveryTests {
         let root = try tempRoot()
         let now = Date(timeIntervalSince1970: 10_000)
         _ = try writeJSONL("a.jsonl", mtime: now, under: root)
+        _ = try writeJSONL("agent-acompact123.jsonl", mtime: now, under: root)
         let txt = root.appendingPathComponent("b.txt")
         try "x".write(to: txt, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: txt.path)

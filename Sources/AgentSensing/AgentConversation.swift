@@ -33,14 +33,17 @@ public struct ConversationItem: Sendable, Equatable, Identifiable {
     public let attachments: [ImageAttachment]
     /// `.tool(name: "Workflow")` 行的 run id。作为存储字段缓存，避免行高/Equatable 热路径反复扫描完整 output。
     public let workflowRunId: String?
+    /// `/compact` 边界携带的压缩摘要;仅 `.compactBoundary` 使用,点击分割线在侧卡查看。
+    public let compactSummary: String?
 
-    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = [], workflowRunId: String? = nil) {
+    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = [], workflowRunId: String? = nil, compactSummary: String? = nil) {
         self.id = id
         self.kind = kind
         self.timestamp = timestamp
         self.toolUseId = toolUseId
         self.attachments = attachments
         self.workflowRunId = workflowRunId
+        self.compactSummary = compactSummary
     }
 }
 
@@ -85,8 +88,10 @@ extension ConversationItem {
         case .assistantTurn(let a):
             // 有思考/工具(时间线可看)或最终文字很长 → 点开侧卡;纯短文字轮 → 内联直显。
             return (a.toolCount + a.thinkingCount > 0 || Self.textExceedsSideCardBudget(a.finalText)) ? .sideCard : .none
-        case .awaiting, .compactBoundary:
+        case .awaiting:
             return .none
+        case .compactBoundary:
+            return compactSummary?.isEmpty == false ? .sideCard : .none
         }
     }
 
@@ -140,7 +145,7 @@ public enum AgentConversation {
             case .awaitingUser(let reason):
                 items.append(ConversationItem(id: id, kind: .awaiting(reason), timestamp: event.timestamp))
             case .compactBoundary:
-                items.append(ConversationItem(id: id, kind: .compactBoundary, timestamp: event.timestamp))
+                items.append(ConversationItem(id: id, kind: .compactBoundary, timestamp: event.timestamp, compactSummary: event.detail))
             case .sessionStart, .done, .thinking, .interrupted:
                 break   // 不产**扁平**可见项(thinking 折进轮次;中断标只在轮次流 buildTurns 显,扁平子 agent 流不显)
             }

@@ -44,6 +44,21 @@ struct SessionHistoryReaderTests {
         #expect(SessionHistoryReader.read(url: URL(fileURLWithPath: "/nope-\(UUID().uuidString).jsonl")).isEmpty)
     }
 
+    @Test("history 读取按文件名钉死 sessionId,不信行内旧 sessionId")
+    func historyStampsCanonicalSessionId() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("histread-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("canonical.jsonl")
+        try #"{"type":"user","sessionId":"old-continued-session","message":{"content":"hello"}}"#
+            .appending("\n")
+            .write(to: url, atomically: true, encoding: .utf8)
+
+        let events = SessionHistoryReader.read(url: url)
+
+        #expect(events.map(\.sessionId) == ["canonical"])
+    }
+
     // MARK: - G4 增量加载:窗口 + 游标链
 
     /// 一行 user prompt(便于按文本核对窗口边界)。

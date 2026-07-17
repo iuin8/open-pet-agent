@@ -58,6 +58,7 @@ public enum SessionDiscovery {
             }
             guard url.pathExtension == "jsonl",
                   values?.isRegularFile == true,
+                  !url.lastPathComponent.hasPrefix("agent-acompact"),
                   let mtime = values?.contentModificationDate,
                   now.timeIntervalSince(mtime) <= within
             else { continue }

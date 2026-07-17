@@ -160,10 +160,10 @@ public struct ClaudeTranscriptParser: TranscriptParser {
     /// `type:"user"` 一行 → 0 或 1 个 kind(真实 prompt / tool_result / 图文,过滤 harness 注入)。
     private func parseUserKind(obj: [String: Any], message: [String: Any]?) -> ParsedKind? {
         let isMeta = (obj["isMeta"] as? Bool) ?? false
-        // /compact 后写一条超长 isCompactSummary user 摘要 → 不当用户消息整屏显示,改发 .compactBoundary
-        // 在会话流插「上下文已压缩」分割线(对照 claude-devtools CompactChunk)。
-        if (obj["isCompactSummary"] as? Bool) == true { return (.compactBoundary, nil, nil) }
         let content = message?["content"]
+        // /compact 后写一条超长 isCompactSummary user 摘要 → 不当用户消息整屏显示,改发 .compactBoundary
+        // 在会话流插「上下文已压缩」分割线(对照 claude-devtools CompactChunk),摘要放 detail 供展开查看。
+        if (obj["isCompactSummary"] as? Bool) == true { return (.compactBoundary, Self.compactSummary(content), nil) }
         if let str = content as? String {
             let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return nil }
@@ -196,6 +196,18 @@ public struct ClaudeTranscriptParser: TranscriptParser {
             if ParserHelpers.isInterruption(joined) { return (.interrupted, nil, nil) }   // P1-6:array 形态中断标也升标记
             if ParserHelpers.isClaudeHardNoise(joined) { return nil }
             return (.userPrompt(text: ParserHelpers.capped(joined) ?? joined), nil, nil)
+        }
+        return nil
+    }
+
+    /// compact summary 的正文:`message.content` 可能是 String 或 text blocks。空 → nil。
+    static func compactSummary(_ content: Any?) -> String? {
+        if let text = content as? String { return ParserHelpers.capped(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        if let blocks = content as? [[String: Any]] {
+            let text = blocks.compactMap { ($0["type"] as? String) == "text" ? ($0["text"] as? String) : nil }
+                .joined(separator: "\n\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return ParserHelpers.capped(text)
         }
         return nil
     }

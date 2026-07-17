@@ -63,4 +63,35 @@ struct SubagentIndexTests {
         defer { try? FileManager.default.removeItem(at: base) }
         #expect(SubagentIndex.scan(sessionURL: sessionURL).isEmpty)
     }
+
+    @Test("scan:跳过 agent-acompact 压缩 artifact")
+    func compactArtifactSkipped() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("subagent-noid-\(UUID().uuidString)")
+        let sessionURL = base.appendingPathComponent("s.jsonl")
+        let subdir = base.appendingPathComponent("s").appendingPathComponent("subagents")
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        try "{}".write(to: sessionURL, atomically: true, encoding: .utf8)
+        let meta: [String: Any] = ["agentType": "compact", "description": "summary", "toolUseId": "toolu_compact"]
+        try JSONSerialization.data(withJSONObject: meta)
+            .write(to: subdir.appendingPathComponent("agent-acompact123.meta.json"))
+        try "{}".write(to: subdir.appendingPathComponent("agent-acompact123.jsonl"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: base) }
+        #expect(SubagentIndex.scan(sessionURL: sessionURL).isEmpty)
+    }
+
+    @Test("scanWorkflowRun:跳过 agent-acompact 压缩 artifact")
+    func workflowRunSkipsCompactArtifact() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("subagent-wf-\(UUID().uuidString)")
+        let sessionURL = base.appendingPathComponent("s.jsonl")
+        let dir = base.appendingPathComponent("s/subagents/workflows/wf_1")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "{}".write(to: sessionURL, atomically: true, encoding: .utf8)
+        try "{}".write(to: dir.appendingPathComponent("agent-real.jsonl"), atomically: true, encoding: .utf8)
+        try "{}".write(to: dir.appendingPathComponent("agent-acompact123.jsonl"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let refs = SubagentIndex.scanWorkflowRun(sessionURL: sessionURL, runId: "wf_1")
+
+        #expect(refs.map(\.transcriptURL.lastPathComponent) == ["agent-real.jsonl"])
+    }
 }

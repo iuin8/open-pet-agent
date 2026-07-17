@@ -70,11 +70,29 @@ public enum SessionHistoryReader {
 
         let text = String(decoding: body, as: UTF8.self)
         let parser: any TranscriptParser = (agent == .codex) ? CodexTranscriptParser() : ClaudeTranscriptParser()
+        let sessionId = url.deletingPathExtension().lastPathComponent
         let events = text
             .split(separator: "\n", omittingEmptySubsequences: true)
-            .flatMap { parser.parse(line: String($0), fallbackSessionId: "", fallbackCwd: nil) }   // 一行可能多事件(P0-2)
+            .flatMap { parser.parse(line: String($0), fallbackSessionId: sessionId, fallbackCwd: nil) }   // 一行可能多事件(P0-2)
+            .map { stamped($0, sessionId: sessionId) }
 
         return HistoryWindow(events: events, startOffset: firstCompleteByte, reachedStart: lo == 0)
+    }
+
+    private static func stamped(_ event: AgentEvent, sessionId: String) -> AgentEvent {
+        guard event.sessionId != sessionId else { return event }
+        return AgentEvent(
+            agent: event.agent,
+            sessionId: sessionId,
+            cwd: event.cwd,
+            kind: event.kind,
+            timestamp: event.timestamp,
+            detail: event.detail,
+            toolUseId: event.toolUseId,
+            usage: event.usage,
+            model: event.model,
+            attachments: event.attachments
+        )
     }
 
     /// 读窗口并**连续爬过纯噪音窗**(0 可解析事件)—— 往文件头连读直到拿到事件 / 到文件头 / 触 `maxHops` 上限。

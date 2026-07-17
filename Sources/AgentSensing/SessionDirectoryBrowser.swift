@@ -28,7 +28,7 @@ public enum SessionDirectoryBrowser {
         guard let entries = try? fileManager.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return [] }
         return entries
-            .filter { $0.pathExtension == "jsonl" }
+            .filter { $0.pathExtension == "jsonl" && !$0.lastPathComponent.hasPrefix("agent-acompact") }
             .map { AgentSessionRef(agent: agent, sessionId: $0.deletingPathExtension().lastPathComponent, url: $0) }
     }
 
