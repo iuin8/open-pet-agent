@@ -12,8 +12,7 @@ struct PermissionRowMatchingTests {
     func tool(_ id: Int, _ name: String, _ state: ConversationItem.ToolState) -> ConversationItem {
         let step = TurnStep.tool(id: id, name: name, summary: "x", state: state, input: "i", output: nil, toolUseId: nil)
         let a = AssistantTurn(finalText: "", steps: [step], model: nil, contextTokens: nil, durationSeconds: nil,
-                              toolCount: 1, thinkingCount: 0, hasError: state == .error, isRunning: state == .running,
-                              subagentToolUseIds: [])
+                              toolCount: 1, thinkingCount: 0, hasError: state == .error, isRunning: state == .running)
         return ConversationItem(id: id, kind: .assistantTurn(a), timestamp: Date(timeIntervalSince1970: TimeInterval(id)))
     }
     func awaiting(_ id: Int) -> ConversationItem {

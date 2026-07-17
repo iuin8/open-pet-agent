@@ -46,15 +46,10 @@ public struct AssistantTurn: Sendable, Equatable {
     /// 本轮收尾在等用户答(Codex 末句问号 → task_complete awaiting **折进本轮**,不另起重复 awaiting 卡)。
     /// 仅驱动 footer/tab badge 的「末轮在等你」信号;live pet 仍由 parser 的 `.awaitingUser` 事件直接驱动。
     public let awaitingReply: Bool
-    /// 本轮 Task/Agent 工具的 toolUseId(D2 子 agent 入口,给元数据栏/侧卡挂「👥」)。
-    public let subagentToolUseIds: [String]
-    /// 本轮 Workflow 工具派生的 run id(`wf_…`,从 Workflow 工具输出 `Run ID: wf_…` 提取)→ 元数据栏挂「🧩」,
-    /// 点开看该 workflow 全部衍生 agent(`<sid>/subagents/workflows/<runId>/`,#9)。
-    public let workflowRunIds: [String]
 
     public init(finalText: String, steps: [TurnStep], model: String?, contextTokens: Int?,
                 durationSeconds: Double?, toolCount: Int, thinkingCount: Int,
-                hasError: Bool, isRunning: Bool, subagentToolUseIds: [String], workflowRunIds: [String] = [],
+                hasError: Bool, isRunning: Bool,
                 wasInterrupted: Bool = false, awaitingReply: Bool = false) {
         self.finalText = finalText
         self.steps = steps
@@ -67,8 +62,6 @@ public struct AssistantTurn: Sendable, Equatable {
         self.isRunning = isRunning
         self.wasInterrupted = wasInterrupted
         self.awaitingReply = awaitingReply
-        self.subagentToolUseIds = subagentToolUseIds
-        self.workflowRunIds = workflowRunIds
     }
 }
 
@@ -114,7 +107,8 @@ extension TurnStep {
         case .thinking(let id, let text): return ConversationItem(id: id, kind: .thinking(text: text), timestamp: ts)
         case .text(let id, let text):     return ConversationItem(id: id, kind: .assistant(text: text), timestamp: ts)
         case .tool(let id, let n, let s, let st, let i, let o, let tid):
-            return ConversationItem(id: id, kind: .tool(name: n, summary: s, state: st, input: i, output: o), timestamp: ts, toolUseId: tid)
+            return ConversationItem(id: id, kind: .tool(name: n, summary: s, state: st, input: i, output: o),
+                                    timestamp: ts, toolUseId: tid, workflowRunId: n == "Workflow" ? AgentConversation.extractWorkflowRunId(o) : nil)
         }
     }
 }
@@ -165,14 +159,6 @@ extension AgentConversation {
             let thinkingCount = s.reduce(0) { if case .thinking = $1 { return $0 + 1 }; return $0 }
             let hasError = s.contains { if case .tool(_, _, _, .error, _, _, _) = $0 { return true }; return false }
             let runningTool = s.contains { if case .tool(_, _, _, .running, _, _, _) = $0 { return true }; return false }
-            let subIds: [String] = s.compactMap {
-                if case .tool(_, let n, _, _, _, _, let tid) = $0, n == "Task" || n == "Agent" { return tid }
-                return nil
-            }
-            let wfRunIds: [String] = s.compactMap {
-                if case .tool(_, let n, _, _, _, let output, _) = $0, n == "Workflow" { return extractWorkflowRunId(output) }
-                return nil
-            }
             let duration = lastTs > firstTs ? lastTs.timeIntervalSince(firstTs) : nil
             turns.append(ConversationTurn(id: fid, kind: .assistant(AssistantTurn(
                 finalText: finalText, steps: s, model: lastModel, contextTokens: lastUsage?.contextTokens,
@@ -181,7 +167,7 @@ extension AgentConversation {
                 // 收尾在等用户的轮不可能还在跑(Codex 串行模型,task_complete 时工具必已收尾)→ 显式排除,
                 // 防未来日志乱序产生「在跑 + 在等你」矛盾态误亮 footer/红点。
                 hasError: hasError, isRunning: !interrupted && !awaitingReply && finalText.isEmpty && runningTool,
-                subagentToolUseIds: subIds, workflowRunIds: wfRunIds, wasInterrupted: interrupted, awaitingReply: awaitingReply
+                wasInterrupted: interrupted, awaitingReply: awaitingReply
             )), timestamp: firstTs))
             steps = []; firstId = nil; lastUsage = nil; lastModel = nil
         }
@@ -250,15 +236,14 @@ extension AgentConversation {
     public static func buildTurnItems(from events: [AgentEvent], idStart: Int = 0) -> [ConversationItem] {
         buildTurns(from: events, idStart: idStart).map { turn in
             let kind: ConversationItem.Kind
-            var toolUseId: String?   // 复用 D2:turn 携首个子 agent toolUseId → 元数据栏 👥 + onOpenSubagent
             var attachments: [ImageAttachment] = []
             switch turn.kind {
             case .user(let t, let atts): kind = .user(text: t); attachments = atts   // P1-5:用户行带图
-            case .assistant(let a):      kind = .assistantTurn(a); toolUseId = a.subagentToolUseIds.first
+            case .assistant(let a):      kind = .assistantTurn(a)
             case .awaiting(let r):       kind = .awaiting(r)
             case .compactBoundary:       kind = .compactBoundary
             }
-            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, toolUseId: toolUseId, attachments: attachments)
+            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, attachments: attachments)
         }
     }
 

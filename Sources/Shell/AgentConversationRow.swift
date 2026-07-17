@@ -75,10 +75,7 @@ struct AgentConversationRow: View {
             if showBar {
                 TurnMetadataBar(
                     turn: a,
-                    subagentType: subagentRef?.agentType,
-                    onTap: hasSteps ? { onOpenTurnSteps?() } : nil,   // 元数据栏 → 元数据行侧卡(只 steps)
-                    onOpenSubagent: subagentRef != nil ? { onOpenSubagent?() } : nil,
-                    onOpenWorkflow: onOpenWorkflow   // 🧩 → workflow 衍生 agent 列表
+                    onTap: hasSteps ? { onOpenTurnSteps?() } : nil   // 元数据栏 → 元数据行侧卡(只 steps)
                 )
                 .overlay { if highlightRegion == .metadata { HaloRing() } }   // 点元数据栏 → 光圈亮在**元数据栏**(不再错亮总结行)
                 .hoverHalo(hasSteps)
@@ -281,17 +278,29 @@ struct AgentConversationRow: View {
                 .buttonStyle(.plain)
                 .expandable(onAccentFill: false)
             }
-            // D2:Task/Agent 行关联了子 agent → 行下挂「子 agent」入口,点开看其完整 transcript(独立侧卡)。
+            // D2/#9:Task/Agent/Workflow 这类行级入口挂在具体工具行下，不挤占 assistant turn 元数据栏。
             if let ref = subagentRef { subagentPill(ref) }
+            if let runId = item.workflowRunId { workflowPill(runId) }
         }
     }
 
     /// 子 agent 入口药丸(person.2 + 类型 + chevron),点 → 弹子 agent 侧卡。缩进归属上方 tool 行。
     private func subagentPill(_ ref: SubagentRef) -> some View {
-        Button { onOpenSubagent?() } label: {
+        rowActionPill(icon: "person.2.fill", title: ref.agentType) { onOpenSubagent?() }
+    }
+
+    private func workflowPill(_ runId: String) -> some View {
+        rowActionPill(icon: "puzzlepiece.extension.fill", title: "workflow") {
+            if let onOpenWorkflow { onOpenWorkflow(runId) }
+            else { onExpandToSide?() }
+        }
+    }
+
+    private func rowActionPill(icon: String, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: "person.2.fill").font(.system(size: 9, weight: .semibold))
-                Text(ref.agentType).font(.system(size: 10.5, weight: .medium, design: .rounded)).lineLimit(1)
+                Image(systemName: icon).font(.system(size: 9, weight: .semibold))
+                Text(title).font(.system(size: 10.5, weight: .medium, design: .rounded)).lineLimit(1)
                 Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).opacity(0.6)
             }
             .foregroundStyle(ChatCardTheme.accent.opacity(0.85))

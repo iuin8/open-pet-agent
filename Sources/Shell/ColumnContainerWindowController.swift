@@ -17,6 +17,8 @@ public final class ColumnContainerWindowController {
     public var mainPinnedProvider: (() -> Bool)?
     /// 即将打开根列时回调（wiring 注入）—— **同时只一张侧卡**:开列容器前关掉浏览历史 sheet(互斥)。
     public var onWillOpen: (() -> Void)?
+    /// 列内 Workflow 工具行 pill 点击。App wiring 注入，避免把 workflow 行点击本身从 detail 改成导航。
+    public var onOpenWorkflow: ((String) -> Void)?
     /// 窗口**置顶**态(根列置顶按钮)→ 点主卡不 dismiss(App `dismissSideCards` 据此豁免)+ 常驻浮顶。
     public var isPinned: Bool { state.isPinned }
 
@@ -89,7 +91,7 @@ public final class ColumnContainerWindowController {
         p.level = .normal
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
 
-        let host = NSHostingView(rootView: MillerColumnsView(state: state))
+        let host = NSHostingView(rootView: MillerColumnsView(state: state, onOpenWorkflow: { [weak self] in self?.onOpenWorkflow?($0) }))
         host.frame = NSRect(origin: .zero, size: size)
         host.autoresizingMask = [.width, .height]
         host.appearance = NSAppearance(named: .aqua)

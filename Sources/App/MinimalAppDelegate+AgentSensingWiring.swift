@@ -169,6 +169,9 @@ extension MinimalAppDelegate {
         chatCardWindowController?.agentSessionStore.onOpenWorkflow = { [weak self] runId in
             self?.openWorkflowColumn(runId: runId)
         }
+        columnContainerWindowController.onOpenWorkflow = { [weak self] runId in
+            self?.openWorkflowColumn(runId: runId)
+        }
         // 点主卡任意位置(空白/普通行)→ 关**所有**侧卡(列容器 + 浏览 sheet,统一 dismiss)。
         chatCardWindowController?.agentSessionStore.onBackgroundClick = { [weak self] in
             self?.dismissSideCards()

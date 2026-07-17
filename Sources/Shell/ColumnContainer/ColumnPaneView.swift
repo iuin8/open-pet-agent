@@ -26,6 +26,9 @@ struct ColumnPaneView: View {
     /// 列内 list 行点击：将 item 透传给 wiring，由 wiring 算出 child kind 后调 drillIn。
     let onListRowTapped: (_ item: ConversationItem) -> Void
 
+    /// 列内 workflow 工具行 pill 点击：打开该 run 的衍生 agent 列。
+    var onOpenWorkflow: ((String) -> Void)? = nil
+
     /// 窗口**置顶**态(仅 root 列头显置顶按钮,与主卡/浏览 sheet 同一 `CardPinButton`)。
     var isPinned: Bool = false
     /// 点根列置顶按钮(仅 root 非 nil)。
@@ -181,7 +184,8 @@ struct ColumnPaneView: View {
                 onLoadEarlierTap: {},
                 onReachTop: {},
                 subagentByItemId: subBy,
-                onOpenSubagent: { onListRowTapped($0) }
+                onOpenSubagent: { onListRowTapped($0) },
+                onOpenWorkflow: onOpenWorkflow
             )
         case .detail(let item):
             DetailPaneContent(item: item)

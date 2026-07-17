@@ -6,8 +6,8 @@ import AgentSensing
 @Suite("TranscriptRowBuilder — 行序列组装(NSTableView 容器的纯逻辑)")
 struct TranscriptRowBuilderTests {
 
-    func item(_ id: Int, _ kind: ConversationItem.Kind = .user(text: "x")) -> ConversationItem {
-        ConversationItem(id: id, kind: kind, timestamp: Date(timeIntervalSince1970: TimeInterval(id)))
+    func item(_ id: Int, _ kind: ConversationItem.Kind = .user(text: "x"), workflowRunId: String? = nil) -> ConversationItem {
+        ConversationItem(id: id, kind: kind, timestamp: Date(timeIntervalSince1970: TimeInterval(id)), workflowRunId: workflowRunId)
     }
 
     @Test("基本组装:[加载更早] + items + 顺序保留")
@@ -98,17 +98,41 @@ struct TranscriptRowBuilderTests {
         #expect(rows[1].highlightRegion == .metadata)
     }
 
-    @Test("D2:子 agent 命中 → 行挂 subagent + heightSignature 变(行变高)")
+    @Test("D2:子 agent 命中 → 工具行挂 subagent + heightSignature 变(行变高)")
     func subagentAttachedAndHeight() {
         let ref = SubagentRef(toolUseId: "toolu_1", agentType: "code-reviewer", description: "审", transcriptURL: URL(fileURLWithPath: "/x/agent-1.jsonl"))
         let rows = TranscriptRowBuilder.rows(
-            items: [item(0), item(1)], highlightedItemId: nil,
+            items: [item(0), item(1, .tool(name: "Task", summary: "审", state: .ok, input: nil, output: nil))], highlightedItemId: nil,
             canLoadEarlier: false, isLoadingEarlier: false, showCodexHint: false,
             subagentByItemId: [1: ref]
         )
         #expect(rows[0].subagent == nil)
         #expect(rows[1].subagent?.agentType == "code-reviewer")
-        let plain = TranscriptRow(kind: .item(item(1)), highlightRegion: nil, loading: false, subagent: nil)
-        #expect(rows[1].heightSignature != plain.heightSignature)   // 挂入口 → 行高签名变
+        let plain = TranscriptRow(kind: .item(item(1, .tool(name: "Task", summary: "审", state: .ok, input: nil, output: nil))), highlightRegion: nil, loading: false, subagent: nil)
+        #expect(rows[1].heightSignature != plain.heightSignature)   // 工具行挂入口 → 行高签名变
+    }
+
+    @Test("assistant turn 的行级 action 不占主元数据栏高度")
+    func assistantTurnActionPillsDoNotChangeHeight() {
+        let ref = SubagentRef(toolUseId: "toolu_1", agentType: "code-reviewer", description: "审", transcriptURL: URL(fileURLWithPath: "/x/agent-1.jsonl"))
+        let turn = AssistantTurn(
+            finalText: "done",
+            steps: [.tool(id: 7, name: "Task", summary: "审", state: .ok, input: nil, output: nil, toolUseId: "toolu_1")],
+            model: "claude-opus-4-8", contextTokens: 1024, durationSeconds: 1.2,
+            toolCount: 1, thinkingCount: 0, hasError: false, isRunning: false
+        )
+        let turnItem = item(8, .assistantTurn(turn))
+        let plain = TranscriptRow(kind: .item(turnItem), highlightRegion: nil, loading: false, subagent: nil)
+        let withAction = TranscriptRow(kind: .item(turnItem), highlightRegion: nil, loading: false, subagent: ref)
+
+        #expect(plain.heightSignature == withAction.heightSignature)
+        #expect(plain == withAction)
+    }
+
+    @Test("Workflow 工具行从自身输出暴露 run id")
+    func workflowToolExposesRunId() {
+        let row = item(9, .tool(name: "Workflow", summary: "跑审查", state: .ok, input: nil, output: "done\nRun ID: wf_abc-123\n"), workflowRunId: "wf_abc-123")
+
+        #expect(row.workflowRunId == "wf_abc-123")
     }
 }

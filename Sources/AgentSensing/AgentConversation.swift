@@ -31,13 +31,16 @@ public struct ConversationItem: Sendable, Equatable, Identifiable {
     public let toolUseId: String?
     /// 内联图片(用户粘贴截图);`.user` 行渲染缩略图、点击开图片侧卡(P1-5)。其余空。
     public let attachments: [ImageAttachment]
+    /// `.tool(name: "Workflow")` 行的 run id。作为存储字段缓存，避免行高/Equatable 热路径反复扫描完整 output。
+    public let workflowRunId: String?
 
-    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = []) {
+    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = [], workflowRunId: String? = nil) {
         self.id = id
         self.kind = kind
         self.timestamp = timestamp
         self.toolUseId = toolUseId
         self.attachments = attachments
+        self.workflowRunId = workflowRunId
     }
 }
 
@@ -128,7 +131,8 @@ public enum AgentConversation {
                         items[idx] = ConversationItem(
                             id: old.id,
                             kind: .tool(name: n, summary: s, state: isError ? .error : .ok, input: input, output: event.detail),
-                            timestamp: old.timestamp, toolUseId: old.toolUseId
+                            timestamp: old.timestamp, toolUseId: old.toolUseId,
+                            workflowRunId: n == "Workflow" ? extractWorkflowRunId(event.detail) : old.workflowRunId
                         )
                     }
                 }

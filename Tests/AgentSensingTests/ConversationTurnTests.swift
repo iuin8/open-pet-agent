@@ -187,14 +187,15 @@ struct ConversationTurnTests {
         #expect(b.isRunning == true && b.finalText.isEmpty)
     }
 
-    @Test("Task 工具 → subagentToolUseIds 收集(D2 入口)")
-    func subagentIds() {
-        let turns = AgentConversation.buildTurns(from: [
+    @Test("Task 工具 → toolUseId 保留在具体 step item,不 hoist 到 assistant turn item")
+    func subagentIdsStayOnToolStepItems() {
+        let items = AgentConversation.buildTurnItems(from: [
             ev(.toolUse(name: "Task", summary: "审"), 0, tool: "toolu_1"),
             ev(.assistantText(text: "派完了"), 1),
         ])
-        guard case .assistant(let a) = turns[0].kind else { Issue.record("assistant"); return }
-        #expect(a.subagentToolUseIds == ["toolu_1"])
+        guard case .assistantTurn(let a) = items[0].kind else { Issue.record("assistantTurn"); return }
+        #expect(items[0].toolUseId == nil)
+        #expect(a.stepsItems().first?.toolUseId == "toolu_1")
     }
 
     @Test("本轮全部 text 段拼成 finalText(中间叙述不被埋进元数据 step)")
@@ -227,15 +228,15 @@ struct ConversationTurnTests {
 
     // MARK: - #9 workflow 衍生 agent
 
-    @Test("#9:Workflow 工具 → 从 tool_result 输出抽 Run ID 进 turn.workflowRunIds")
+    @Test("#9:Workflow 工具 → 从 tool_result 输出抽 Run ID 到具体 step item")
     func workflowRunIdExtracted() {
-        let turns = AgentConversation.buildTurns(from: [
+        let items = AgentConversation.buildTurnItems(from: [
             ev(.toolUse(name: "Workflow", summary: "调研"), 0, detail: "export const meta = {...}"),
             ev(.toolResult(name: "", isError: false), 1, detail: "Workflow launched in background. Task ID: wpx\nRun ID: wf_fc74e832-5a5\nMore text"),
             ev(.assistantText(text: "已启动"), 2),
         ])
-        guard case .assistant(let a) = turns[0].kind else { Issue.record("assistant"); return }
-        #expect(a.workflowRunIds == ["wf_fc74e832-5a5"])
+        guard case .assistantTurn(let a) = items[0].kind else { Issue.record("assistantTurn"); return }
+        #expect(a.stepsItems().first?.workflowRunId == "wf_fc74e832-5a5")
     }
 
     @Test("#9:extractWorkflowRunId(有/无 Run ID / 非 wf_ 前缀)")
@@ -246,11 +247,11 @@ struct ConversationTurnTests {
         #expect(AgentConversation.extractWorkflowRunId(nil) == nil)
     }
 
-    @Test("非 workflow 轮 → workflowRunIds 空")
+    @Test("非 workflow 工具 step → workflowRunId 空")
     func noWorkflowEmpty() {
-        let turns = AgentConversation.buildTurns(from: [ev(.toolUse(name: "Bash", summary: "ls"), 0), ev(.toolResult(name: "", isError: false), 1)])
-        guard case .assistant(let a) = turns[0].kind else { Issue.record("assistant"); return }
-        #expect(a.workflowRunIds.isEmpty)
+        let items = AgentConversation.buildTurnItems(from: [ev(.toolUse(name: "Bash", summary: "ls"), 0), ev(.toolResult(name: "", isError: false), 1)])
+        guard case .assistantTurn(let a) = items[0].kind else { Issue.record("assistantTurn"); return }
+        #expect(a.stepsItems().first?.workflowRunId == nil)
     }
 
     // MARK: - Codex 收尾问句:awaiting 折进 assistant 轮(实机三重渲染 bug 修复)

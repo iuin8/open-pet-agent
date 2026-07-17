@@ -10,6 +10,8 @@ struct MillerColumnsView: View {
 
     @ObservedObject var state: ColumnContainerState
 
+    let onOpenWorkflow: ((String) -> Void)?
+
     /// 当前滚动锚定的列 id（`.scrollPosition(id:)` 驱动）。
     @State private var scrolledColumnId: Int?
 
@@ -24,6 +26,7 @@ struct MillerColumnsView: View {
                         onRowDrillIn: { _, _ in },   // Task 7 wiring 接管
                         onClose: { state.close() },
                         onListRowTapped: { state.onListRowTapped?(col.id, $0) },
+                        onOpenWorkflow: onOpenWorkflow,
                         isPinned: state.isPinned,
                         onTogglePin: isRoot ? { state.onTogglePin?() } : nil   // 仅根列显置顶按钮
                     )

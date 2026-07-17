@@ -165,7 +165,7 @@ struct TranscriptRow {
     var heightSignature: String {
         switch kind {
         case .loadEarlier: return "load:\(loading)"
-        case .item(let it): return "item:\(it.id):\(itemContentToken(it)):\(subagent == nil ? 0 : 1)"
+        case .item(let it): return "item:\(it.id):\(itemContentToken(it)):\(actionHeightToken(it))"
         case .codexHint: return "codex"
         }
     }
@@ -180,6 +180,16 @@ struct TranscriptRow {
         case .metadata: h = "|Hm"
         }
         return heightSignature + h
+    }
+
+    private var actionHeightToken: Int {
+        guard case .item(let it) = kind else { return 0 }
+        return actionHeightToken(it)
+    }
+
+    private func actionHeightToken(_ it: ConversationItem) -> Int {
+        guard case .tool = it.kind else { return 0 }
+        return (subagent == nil ? 0 : 1) &+ (it.workflowRunId == nil ? 0 : 2)
     }
 
     /// 影响渲染的内容指纹(Int,廉价)。供 `Equatable` 短路用 —— 与 `heightSignature` 同源但免每次拼串。
@@ -220,7 +230,7 @@ extension TranscriptRow: Equatable {
         l.id == r.id
             && l.loading == r.loading
             && l.highlightRegion == r.highlightRegion
-            && (l.subagent == nil) == (r.subagent == nil)
+            && l.actionHeightToken == r.actionHeightToken
             && l.contentToken == r.contentToken
     }
 }
