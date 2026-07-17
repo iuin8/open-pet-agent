@@ -305,6 +305,69 @@ final class ProjectCapabilityImportWriterTests: XCTestCase {
         ))
     }
 
+    func testImportOpencodeCandidatesWriteCanonicalOnly() throws {
+        let candidates = [
+            ProjectCapabilityImportCandidate(
+                id: "skill:review:opencodeSkill",
+                kind: .skill,
+                name: "review",
+                sources: [.init(
+                    kind: .opencodeSkill,
+                    url: root.appendingPathComponent(".opencode/skills/review/SKILL.md")
+                )],
+                skillBody: "# review\n",
+                skillFiles: [.init(
+                    relativePath: "SKILL.md",
+                    contents: Data("# review\n".utf8)
+                )]
+            ),
+            ProjectCapabilityImportCandidate(
+                id: "mcp:filesystem:opencode",
+                kind: .mcp,
+                name: "filesystem",
+                sources: [.init(
+                    kind: .opencodeMCP,
+                    url: root.appendingPathComponent("opencode.json")
+                )],
+                mcpValue: .object([
+                    "command": .array([.string("npx")]),
+                    "vendorField": .bool(true)
+                ])
+            )
+        ]
+
+        let plugin = try ProjectCapabilityWriter().importCandidates(
+            candidates,
+            project: project,
+            pluginID: "imported-opencode",
+            pluginName: "Imported opencode"
+        )
+
+        let pluginRoot = ProjectConfig.pluginDirectory(
+            for: project,
+            pluginID: "imported-opencode"
+        )
+        let manifest = try json(pluginRoot.appendingPathComponent("plugin.json"))
+        let engines = try XCTUnwrap(manifest["engines"] as? [String: Any])
+        XCTAssertNotNil(engines["opencode"])
+        XCTAssertNil(engines["claude-code"])
+        XCTAssertNil(engines["codex"])
+        XCTAssertEqual(plugin.skills.first?.targets, [.opencode])
+        XCTAssertEqual(plugin.mcpServers.first?.targets, [.opencode])
+        let servers = try XCTUnwrap(
+            try json(pluginRoot.appendingPathComponent("mcp/servers.json"))["mcpServers"]
+                as? [String: Any]
+        )
+        let filesystem = try XCTUnwrap(servers["filesystem"] as? [String: Any])
+        XCTAssertEqual(filesystem["vendorField"] as? Bool, true)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: project.rootURL.appendingPathComponent("opencode.json").path
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: project.rootURL.appendingPathComponent(".opencode").path
+        ))
+    }
+
     private func json(_ url: URL) throws -> [String: Any] {
         try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url))

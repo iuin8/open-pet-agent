@@ -339,6 +339,22 @@ final class ProjectCapabilityImportScannerTests: XCTestCase {
             """,
             to: ".codex/config.toml"
         )
+        try writeSkill(
+            root: ".opencode/skills",
+            name: "generated-opencode",
+            body: "# generated\n"
+        )
+        try write(
+            "generated",
+            to: ".opencode/skills/generated-opencode/.open-pet-agent-generated"
+        )
+        try write(
+            """
+            { "mcp": { "generated": { "command": ["noop"] } } }
+            """,
+            to: "opencode.json"
+        )
+        try write("generated", to: ".open-pet-agent-generated.opencode")
 
         let scan = ProjectCapabilityImportScanner().scan(project: project)
 
@@ -390,6 +406,123 @@ final class ProjectCapabilityImportScannerTests: XCTestCase {
         XCTAssertTrue(scan.candidates.isEmpty)
         XCTAssertEqual(scan.diagnostics.count, 1)
         XCTAssertTrue(scan.diagnostics[0].message.contains("escapes project"))
+    }
+
+    func testScanDiscoversOpencodeSkillAndMCPWithoutWriting() throws {
+        try writeSkill(
+            root: ".opencode/skills",
+            name: "review",
+            body: "# review\n\nOpencode body.\n"
+        )
+        try write(
+            """
+            {
+              "mcp": {
+                "filesystem": {
+                  "command": ["npx", "-y", "server-filesystem"],
+                  "vendorField": true
+                }
+              }
+            }
+            """,
+            to: "opencode.json"
+        )
+        let before = try projectFiles()
+
+        let scan = ProjectCapabilityImportScanner().scan(project: project)
+
+        XCTAssertEqual(try projectFiles(), before)
+        XCTAssertTrue(scan.diagnostics.isEmpty)
+        XCTAssertEqual(
+            Set(scan.candidates.map { "\($0.kind.rawValue):\($0.name)" }),
+            ["skill:review", "mcp:filesystem"]
+        )
+        XCTAssertEqual(
+            scan.candidates.first { $0.name == "review" }?.sources.map(\.kind),
+            [.opencodeSkill]
+        )
+        XCTAssertEqual(
+            scan.candidates.first { $0.name == "filesystem" }?.sources.map(\.kind),
+            [.opencodeMCP]
+        )
+        XCTAssertEqual(
+            scan.candidates.first { $0.name == "filesystem" }?
+                .mcpValue?.objectValue?["vendorField"],
+            .bool(true)
+        )
+    }
+
+    func testScanMergesIdenticalSkillSourcesAndReportsReuse() throws {
+        let body = "# review\n\nShared body.\n"
+        try writeSkill(root: ".claude/skills", name: "review", body: body)
+        try writeSkill(root: ".opencode/skills", name: "review", body: body)
+
+        let scan = ProjectCapabilityImportScanner().scan(project: project)
+
+        let candidate = try XCTUnwrap(scan.candidates.first)
+        XCTAssertEqual(scan.candidates.count, 1)
+        XCTAssertEqual(candidate.sources.map(\.kind), [.claudeSkill, .opencodeSkill])
+        XCTAssertTrue(candidate.diagnostics.isEmpty)
+    }
+
+    func testScanRejectsOpencodeSkillSymlinkOutsideProject() throws {
+        let outside = root.deletingLastPathComponent()
+            .appendingPathComponent("opencode-outside-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data("# secret\n".utf8).write(
+            to: outside.appendingPathComponent("SKILL.md"),
+            options: .atomic
+        )
+        let skillsRoot = root.appendingPathComponent(".opencode/skills", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillsRoot, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: skillsRoot.appendingPathComponent("escaped", isDirectory: true),
+            withDestinationURL: outside
+        )
+
+        let scan = ProjectCapabilityImportScanner().scan(project: project)
+
+        XCTAssertTrue(scan.candidates.isEmpty)
+        XCTAssertEqual(scan.diagnostics.count, 1)
+        XCTAssertTrue(scan.diagnostics[0].message.contains("escapes project"))
+    }
+
+    func testScanRejectsOpencodeConfigSymlinkOutsideProject() throws {
+        let outside = root.deletingLastPathComponent()
+            .appendingPathComponent("opencode-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try Data("""
+        { "mcp": { "secret": { "command": ["secret-server"] } } }
+        """.utf8).write(to: outside, options: .atomic)
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("opencode.json"),
+            withDestinationURL: outside
+        )
+
+        let scan = ProjectCapabilityImportScanner().scan(project: project)
+
+        XCTAssertTrue(scan.candidates.isEmpty)
+        XCTAssertTrue(scan.diagnostics.contains {
+            $0.message.contains("escapes project")
+        })
+    }
+
+    func testScanReportsMalformedOpencodeMCPSection() throws {
+        try write(
+            """
+            { "mcp": [] }
+            """,
+            to: "opencode.json"
+        )
+
+        let scan = ProjectCapabilityImportScanner().scan(project: project)
+
+        XCTAssertTrue(scan.candidates.isEmpty)
+        XCTAssertTrue(scan.diagnostics.contains {
+            $0.message.contains("Malformed MCP import file: opencode.json")
+                && $0.path?.hasSuffix("opencode.json") == true
+        })
     }
 
     private func writeSkill(

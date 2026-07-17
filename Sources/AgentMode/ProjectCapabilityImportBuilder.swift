@@ -80,6 +80,12 @@ enum ProjectCapabilityImportBuilder {
                 "projection": "skills-and-mcp-files"
             ]
         }
+        if targetSet.contains(.opencode) {
+            engines["opencode"] = [
+                "enabled": true,
+                "projection": "skills-and-mcp-files"
+            ]
+        }
         return engines
     }
 
@@ -100,6 +106,8 @@ enum ProjectCapabilityImportBuilder {
                 targetSet.insert(.claudeCode)
             case .agentsSkill, .codexMCP:
                 targetSet.insert(.codex)
+            case .opencodeSkill, .opencodeMCP:
+                targetSet.insert(.opencode)
             }
         }
         return targetSet.sorted { $0.rawValue < $1.rawValue }

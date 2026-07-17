@@ -12,8 +12,10 @@ public struct ProjectCapabilityImportScanner: Sendable {
         var scan = ProjectCapabilityImportScan()
         scanSkills(project: project, relativeRoot: ".claude/skills", sourceKind: .claudeSkill, scan: &scan)
         scanSkills(project: project, relativeRoot: ".agents/skills", sourceKind: .agentsSkill, scan: &scan)
+        scanSkills(project: project, relativeRoot: ".opencode/skills", sourceKind: .opencodeSkill, scan: &scan)
         scanJSONMCP(project: project, scan: &scan)
         scanCodexMCP(project: project, scan: &scan)
+        scanOpencodeMCP(project: project, scan: &scan)
         scan.candidates = markConflicts(mergeIdentical(scan.candidates))
         scan.candidates.sort {
             ($0.kind.rawValue, $0.name, $0.id) < ($1.kind.rawValue, $1.name, $1.id)
@@ -248,6 +250,71 @@ public struct ProjectCapabilityImportScanner: Sendable {
         } catch {
             scan.diagnostics.append(.error(
                 "Malformed MCP import file: .codex/config.toml",
+                path: url.path
+            ))
+        }
+    }
+
+    private func scanOpencodeMCP(
+        project: AgentProject,
+        scan: inout ProjectCapabilityImportScan
+    ) {
+        let projectRoot = project.rootURL.standardizedFileURL
+        let url = projectRoot.appendingPathComponent(
+            "opencode.json",
+            isDirectory: false
+        ).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        let marker = projectRoot.appendingPathComponent(
+            ".open-pet-agent-generated.opencode",
+            isDirectory: false
+        )
+        guard !FileManager.default.fileExists(atPath: marker.path) else {
+            return
+        }
+        let resolvedURL = url.resolvingSymlinksInPath()
+        guard ProjectionTrust.isPath(url, inside: projectRoot),
+              ProjectionTrust.isPath(
+                  resolvedURL,
+                  inside: projectRoot.resolvingSymlinksInPath()
+              ) else {
+            scan.diagnostics.append(.error(
+                "Import source escapes project: opencode.json",
+                path: url.path
+            ))
+            return
+        }
+        do {
+            let root = try JSONDecoder().decode(
+                ACPJSON.self,
+                from: Data(contentsOf: resolvedURL)
+            )
+            guard let object = root.objectValue else {
+                throw ProjectCapabilityValidationError("Malformed MCP import file: opencode.json")
+            }
+            guard let mcp = object["mcp"] else { return }
+            guard let servers = mcp.objectValue else {
+                throw ProjectCapabilityValidationError("Malformed MCP import file: opencode.json")
+            }
+            for (name, value) in servers.sorted(by: { $0.key < $1.key }) {
+                guard ProjectCapabilityMCPResolver.isValidConfiguration(value) else {
+                    scan.diagnostics.append(.error(
+                        "Malformed MCP import: \(name)",
+                        path: url.path
+                    ))
+                    continue
+                }
+                scan.candidates.append(ProjectCapabilityImportCandidate(
+                    id: "mcp:\(name):opencode",
+                    kind: .mcp,
+                    name: name,
+                    sources: [.init(kind: .opencodeMCP, url: url)],
+                    mcpValue: value
+                ))
+            }
+        } catch {
+            scan.diagnostics.append(.error(
+                "Malformed MCP import file: opencode.json",
                 path: url.path
             ))
         }

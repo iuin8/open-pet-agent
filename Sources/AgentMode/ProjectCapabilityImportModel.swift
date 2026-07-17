@@ -5,11 +5,13 @@ public enum ProjectCapabilityImportKind: String, Sendable, Equatable {
     case mcp
 }
 
-public enum ProjectCapabilityImportSourceKind: String, Sendable, Equatable {
+public enum ProjectCapabilityImportSourceKind: String, Sendable, Equatable, CaseIterable {
     case claudeSkill
-    case agentsSkill
     case claudeMCP
+    case agentsSkill
     case codexMCP
+    case opencodeSkill
+    case opencodeMCP
 }
 
 public struct ProjectCapabilityImportSource: Sendable, Equatable {

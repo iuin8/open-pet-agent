@@ -76,15 +76,22 @@ struct ProjectCapabilityImportView: View {
                     .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
                     .padding(.vertical, 12)
             } else {
-                ForEach(model.candidates) { candidate in
-                    candidateRow(candidate)
+                ForEach(model.candidateGroups, id: \.title) { group in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(group.title)
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.48))
+                        ForEach(group.candidates) { candidate in
+                            candidateRow(candidate)
+                        }
+                    }
                 }
             }
         }
     }
 
     private func candidateRow(_ candidate: ProjectCapabilityImportCandidate) -> some View {
-        let blocked = !candidate.diagnostics.isEmpty
+        let blocked = candidate.diagnostics.contains { $0.severity == .error }
         return HStack(alignment: .top, spacing: 8) {
             Button {
                 model.toggleSelection(candidate.id)
@@ -110,6 +117,14 @@ struct ProjectCapabilityImportView: View {
                         Text(candidate.kind == .skill ? "Skill" : "MCP")
                             .font(.system(size: 8, weight: .bold, design: .rounded))
                             .foregroundStyle(ChatCardTheme.accent)
+                        Text("→ \(model.pluginID)")
+                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.42))
+                    }
+                    if candidate.sources.count > 1 {
+                        Text("重复内容将复用为一个 canonical copy")
+                            .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
                     }
                     ForEach(candidate.sources, id: \.url) { source in
                         Text(source.url.path)
@@ -121,7 +136,9 @@ struct ProjectCapabilityImportView: View {
                     ForEach(Array(candidate.diagnostics.enumerated()), id: \.offset) { _, diagnostic in
                         Text(diagnostic.message)
                             .font(.system(size: 8.5, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color.red.opacity(0.75))
+                            .foregroundStyle(diagnostic.severity == .error
+                                ? Color.red.opacity(0.75)
+                                : ChatCardTheme.textPrimary.opacity(0.5))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

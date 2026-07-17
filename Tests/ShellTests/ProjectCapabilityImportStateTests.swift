@@ -141,6 +141,61 @@ struct ProjectCapabilityImportStateTests {
         #expect(state.canImport == false)
     }
 
+    @Test("分组：按来源类型展示 Import Existing 候选")
+    func candidateGroupsFollowSourceOrder() {
+        let state = ProjectCapabilityImportState(
+            scan: ProjectCapabilityImportScan(candidates: [
+                ProjectCapabilityImportCandidate(
+                    id: "mcp:filesystem:opencode",
+                    kind: .mcp,
+                    name: "filesystem",
+                    sources: [.init(
+                        kind: .opencodeMCP,
+                        url: URL(fileURLWithPath: "/tmp/opencode.json")
+                    )],
+                    mcpValue: .object(["command": .array([.string("npx")])])
+                ),
+                ProjectCapabilityImportCandidate(
+                    id: "skill:review:opencodeSkill",
+                    kind: .skill,
+                    name: "review",
+                    sources: [.init(
+                        kind: .opencodeSkill,
+                        url: URL(fileURLWithPath: "/tmp/.opencode/skills/review/SKILL.md")
+                    )],
+                    skillBody: "# review"
+                ),
+                ProjectCapabilityImportCandidate(
+                    id: "skill:deploy:claudeSkill",
+                    kind: .skill,
+                    name: "deploy",
+                    sources: [.init(
+                        kind: .claudeSkill,
+                        url: URL(fileURLWithPath: "/tmp/.claude/skills/deploy/SKILL.md")
+                    )],
+                    skillBody: "# deploy"
+                )
+            ]),
+            onImport: { _, _, _ in
+                .snapshot(ProjectCapabilitySnapshot(
+                    catalog: ProjectCapabilityCatalogModel(projectID: "p", plugins: []),
+                    card: card(itemNames: [])
+                ))
+            }
+        )
+
+        #expect(state.candidateGroups.map(\.title) == [
+            "Claude Code skills",
+            "opencode skills",
+            "opencode MCP"
+        ])
+        #expect(state.candidateGroups.map { $0.candidates.map(\.name) } == [
+            ["deploy"],
+            ["review"],
+            ["filesystem"]
+        ])
+    }
+
     private func scan() -> ProjectCapabilityImportScan {
         ProjectCapabilityImportScan(candidates: [
             ProjectCapabilityImportCandidate(
