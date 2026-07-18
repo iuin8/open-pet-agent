@@ -25,11 +25,22 @@ public enum ACPClientError: Error, Sendable, Equatable {
 public struct ACPAgentCapabilities: Sendable, Equatable {
     public let protocolVersion: Int
     public let agentCapabilities: Set<String>
+    /// `agentCapabilities.mcpCapabilities` 里值为 true 的远程 MCP transport 能力。
+    /// ACP v1 用能力门控而非版本号引入 http/sse（见 protocol/initialization）：
+    /// 未声明的 transport 不应出现在 `session/new` 的 `mcpServers` 里。
+    public let mcpCapabilities: Set<ACPMCPCapability>
 
-    public init(protocolVersion: Int, agentCapabilities: Set<String>) {
+    public init(protocolVersion: Int, agentCapabilities: Set<String>, mcpCapabilities: Set<ACPMCPCapability> = []) {
         self.protocolVersion = protocolVersion
         self.agentCapabilities = agentCapabilities
+        self.mcpCapabilities = mcpCapabilities
     }
+}
+
+/// ACP v1 `mcpCapabilities` 里的远程 MCP transport 能力项。
+public enum ACPMCPCapability: String, Sendable, Equatable {
+    case http
+    case sse
 }
 
 /// ACP client:经 transport 跟 agent 子进程通信。
@@ -70,8 +81,14 @@ public actor ACPClient {
             ?? obj["protocolVersion"].flatMap { if case .int(let v) = $0 { return v }; return nil }
             ?? 1
         let capsKeys = obj["agentCapabilities"]?.objectValue?.keys.reduce(into: Set<String>()) { $0.insert($1) } ?? []
+        let mcpCaps = (obj["agentCapabilities"]?.objectValue?["mcpCapabilities"]?.objectValue ?? [:])
+            .reduce(into: Set<ACPMCPCapability>()) { caps, entry in
+                guard case .bool(let supported) = entry.value, supported,
+                      let capability = ACPMCPCapability(rawValue: entry.key) else { return }
+                caps.insert(capability)
+            }
         didConnect = true
-        return ACPAgentCapabilities(protocolVersion: proto, agentCapabilities: capsKeys)
+        return ACPAgentCapabilities(protocolVersion: proto, agentCapabilities: capsKeys, mcpCapabilities: mcpCaps)
     }
 
     // MARK: - createSession(session/new)

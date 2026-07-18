@@ -39,6 +39,26 @@ func clientConnect() async throws {
     #expect(sent.objectValue?["method"]?.stringValue == "initialize")
 }
 
+@Test("ACPClient.connect: 解析 agentCapabilities.mcpCapabilities 里 true 的 http/sse 能力")
+func clientConnectMCPCapabilities() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":true,"sse":false}}}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    let caps = try await client.connect()
+    #expect(caps.agentCapabilities.contains("mcpCapabilities"))
+    #expect(caps.mcpCapabilities == [.http])
+}
+
+@Test("ACPClient.connect: 无 mcpCapabilities 时远程 MCP 能力为空")
+func clientConnectNoMCPCapabilities() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    #expect(try await client.connect().mcpCapabilities.isEmpty)
+}
+
 @Test("ACPClient.createSession: 发 session/new,收 sessionId")
 func clientCreateSession() async throws {
     let mock = MockACPTransport([

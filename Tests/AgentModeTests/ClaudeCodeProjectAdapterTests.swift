@@ -199,7 +199,10 @@ final class ClaudeCodeProjectAdapterTests: XCTestCase {
         let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contentsOf: configURL))
         let servers = try XCTUnwrap(config.objectValue?["mcpServers"]?.objectValue)
         let filesystem = try XCTUnwrap(servers["filesystem"]?.objectValue)
-        XCTAssertEqual(filesystem["command"]?.arrayValue?.compactMap(\.stringValue), ["npx", "-y", "@modelcontextprotocol/server-filesystem"])
+        XCTAssertEqual(filesystem["type"]?.stringValue, "stdio")
+        XCTAssertEqual(filesystem["command"]?.stringValue, "npx")
+        XCTAssertEqual(filesystem["args"]?.arrayValue?.compactMap(\.stringValue), ["-y", "@modelcontextprotocol/server-filesystem"])
+        XCTAssertNil(filesystem["enabled"])
         XCTAssertNotNil(servers["memory"])
 
         let copiedSkill = project.rootURL.appendingPathComponent(".claude/skills/filesystem-plugin-code-review", isDirectory: true)
@@ -236,6 +239,91 @@ final class ClaudeCodeProjectAdapterTests: XCTestCase {
         let custom = try XCTUnwrap(servers["custom"]?.objectValue)
         XCTAssertEqual(custom["command"]?.stringValue, "uvx")
         XCTAssertEqual(custom["args"]?.arrayValue?.compactMap(\.stringValue), ["mcp-server", "--flag"])
+    }
+
+    func testApplyOmitsInternalOnlyKeys() throws {
+        try writePlugin(id: "dev-toolkit", capabilities: ["mcp"], serverName: "custom", serversFileJSON: """
+        { "mcpServers": { "custom": { "type": "local", "command": "npx", "args": ["-y", "srv"], "enabled": true, "cwd": "/tmp", "env": { "LOG_LEVEL": "info" } } } }
+        """)
+
+        let plans = try ClaudeCodeProjectAdapter().plans(for: project)
+        try ClaudeCodeProjectionMaterializer().apply(plans)
+
+        let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contentsOf: project.rootURL.appendingPathComponent(".mcp.json")))
+        let custom = try XCTUnwrap(config.objectValue?["mcpServers"]?.objectValue?["custom"]?.objectValue)
+        XCTAssertEqual(custom["type"]?.stringValue, "stdio")
+        XCTAssertNil(custom["enabled"])
+        XCTAssertNil(custom["cwd"])
+        XCTAssertNil(custom["transport"])
+        XCTAssertEqual(custom["env"]?.objectValue?["LOG_LEVEL"]?.stringValue, "info")
+    }
+
+    func testApplySkipsDisabledMCPServer() throws {
+        try writePlugin(id: "dev-toolkit", capabilities: ["mcp"], mcpRefs: ["mcp/servers.json#on", "mcp/servers.json#off"], serversFileJSON: """
+        { "mcpServers": {
+            "on": { "type": "local", "command": "npx", "args": ["-y", "on-server"], "enabled": true },
+            "off": { "type": "local", "command": "npx", "args": ["-y", "off-server"], "enabled": false }
+        } }
+        """)
+
+        let plans = try ClaudeCodeProjectAdapter().plans(for: project)
+        try ClaudeCodeProjectionMaterializer().apply(plans)
+
+        let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contentsOf: project.rootURL.appendingPathComponent(".mcp.json")))
+        let servers = try XCTUnwrap(config.objectValue?["mcpServers"]?.objectValue)
+        XCTAssertNotNil(servers["on"])
+        XCTAssertNil(servers["off"])
+    }
+
+    func testPlanProducesNoConfigWhenAllServersDisabled() throws {
+        try writePlugin(id: "dev-toolkit", capabilities: ["mcp"], serversFileJSON: """
+        { "mcpServers": { "filesystem": { "type": "local", "command": "npx", "enabled": false } } }
+        """)
+
+        let plans = try ClaudeCodeProjectAdapter().plans(for: project)
+
+        XCTAssertEqual(plans, [])
+    }
+
+    func testApplyRendersRemoteServer() throws {
+        try writePlugin(id: "dev-toolkit", capabilities: ["mcp"], serverName: "remote", serversFileJSON: """
+        { "mcpServers": { "remote": { "type": "http", "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer token" }, "enabled": true } } }
+        """)
+
+        let plans = try ClaudeCodeProjectAdapter().plans(for: project)
+        try ClaudeCodeProjectionMaterializer().apply(plans)
+
+        let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contentsOf: project.rootURL.appendingPathComponent(".mcp.json")))
+        let remote = try XCTUnwrap(config.objectValue?["mcpServers"]?.objectValue?["remote"]?.objectValue)
+        XCTAssertEqual(remote["type"]?.stringValue, "http")
+        XCTAssertEqual(remote["url"]?.stringValue, "https://example.com/mcp")
+        XCTAssertEqual(remote["headers"]?.objectValue?["Authorization"]?.stringValue, "Bearer token")
+        XCTAssertNil(remote["command"])
+        XCTAssertNil(remote["enabled"])
+    }
+
+    func testApplyRendersURLWithoutTypeAsHTTP() throws {
+        try writePlugin(id: "dev-toolkit", capabilities: ["mcp"], serverName: "remote", serversFileJSON: """
+        { "mcpServers": { "remote": { "url": "https://example.com/mcp" } } }
+        """)
+
+        let plans = try ClaudeCodeProjectAdapter().plans(for: project)
+        try ClaudeCodeProjectionMaterializer().apply(plans)
+
+        let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contentsOf: project.rootURL.appendingPathComponent(".mcp.json")))
+        let remote = try XCTUnwrap(config.objectValue?["mcpServers"]?.objectValue?["remote"]?.objectValue)
+        XCTAssertEqual(remote["type"]?.stringValue, "http")
+        XCTAssertEqual(remote["url"]?.stringValue, "https://example.com/mcp")
+    }
+
+    func testPlanRejectsRemoteServerWithoutURL() throws {
+        try writePlugin(id: "dev-toolkit", capabilities: ["mcp"], serverName: "remote", serversFileJSON: """
+        { "mcpServers": { "remote": { "type": "http" } } }
+        """)
+
+        XCTAssertThrowsError(try ClaudeCodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? ClaudeCodeProjectAdapterError, .invalidMCPServer("remote"))
+        }
     }
 
 
@@ -306,7 +394,8 @@ final class ClaudeCodeProjectAdapterTests: XCTestCase {
         skills: [String] = [],
         enginesJSON: String = #"{ "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } }"#,
         serverName: String = "filesystem",
-        commandJSON: String? = nil
+        commandJSON: String? = nil,
+        serversFileJSON: String? = nil
     ) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
@@ -318,7 +407,8 @@ final class ClaudeCodeProjectAdapterTests: XCTestCase {
         try """
         { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "enabled": true, "capabilities": [\(capabilityJSON)], "mcp": [\(refsJSON)], "skills": [\(skillsJSON)], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: dir.appendingPathComponent("plugin.json"), options: .atomic)
-        try mcpServersJSON(serverName: serverName, commandJSON: commandJSON).data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
+        let fileContents = serversFileJSON ?? mcpServersJSON(serverName: serverName, commandJSON: commandJSON)
+        try fileContents.data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
     }
 
     private func mcpServersJSON(serverName: String, commandJSON: String? = nil) -> String {

@@ -36,7 +36,10 @@ struct ACPSmoke {
             let caps = try await client.connect()
             log("[connect] protocolVersion=\(caps.protocolVersion) caps=\(caps.agentCapabilities.sorted())")
 
-            let mcpServers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+            let mcpServers = ACPMCPServerProjection.supported(
+                try OpencodeProjectAdapter().loadMCPServers(for: project),
+                capabilities: caps.mcpCapabilities
+            )
             let sid = try await client.createSession(cwd: projectRoot.path, mcpServers: mcpServers)
             await client.setSessionId(sid)
             log("[session] \(sid)")

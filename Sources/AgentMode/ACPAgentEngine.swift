@@ -30,8 +30,9 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     public let binaryPath: String?
     /// session 工作目录(nil = 进程 cwd)。
     public let cwd: URL?
-    /// 每轮 ACP session/new 携带的 MCP server 列表。默认空,保持旧调用方行为。
-    private let mcpServersProvider: @Sendable () -> [ACPJSON]
+    /// 每轮 ACP session/new 携带的 MCP server 列表（入参 = initialize 协商出的能力,
+    /// 供按 `mcpCapabilities` 过滤 http/sse server）。默认空,保持旧调用方行为。
+    private let mcpServersProvider: @Sendable (ACPAgentCapabilities) -> [ACPJSON]
     /// transport 工厂(测试注入 mock;生产 `ACPStdioTransport`)。
     public let transportFactory: @Sendable () -> any ACPTransport
 
@@ -44,13 +45,15 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
 
     /// 复用的 client(首次 run 建,后续复用)。lock 保护(防并发首次建两次)。
     private var client: ACPClient?
+    /// 首次 initialize 协商出的能力(与 client 同生命周期),供 provider 按能力过滤 MCP server。
+    private var clientCapabilities: ACPAgentCapabilities?
     private let lock = NSLock()
 
     public init(
         command: [String] = ["opencode", "acp"],
         binaryPath: String? = nil,
         cwd: URL? = nil,
-        mcpServersProvider: @escaping @Sendable () -> [ACPJSON] = { [] },
+        mcpServersProvider: @escaping @Sendable (ACPAgentCapabilities) -> [ACPJSON] = { _ in [] },
         transportFactory: @escaping @Sendable () -> any ACPTransport = {
             ACPStdioTransport(command: ["opencode", "acp"])
         }
@@ -72,35 +75,36 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
         }
     }
 
-    /// 懒建 + 复用 client:首次 spawn + initialize;后续直接返回已连接 client。
+    /// 懒建 + 复用 client:首次 spawn + initialize;后续直接返回已连接 client 与协商能力。
     /// 并发首次:第二个丢弃并 shutdown(保留先建者)。
-    private func ensureConnected() async throws -> ACPClient {
-        lock.lock(); let existing = client; lock.unlock()
-        if let existing { return existing }
+    private func ensureConnected() async throws -> (ACPClient, ACPAgentCapabilities) {
+        lock.lock(); let existing = client; let existingCaps = clientCapabilities; lock.unlock()
+        if let existing, let existingCaps { return (existing, existingCaps) }
 
         let new = ACPClient(transport: transportFactory())
         await new.setOnPermissionRequest(onPermissionRequest)   // 透传权限回调(ACP-2)
-        _ = try await new.connect()   // initialize(协议协商,~2-3s 冷启动)
+        let caps = try await new.connect()   // initialize(协议协商,~2-3s 冷启动)
 
         lock.lock()
-        if let existing = client {
+        if let existing = client, let existingCaps = clientCapabilities {
             // 并发首次:已有,丢弃新建
             lock.unlock()
             Task { await new.shutdown() }
-            return existing
+            return (existing, existingCaps)
         }
         client = new
+        clientCapabilities = caps
         lock.unlock()
-        return new
+        return (new, caps)
     }
 
     public func run(prompt: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let c = try await ensureConnected()
+                    let (c, caps) = try await ensureConnected()
                     let cwdPath = cwd?.path ?? FileManager.default.currentDirectoryPath
-                    let sid = try await c.createSession(cwd: cwdPath, mcpServers: mcpServersProvider())
+                    let sid = try await c.createSession(cwd: cwdPath, mcpServers: mcpServersProvider(caps))
                     await c.setSessionId(sid)
 
                     let onThoughtHandler = onThought   // 捕获当前值(Sendable closure,run 时快照)

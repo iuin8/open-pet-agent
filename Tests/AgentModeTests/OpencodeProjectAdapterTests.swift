@@ -24,8 +24,60 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         try writePlugin(id: "dev-toolkit", enabled: true)
         let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
         XCTAssertEqual(servers.count, 1)
-        let command = servers[0].objectValue?["command"]?.arrayValue?.compactMap(\.stringValue) ?? []
-        XCTAssertEqual(command, ["npx", "-y", "@modelcontextprotocol/server-filesystem"])
+        let server = try XCTUnwrap(servers[0].objectValue)
+        // ACP v1 session/new wire format: stdio has no `type`, command is a
+        // string, args/env are required (env is a [{name, value}] array).
+        XCTAssertEqual(server["name"]?.stringValue, "filesystem")
+        XCTAssertEqual(server["command"]?.stringValue, "npx")
+        XCTAssertEqual(server["args"]?.arrayValue?.compactMap(\.stringValue), ["-y", "@modelcontextprotocol/server-filesystem"])
+        XCTAssertEqual(server["env"], .array([]))
+        XCTAssertNil(server["type"])
+        XCTAssertNil(server["enabled"])
+    }
+
+    func testLoadMCPServersRendersEnvAsACPNamedValueArray() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, serversFileJSON: """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx", "-y", "srv"], "env": { "B_KEY": "2", "A_KEY": "1" } } } }
+        """)
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+        let server = try XCTUnwrap(servers.first?.objectValue)
+        let env = try XCTUnwrap(server["env"]?.arrayValue)
+        XCTAssertEqual(env, [
+            .object(["name": .string("A_KEY"), "value": .string("1")]),
+            .object(["name": .string("B_KEY"), "value": .string("2")]),
+        ])
+    }
+
+    func testLoadMCPServersRendersRemoteServer() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, mcpRefs: ["mcp/servers.json#remote"], serversFileJSON: """
+        { "mcpServers": { "remote": { "type": "http", "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer token" } } } }
+        """)
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+        let server = try XCTUnwrap(servers.first?.objectValue)
+        XCTAssertEqual(server["name"]?.stringValue, "remote")
+        XCTAssertEqual(server["type"]?.stringValue, "http")
+        XCTAssertEqual(server["url"]?.stringValue, "https://example.com/mcp")
+        XCTAssertEqual(server["headers"]?.arrayValue, [
+            .object(["name": .string("Authorization"), "value": .string("Bearer token")])
+        ])
+        XCTAssertNil(server["command"])
+    }
+
+    func testLoadMCPServersSkipsDisabledServer() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, serversFileJSON: """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx"], "enabled": false } } }
+        """)
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+        XCTAssertEqual(servers.count, 0)
+    }
+
+    func testLoadMCPServersRejectsInvalidServer() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, mcpRefs: ["mcp/servers.json#remote"], serversFileJSON: """
+        { "mcpServers": { "remote": { "type": "http" } } }
+        """)
+        XCTAssertThrowsError(try OpencodeProjectAdapter().loadMCPServers(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .invalidMCPServer("remote"))
+        }
     }
 
     func testLoadMCPServersAcceptsLowercaseOpencodePolicy() throws {
@@ -106,6 +158,78 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         let plans = try OpencodeProjectAdapter().plans(for: project)
 
         XCTAssertEqual(plans.count, 1)
+    }
+
+    func testPlansRenderLocalServerInOpencodeNativeFormat() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, serversFileJSON: """
+        { "mcpServers": { "filesystem": { "type": "stdio", "command": "npx", "args": ["-y", "srv"], "env": { "LOG_LEVEL": "info" }, "cwd": "/tmp", "enabled": true } } }
+        """)
+
+        let server = try XCTUnwrap(mcpConfigServers()?["filesystem"]?.objectValue)
+        XCTAssertEqual(server["type"]?.stringValue, "local")
+        XCTAssertEqual(server["command"]?.arrayValue?.compactMap(\.stringValue), ["npx", "-y", "srv"])
+        XCTAssertEqual(server["environment"]?.objectValue?["LOG_LEVEL"]?.stringValue, "info")
+        XCTAssertEqual(server["enabled"], .bool(true))
+        XCTAssertNil(server["env"])
+        XCTAssertNil(server["args"])
+        XCTAssertNil(server["cwd"])
+    }
+
+    func testPlansPreserveImportedNativeEnvironmentKey() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, serversFileJSON: """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx", "-y", "srv"], "environment": { "API_KEY": "x" } } } }
+        """)
+
+        let server = try XCTUnwrap(mcpConfigServers()?["filesystem"]?.objectValue)
+        XCTAssertEqual(server["command"]?.arrayValue?.compactMap(\.stringValue), ["npx", "-y", "srv"])
+        XCTAssertEqual(server["environment"]?.objectValue?["API_KEY"]?.stringValue, "x")
+        XCTAssertNil(server["env"])
+    }
+
+    func testPlansRenderRemoteServerInOpencodeNativeFormat() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, mcpRefs: ["mcp/servers.json#remote"], serversFileJSON: """
+        { "mcpServers": { "remote": { "type": "http", "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer token" }, "enabled": false } } }
+        """)
+
+        let server = try XCTUnwrap(mcpConfigServers()?["remote"]?.objectValue)
+        XCTAssertEqual(server["type"]?.stringValue, "remote")
+        XCTAssertEqual(server["url"]?.stringValue, "https://example.com/mcp")
+        XCTAssertEqual(server["headers"]?.objectValue?["Authorization"]?.stringValue, "Bearer token")
+        // opencode has a per-server enabled switch, so disabled servers are
+        // projected with enabled:false instead of being dropped (contrast with
+        // the Claude Code projection, which must exclude them).
+        XCTAssertEqual(server["enabled"], .bool(false))
+        XCTAssertNil(server["command"])
+    }
+
+    func testPlansRejectRemoteServerWithoutURL() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, mcpRefs: ["mcp/servers.json#remote"], serversFileJSON: """
+        { "mcpServers": { "remote": { "type": "http" } } }
+        """)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .invalidMCPServer("remote"))
+        }
+    }
+
+    func testPlansRejectWSTransportUnsupportedByOpencode() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, mcpRefs: ["mcp/servers.json#remote"], serversFileJSON: """
+        { "mcpServers": { "remote": { "type": "ws", "url": "wss://example.com/mcp" } } }
+        """)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .invalidMCPServer("remote"))
+        }
+    }
+
+    func testPlansRejectNonStringEnvironmentValues() throws {
+        try writePlugin(id: "dev-toolkit", enabled: true, serversFileJSON: """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx"], "env": { "RETRIES": 3 } } } }
+        """)
+
+        XCTAssertThrowsError(try OpencodeProjectAdapter().plans(for: project)) { error in
+            XCTAssertEqual(error as? OpencodeProjectAdapterError, .invalidMCPServer("filesystem"))
+        }
     }
 
     func testPlansSkipDisabledOrMissingPolicy() throws {
@@ -215,7 +339,8 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         capabilities: [String] = ["mcp"],
         mcpRefs: [String] = ["mcp/servers.json#filesystem"],
         skills: [String] = [],
-        enginesJSON: String = #"{ "openCode": { "enabled": true, "projection": "plugin-dir" } }"#
+        enginesJSON: String = #"{ "openCode": { "enabled": true, "projection": "plugin-dir" } }"#,
+        serversFileJSON: String? = nil
     ) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
@@ -227,7 +352,22 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         try """
         { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "enabled": \(enabled), "capabilities": [\(capabilityJSON)], "mcp": [\(refsJSON)], "skills": [\(skillsJSON)], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: dir.appendingPathComponent("plugin.json"), options: .atomic)
-        try mcpServersJSON.data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
+        try (serversFileJSON ?? mcpServersJSON).data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
+    }
+
+    /// Parses the rendered `opencode.json` writeFile operation and returns its `mcp` object.
+    private func mcpConfigServers(file: StaticString = #filePath, line: UInt = #line) throws -> [String: ACPJSON]? {
+        let plans = try OpencodeProjectAdapter().plans(for: project)
+        let writes = plans.flatMap(\.operations).compactMap { operation -> String? in
+            if case let .writeFile(contents, destination) = operation,
+               destination.path == project.rootURL.appendingPathComponent("opencode.json").path {
+                return contents
+            }
+            return nil
+        }
+        let contents = try XCTUnwrap(writes.first, "missing opencode.json writeFile operation", file: file, line: line)
+        let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contents.utf8))
+        return config.objectValue?["mcp"]?.objectValue
     }
 
     private var mcpServersJSON: String {

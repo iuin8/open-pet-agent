@@ -21,6 +21,9 @@ public struct ClaudeCodeProjectAdapter: Sendable {
                 for ref in plugin.mcp {
                     do {
                         let (name, value) = try resolveMCPRef(ref, plugin: plugin)
+                        // Claude Code has no per-server enabled switch; a disabled
+                        // server is excluded rather than projected as active.
+                        guard ProjectCapabilityMCPResolver.isEnabled(value) else { continue }
                         guard seenMCPServers.insert(name).inserted else {
                             throw ClaudeCodeProjectAdapterError.duplicateMCPServer(name)
                         }
@@ -110,10 +113,11 @@ public struct ClaudeCodeProjectAdapter: Sendable {
     private func renderMCPConfig(_ servers: [(name: String, value: ACPJSON)]) throws -> String {
         var object: [String: ACPJSON] = [:]
         for server in servers.sorted(by: { $0.name < $1.name }) {
-            guard server.value.objectValue != nil else {
+            do {
+                object[server.name] = try ClaudeCodeMCPServerProjection.serverJSON(name: server.name, value: server.value)
+            } catch {
                 throw ClaudeCodeProjectAdapterError.invalidMCPServer(server.name)
             }
-            object[server.name] = server.value
         }
         let data = try JSONEncoder.openPetAgentPretty.encode(ACPJSON.object(["mcpServers": .object(object)]))
         return String(decoding: data, as: UTF8.self)
