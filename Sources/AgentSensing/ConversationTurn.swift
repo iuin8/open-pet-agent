@@ -188,6 +188,8 @@ extension AgentConversation {
             }
             switch event.kind {
             case .userPrompt(let text):
+                // ponytail: `/compact` 有时在 compactBoundary 后被历史窗口再次回放;紧邻边界时仍折进同一结构行。
+                if text == "/compact", firstId == nil, turns.last?.kind == .compactBoundary { continue }
                 flushAssistant()
                 turns.append(ConversationTurn(id: id, kind: .user(text: text, attachments: event.attachments), timestamp: event.timestamp))
             case .awaitingUser(let reason):
