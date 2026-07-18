@@ -100,6 +100,10 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         }
     }
 
+    public func fixSuggestion(for diagnostic: ProjectConfigDiagnostic) -> String {
+        diagnostic.message
+    }
+
     public func delete() {
         do {
             try onDelete()

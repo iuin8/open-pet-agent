@@ -210,7 +210,21 @@ struct ProjectCapabilityMCPDetailTests {
         #expect(detail.errorMessage != nil)
     }
 
-    private func mcpServer(rawJSON: String? = nil) -> CapabilityMCPServer {
+    @Test("diagnostics：复制修复建议优先复制可执行建议")
+    func diagnosticFixSuggestionIsCopyableText() {
+        let detail = ProjectCapabilityMCPDetailState(
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/dev-toolkit/mcp/servers.json#filesystem",
+            server: mcpServer(diagnostics: [
+                ProjectConfigDiagnostic(severity: .warning, message: "MCP command not found: filesystem — 安装命令或改成绝对路径", path: "/tmp/dev-toolkit")
+            ]),
+            onSave: { _ in mcpServer() }
+        )
+
+        #expect(detail.fixSuggestion(for: detail.server.diagnostics[0]) == "MCP command not found: filesystem — 安装命令或改成绝对路径")
+    }
+
+    private func mcpServer(rawJSON: String? = nil, diagnostics: [ProjectConfigDiagnostic] = []) -> CapabilityMCPServer {
         CapabilityMCPServer(
             id: "dev-toolkit:filesystem",
             name: "filesystem",
@@ -229,7 +243,7 @@ struct ProjectCapabilityMCPDetailTests {
             }
             """,
             targets: [.codex],
-            diagnostics: []
+            diagnostics: diagnostics
         )
     }
 

@@ -171,6 +171,98 @@ final class ProjectCapabilityModelTests: XCTestCase {
         XCTAssertFalse(diagnostics.containsDiagnostic("Malformed MCP command: remote"))
     }
 
+    func testValidatorWarnsAboutMissingMCPCommandPath() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#missing-command"], "engines": {} }
+        """)
+        try writeMCP("dev-toolkit", "missing-command", command: ["openpetagent-missing-mcp-command"])
+
+        let diagnostics = try ProjectCapabilityValidator().validate(project: project)
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertTrue(diagnostics.containsDiagnostic("MCP command not found: missing-command", severity: .warning))
+        XCTAssertTrue(server.diagnostics.containsDiagnostic("MCP command not found: missing-command", severity: .warning))
+    }
+
+    func testValidatorWarnsAboutMissingMCPCWD() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#cwd-missing"], "engines": {} }
+        """)
+        let missingCWD = tmpHome.appendingPathComponent("missing-workdir").path
+        try writeMCP("dev-toolkit", "cwd-missing", command: ["/bin/echo"], extra: #", "cwd": "\#(missingCWD)""#)
+
+        let diagnostics = try ProjectCapabilityValidator().validate(project: project)
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertTrue(diagnostics.containsDiagnostic("MCP cwd missing: cwd-missing", severity: .warning))
+        XCTAssertTrue(server.diagnostics.containsDiagnostic("MCP cwd missing: cwd-missing", severity: .warning))
+    }
+
+    func testValidatorWarnsAboutMissingMCPEnvValue() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#env-missing"], "engines": {} }
+        """)
+        try writeMCP("dev-toolkit", "env-missing", command: ["/bin/echo"], extra: #", "env": { "TOKEN": "" }"#)
+
+        let diagnostics = try ProjectCapabilityValidator().validate(project: project)
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertTrue(diagnostics.containsDiagnostic("MCP env missing: env-missing TOKEN", severity: .warning))
+        XCTAssertTrue(server.diagnostics.containsDiagnostic("MCP env missing: env-missing TOKEN", severity: .warning))
+    }
+
+    func testValidatorWarnsAboutEmptyMCPArgsArray() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#empty-args"], "engines": {} }
+        """)
+        try writeMCP("dev-toolkit", "empty-args", command: ["/bin/echo"], extra: #", "args": []"#)
+
+        let diagnostics = try ProjectCapabilityValidator().validate(project: project)
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertTrue(diagnostics.containsDiagnostic("MCP args empty: empty-args", severity: .warning))
+        XCTAssertTrue(server.diagnostics.containsDiagnostic("MCP args empty: empty-args", severity: .warning))
+    }
+
+    func testValidatorResolvesRelativeMCPCommandAgainstCWD() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#relative-command"], "engines": {} }
+        """)
+        let workdir = tmpHome.appendingPathComponent("workdir", isDirectory: true)
+        try FileManager.default.createDirectory(at: workdir, withIntermediateDirectories: true)
+        let tool = workdir.appendingPathComponent("tool")
+        try """
+        #!/bin/sh
+        exit 0
+        """.data(using: .utf8)!.write(to: tool, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        try writeMCP("dev-toolkit", "relative-command", command: ["./tool"], extra: #", "cwd": "\#(workdir.path)""#)
+
+        let diagnostics = try ProjectCapabilityValidator().validate(project: project)
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertFalse(diagnostics.containsDiagnostic("MCP command not found: relative-command", severity: .warning))
+        XCTAssertFalse(server.diagnostics.containsDiagnostic("MCP command not found: relative-command", severity: .warning))
+    }
+
+    func testValidatorWarnsAboutMalformedRemoteMCPURL() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#remote"], "engines": {} }
+        """)
+        let mcpURL = ProjectConfig.pluginMCPDirectory(for: project, pluginID: "dev-toolkit").appendingPathComponent("servers.json")
+        try FileManager.default.createDirectory(at: mcpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        { "mcpServers": { "remote": { "type": "http", "url": "https://", "enabled": true } } }
+        """.data(using: .utf8)!.write(to: mcpURL, options: .atomic)
+
+        let diagnostics = try ProjectCapabilityValidator().validate(project: project)
+        let server = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first?.mcpServers.first)
+
+        XCTAssertTrue(diagnostics.containsDiagnostic("MCP URL malformed: remote", severity: .warning))
+        XCTAssertFalse(diagnostics.containsDiagnostic("Malformed MCP command: remote"))
+        XCTAssertTrue(server.diagnostics.containsDiagnostic("MCP URL malformed: remote", severity: .warning))
+    }
+
     private func writePlugin(_ id: String, _ json: String) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -183,12 +275,12 @@ final class ProjectCapabilityModelTests: XCTestCase {
         try body.data(using: .utf8)!.write(to: dir.appendingPathComponent("SKILL.md"), options: .atomic)
     }
 
-    private func writeMCP(_ pluginID: String, _ name: String, command: [String]) throws {
+    private func writeMCP(_ pluginID: String, _ name: String, command: [String], extra: String = "") throws {
         let dir = ProjectConfig.pluginMCPDirectory(for: project, pluginID: pluginID)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let encodedCommand = command.map { "\"\($0)\"" }.joined(separator: ", ")
         try """
-        { "mcpServers": { "\(name)": { "type": "local", "command": [\(encodedCommand)], "enabled": true } } }
+        { "mcpServers": { "\(name)": { "type": "local", "command": [\(encodedCommand)], "enabled": true\(extra) } } }
         """.data(using: .utf8)!.write(to: dir.appendingPathComponent("servers.json"), options: .atomic)
     }
 }

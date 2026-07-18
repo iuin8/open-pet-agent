@@ -82,6 +82,18 @@ struct ProjectCapabilityManagerCardTests {
         #expect(mcpItem.diagnostics.contains { $0.severity == "error" && $0.message.contains("missing") } == false)
     }
 
+    @Test("build：MCP health warning 显示在 MCP 行")
+    func mcpHealthWarningsMarkMCPItem() throws {
+        let fixture = try ProjectCapabilityManagerFixture()
+        try fixture.writePlugin(enabled: true, commandJSON: #"["openpetagent-missing-mcp-command"]"#)
+
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .mcp)
+        let item = try #require(state.visibleItems.first)
+
+        #expect(item.status == .warning)
+        #expect(item.diagnostics.contains { $0.severity == "warning" && $0.message.contains("MCP command not found") } == true)
+    }
+
     @Test("toggle：禁用 plugin 只改 plugin.json enabled，不 materialize engine 文件")
     func disablesPluginManifestOnly() throws {
         let fixture = try ProjectCapabilityManagerFixture()
@@ -830,7 +842,8 @@ private struct ProjectCapabilityManagerFixture {
     func writePlugin(
         enabled: Bool,
         mcpRef: String = "mcp/servers.json#filesystem",
-        enginesJSON: String = #"{ "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } }"#
+        enginesJSON: String = #"{ "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } }"#,
+        commandJSON: String = #"["/bin/echo"]"#
     ) throws {
         try FileManager.default.createDirectory(at: pluginRoot.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
         let skillRoot = pluginRoot.appendingPathComponent("skills/code-review", isDirectory: true)
@@ -840,7 +853,7 @@ private struct ProjectCapabilityManagerFixture {
         { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "enabled": \(enabled), "capabilities": ["mcp", "skills"], "mcp": ["\(mcpRef)"], "skills": ["skills/code-review"], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("plugin.json"), options: .atomic)
         try """
-        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"], "enabled": true } } }
+        { "mcpServers": { "filesystem": { "type": "local", "command": \(commandJSON), "enabled": true } } }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("mcp/servers.json"), options: .atomic)
     }
 

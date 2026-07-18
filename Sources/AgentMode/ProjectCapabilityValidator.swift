@@ -72,7 +72,13 @@ public struct ProjectCapabilityValidator: Sendable {
                 diagnostics.append(.error("Duplicate MCP server id: \(id)", path: plugin.rootURL.path))
             }
             if !ProjectCapabilityMCPResolver.isValidConfiguration(resolved.value) {
-                diagnostics.append(.error("Malformed MCP command: \(resolved.name)", path: plugin.rootURL.path))
+                if ProjectCapabilityMCPHealth.hasMalformedRemoteURL(resolved.value) {
+                    diagnostics.append(contentsOf: ProjectCapabilityMCPHealth.diagnostics(name: resolved.name, value: resolved.value, pluginRoot: plugin.rootURL))
+                } else {
+                    diagnostics.append(.error("Malformed MCP command: \(resolved.name)", path: plugin.rootURL.path))
+                }
+            } else {
+                diagnostics.append(contentsOf: ProjectCapabilityMCPHealth.diagnostics(name: resolved.name, value: resolved.value, pluginRoot: plugin.rootURL))
             }
         } catch let error as ProjectCapabilityValidationError {
             diagnostics.append(mcpDiagnostic(for: error.message, path: plugin.rootURL.path))
@@ -164,7 +170,7 @@ enum ProjectCapabilityMCPResolver {
         return true
     }
 
-    private static func validRemoteURL(_ raw: String?) -> Bool {
+    static func validRemoteURL(_ raw: String?) -> Bool {
         guard let raw,
               let url = URL(string: raw),
               let scheme = url.scheme?.lowercased(),

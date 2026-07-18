@@ -238,7 +238,7 @@ private struct ProjectCapabilityModelBuilder {
                 cwd: object["cwd"]?.stringValue,
                 rawJSON: Self.rawJSON(resolved.value),
                 targets: targets(for: plugin),
-                diagnostics: []
+                diagnostics: ProjectCapabilityMCPHealth.diagnostics(name: resolved.name, value: resolved.value, pluginRoot: plugin.rootURL)
             )
         } catch let error as ProjectCapabilityValidationError {
             return unresolvedMCP(

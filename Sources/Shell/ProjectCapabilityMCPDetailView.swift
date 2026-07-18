@@ -57,11 +57,18 @@ struct ProjectCapabilityMCPDetailView: View {
             metadataRow("目标", model.server.targets.map(displayName).joined(separator: " · ").nonEmpty ?? "未启用")
             ForEach(model.server.diagnostics.indices, id: \.self) { index in
                 let diagnostic = model.server.diagnostics[index]
-                Label(
-                    diagnostic.message,
-                    systemImage: diagnostic.severity == .error ? "xmark.circle.fill" : "exclamationmark.triangle.fill"
-                )
-                .foregroundStyle(diagnostic.severity == .error ? Color.red.opacity(0.8) : ChatCardTheme.accent)
+                HStack(spacing: 6) {
+                    Label(
+                        diagnostic.message,
+                        systemImage: diagnostic.severity == .error ? "xmark.circle.fill" : "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(diagnostic.severity == .error ? Color.red.opacity(0.8) : ChatCardTheme.accent)
+                    Button("复制修复建议") {
+                        copy(model.fixSuggestion(for: diagnostic))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(ChatCardTheme.accent)
+                }
             }
         }
         .font(.system(size: 10, design: .rounded))
@@ -138,6 +145,11 @@ struct ProjectCapabilityMCPDetailView: View {
             .padding(8)
             .background(RoundedRectangle(cornerRadius: 8).fill(ChatCardTheme.inputFill.opacity(0.7)))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(ChatCardTheme.hairline, lineWidth: 0.5))
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 
     private func confirmDelete() {
