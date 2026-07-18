@@ -135,4 +135,9 @@ struct TranscriptRowBuilderTests {
 
         #expect(row.workflowRunId == "wf_abc-123")
     }
+
+    @Test("compact 边界 label 合并 /compact 命令与压缩状态")
+    func compactBoundaryLabelShowsCommandAndState() {
+        #expect(AgentConversationRow.compactBoundaryLabel == "/compact · 上下文已压缩")
+    }
 }

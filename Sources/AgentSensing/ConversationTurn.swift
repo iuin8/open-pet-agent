@@ -221,7 +221,9 @@ extension AgentConversation {
                 if firstId != nil { flushAssistant(interrupted: true) }
             case .compactBoundary:
                 // /compact 边界:收尾当前轮,插一条独立「上下文已压缩」分割线行;摘要保留到侧卡。
+                // ponytail: 把紧邻的 `/compact` 命令回显折进边界,避免 UI 显两条重复压缩动作;若未来要审计命令历史,在 detail 里加来源即可。
                 flushAssistant()
+                if turns.last?.kind == .user(text: "/compact") { turns.removeLast() }
                 turns.append(ConversationTurn(id: id, kind: .compactBoundary, timestamp: event.timestamp, compactSummary: event.detail))
             case .sessionStart, .done:
                 // P1-8:Codex `token_count`(映射为不可见 `.sessionStart`)携本轮 usage → attach 到**进行中**的轮,

@@ -82,6 +82,7 @@ enum ParserHelpers {
     /// 单独判定升标记轮,调用方务必先查 `isInterruption` 再查本函数,否则中断会被误丢。
     static func isClaudeHardNoise(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("Background agent ") && t.hasSuffix(" was stopped by the user.") { return true }
         return claudeHardNoisePrefixes.contains { t.hasPrefix($0) }
     }
 

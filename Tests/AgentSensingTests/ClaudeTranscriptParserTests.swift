@@ -253,6 +253,18 @@ struct ClaudeTranscriptParserTests {
         #expect(parser.parse(line: #"{"type":"user","isMeta":true,"message":{"content":"<local-command-caveat>x</local-command-caveat>"}}"#) == nil)
     }
 
+    @Test("后台 agent 被用户停止通知 → nil(系统生命周期,不冒充用户消息)")
+    func backgroundAgentStoppedFiltered() {
+        let line = #"{"type":"user","message":{"content":"Background agent \"目标：只读审查 /tmp/project\" was stopped by the user."}}"#
+        #expect(parser.parse(line: line) == nil)
+    }
+
+    @Test("普通 Background agent 开头文本仍是用户消息")
+    func backgroundAgentTextStillUserPrompt() {
+        let line = #"{"type":"user","message":{"content":"Background agent design notes"}}"#
+        #expect(parser.parse(line: line)?.kind == .userPrompt(text: "Background agent design notes"))
+    }
+
     @Test("#30:slash 命令注入 → 清洗成可读 /cmd args")
     func slashCommandCleaned() {
         let line = #"{"type":"user","message":{"content":"<command-name>/effort</command-name><command-message>effort</command-message><command-args>ultracode</command-args>"}}"#

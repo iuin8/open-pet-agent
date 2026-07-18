@@ -25,6 +25,8 @@ struct AgentConversationRow: View {
     /// P1-5:点用户行里的图片缩略图 → 开图片侧卡看全图。参数 = 被点的附件。
     var onOpenImage: ((ImageAttachment) -> Void)? = nil
 
+    static let compactBoundaryLabel = "/compact · 上下文已压缩"
+
     var body: some View {
         switch item.kind {
         case .user(let text):
@@ -59,7 +61,7 @@ struct AgentConversationRow: View {
             Rectangle().fill(ChatCardTheme.hairline).frame(height: 0.5)
             HStack(spacing: 4) {
                 Image(systemName: "arrow.triangle.merge").font(.system(size: 9, weight: .semibold))
-                Text("上下文已压缩").font(.system(size: 10, weight: .medium, design: .rounded))
+                Text(Self.compactBoundaryLabel).font(.system(size: 10, weight: .medium, design: .rounded))
             }
             .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.4))
             .fixedSize()

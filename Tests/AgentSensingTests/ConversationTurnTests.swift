@@ -226,6 +226,20 @@ struct ConversationTurnTests {
         #expect(a.finalText == "答")                    // 边界前的轮正常收尾
     }
 
+    @Test("/compact 命令紧跟 compactBoundary → 折成单条压缩边界行")
+    func compactCommandFoldsIntoBoundary() {
+        let turns = AgentConversation.buildTurns(from: [
+            ev(.userPrompt(text: "/compact"), 0),
+            ev(.compactBoundary, 1, detail: "旧上下文摘要"),
+            ev(.assistantText(text: "继续"), 2),
+        ])
+        #expect(turns.count == 2)
+        #expect(turns[0].kind == .compactBoundary)
+        #expect(turns[0].compactSummary == "旧上下文摘要")
+        guard case .assistant(let a) = turns[1].kind else { Issue.record("compact 后应保留 assistant 轮"); return }
+        #expect(a.finalText == "继续")
+    }
+
     // MARK: - #9 workflow 衍生 agent
 
     @Test("#9:Workflow 工具 → 从 tool_result 输出抽 Run ID 到具体 step item")
