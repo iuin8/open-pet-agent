@@ -140,7 +140,7 @@ struct ACPAgentEngineTests {
         let engine = ACPAgentEngine(
             command: ["fake", "acp"],
             binaryPath: "/usr/bin/true",
-            mcpServersProvider: { [server] },
+            mcpServersProvider: { _ in [server] },
             transportFactory: { mock }
         )
 
@@ -153,5 +153,27 @@ struct ACPAgentEngineTests {
         let mcpServers = sessionNew?["params"]?.objectValue?["mcpServers"]?.arrayValue ?? []
         #expect(mcpServers.contains(server))
         #expect(deltas == ["ok"])
+    }
+
+    @Test("ACPAgentEngine.run: provider 收到 initialize 协商出的 mcpCapabilities")
+    func providerReceivesNegotiatedCapabilities() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":true}}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            updateChunk("ok"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        final class CapsBox: @unchecked Sendable { var caps: ACPAgentCapabilities? }
+        let box = CapsBox()
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            mcpServersProvider: { caps in box.caps = caps; return [] },
+            transportFactory: { mock }
+        )
+
+        for try await _ in engine.run(prompt: "hi") {}
+
+        #expect(box.caps?.mcpCapabilities == [.http])
     }
 }

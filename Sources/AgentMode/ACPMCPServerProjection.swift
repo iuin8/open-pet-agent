@@ -12,7 +12,7 @@ import Foundation
 /// -32602 when they are missing or shaped as maps. Internal-only keys
 /// (`enabled`, `transport`, `cwd`) never leak; ACP has no per-server `enabled`,
 /// so disabled servers are excluded by the caller.
-enum ACPMCPServerProjection {
+public enum ACPMCPServerProjection {
     enum ProjectionError: Error, Equatable {
         case notAnObject(String)
         case invalidCommand(String)
@@ -41,6 +41,19 @@ enum ACPMCPServerProjection {
                 : .object(try remoteServer(name: name, type: "http", url: url, object: object))
         default:
             throw ProjectionError.unsupportedTransport(name)
+        }
+    }
+
+    /// Drops remote servers whose transport the agent did not advertise in
+    /// `agentCapabilities.mcpCapabilities` (http/sse are capability-gated in ACP
+    /// v1; stdio needs no capability and is always kept).
+    public static func supported(_ servers: [ACPJSON], capabilities: Set<ACPMCPCapability>) -> [ACPJSON] {
+        servers.filter { server in
+            switch server.objectValue?["type"]?.stringValue {
+            case "http": return capabilities.contains(.http)
+            case "sse": return capabilities.contains(.sse)
+            default: return true
+            }
         }
     }
 

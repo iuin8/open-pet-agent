@@ -32,9 +32,11 @@ extension MinimalAppDelegate {
             let project = ProjectStore.current(defaults: defaults)
             let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
             let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
-            let mcpServersProvider: @Sendable () -> [ACPJSON] = {
+            let mcpServersProvider: @Sendable (ACPAgentCapabilities) -> [ACPJSON] = { caps in
                 do {
-                    return try OpencodeProjectAdapter().loadMCPServers(for: project)
+                    let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+                    // ACP v1 的 http/sse 是能力门控:agent 未声明的 transport 不下发。
+                    return ACPMCPServerProjection.supported(servers, capabilities: caps.mcpCapabilities)
                 } catch {
                     fputs("[ProjectConfig] opencode MCP projection failed: \(error)\n", stderr)
                     return []
