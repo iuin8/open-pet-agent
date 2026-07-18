@@ -224,6 +224,30 @@ final class ProjectCapabilityModelTests: XCTestCase {
         XCTAssertTrue(server.diagnostics.containsDiagnostic("MCP args empty: empty-args", severity: .warning))
     }
 
+    func testMCPHealthUsesAugmentedPathEnvironmentForBareCommand() throws {
+        let bin = tmpHome.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let tool = bin.appendingPathComponent("mcp-tool")
+        try """
+        #!/bin/sh
+        exit 0
+        """.data(using: .utf8)!.write(to: tool, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        let value = ACPJSON.object([
+            "type": .string("local"),
+            "command": .string("mcp-tool")
+        ])
+
+        let diagnostics = ProjectCapabilityMCPHealth.diagnostics(
+            name: "path-command",
+            value: value,
+            pluginRoot: tmpHome,
+            environment: CLIProcessEnvironment.augmented(extraPaths: [bin.path])
+        )
+
+        XCTAssertFalse(diagnostics.containsDiagnostic("MCP command not found: path-command", severity: .warning))
+    }
+
     func testValidatorResolvesRelativeMCPCommandAgainstCWD() throws {
         try writePlugin("dev-toolkit", """
         { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "enabled": true, "capabilities": ["mcp"], "mcp": ["mcp/servers.json#relative-command"], "engines": {} }

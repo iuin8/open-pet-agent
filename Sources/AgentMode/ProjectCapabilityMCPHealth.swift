@@ -1,7 +1,7 @@
 import Foundation
 
 enum ProjectCapabilityMCPHealth {
-    static func diagnostics(name: String, value: ACPJSON, pluginRoot: URL) -> [ProjectConfigDiagnostic] {
+    static func diagnostics(name: String, value: ACPJSON, pluginRoot: URL, environment: [String: String] = CLIProcessEnvironment.augmented()) -> [ProjectConfigDiagnostic] {
         guard let object = value.objectValue else { return [] }
         let transport = object["type"]?.stringValue ?? object["transport"]?.stringValue
         switch transport {
@@ -9,7 +9,7 @@ enum ProjectCapabilityMCPHealth {
             return remoteDiagnostics(name: name, object: object, path: pluginRoot.path)
         default:
             return object["url"]?.stringValue == nil
-                ? stdioDiagnostics(name: name, value: value, object: object, pluginRoot: pluginRoot)
+                ? stdioDiagnostics(name: name, value: value, object: object, pluginRoot: pluginRoot, environment: environment)
                 : remoteDiagnostics(name: name, object: object, path: pluginRoot.path)
         }
     }
@@ -29,10 +29,10 @@ enum ProjectCapabilityMCPHealth {
             : [.warning("MCP URL malformed: \(name) — 修正为 http(s) URL，例如 https://host/path", path: path)]
     }
 
-    private static func stdioDiagnostics(name: String, value: ACPJSON, object: [String: ACPJSON], pluginRoot: URL) -> [ProjectConfigDiagnostic] {
+    private static func stdioDiagnostics(name: String, value: ACPJSON, object: [String: ACPJSON], pluginRoot: URL, environment: [String: String]) -> [ProjectConfigDiagnostic] {
         var diagnostics: [ProjectConfigDiagnostic] = []
         let cwd = object["cwd"]?.stringValue
-        if let command = ProjectCapabilityMCPResolver.commandParts(for: value)?.first, !commandExists(command, cwd: cwd, pluginRoot: pluginRoot) {
+        if let command = ProjectCapabilityMCPResolver.commandParts(for: value)?.first, !commandExists(command, cwd: cwd, pluginRoot: pluginRoot, environment: environment) {
             diagnostics.append(.warning("MCP command not found: \(name) — 安装命令或改成绝对路径: \(command)", path: pluginRoot.path))
         }
         if let cwd, !cwd.isEmpty, !directoryExists(cwd, pluginRoot: pluginRoot) {
@@ -50,12 +50,12 @@ enum ProjectCapabilityMCPHealth {
         return diagnostics
     }
 
-    private static func commandExists(_ command: String, cwd: String?, pluginRoot: URL) -> Bool {
+    private static func commandExists(_ command: String, cwd: String?, pluginRoot: URL, environment: [String: String]) -> Bool {
         if command.contains("/") {
             let url = commandURL(command, cwd: cwd, pluginRoot: pluginRoot)
             return FileManager.default.isExecutableFile(atPath: url.path)
         }
-        let paths = ProcessInfo.processInfo.environment["PATH"]?.split(separator: ":").map(String.init) ?? []
+        let paths = environment["PATH"]?.split(separator: ":").map(String.init) ?? []
         return paths.contains { dir in
             FileManager.default.isExecutableFile(atPath: URL(fileURLWithPath: dir).appendingPathComponent(command).path)
         }
