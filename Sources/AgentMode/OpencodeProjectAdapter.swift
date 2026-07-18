@@ -125,10 +125,11 @@ public struct OpencodeProjectAdapter: Sendable {
     private func renderOpencodeConfig(_ servers: [(name: String, value: ACPJSON)]) throws -> String {
         var object: [String: ACPJSON] = [:]
         for server in servers.sorted(by: { $0.name < $1.name }) {
-            guard server.value.objectValue != nil else {
+            do {
+                object[server.name] = try OpencodeMCPServerProjection.serverJSON(name: server.name, value: server.value)
+            } catch {
                 throw OpencodeProjectAdapterError.invalidMCPServer(server.name)
             }
-            object[server.name] = server.value
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
