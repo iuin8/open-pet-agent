@@ -139,6 +139,15 @@ enum ProjectCapabilityMCPResolver {
         return parts
     }
 
+    /// Shared per-server enabled check: canonical `servers.json` may carry an
+    /// `enabled` flag; missing or non-bool means enabled. Projections decide per
+    /// engine whether disabled servers are excluded (Claude Code, ACP) or
+    /// preserved as `enabled: false` (opencode).
+    static func isEnabled(_ server: ACPJSON) -> Bool {
+        guard case .bool(let enabled) = server.objectValue?["enabled"] else { return true }
+        return enabled
+    }
+
     static func isValidConfiguration(_ server: ACPJSON) -> Bool {
         guard let object = server.objectValue else { return false }
         let transport = object["type"]?.stringValue ?? object["transport"]?.stringValue

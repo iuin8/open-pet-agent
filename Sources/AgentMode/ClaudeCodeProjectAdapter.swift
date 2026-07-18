@@ -23,7 +23,7 @@ public struct ClaudeCodeProjectAdapter: Sendable {
                         let (name, value) = try resolveMCPRef(ref, plugin: plugin)
                         // Claude Code has no per-server enabled switch; a disabled
                         // server is excluded rather than projected as active.
-                        guard ClaudeCodeMCPServerProjection.isEnabled(value) else { continue }
+                        guard ProjectCapabilityMCPResolver.isEnabled(value) else { continue }
                         guard seenMCPServers.insert(name).inserted else {
                             throw ClaudeCodeProjectAdapterError.duplicateMCPServer(name)
                         }

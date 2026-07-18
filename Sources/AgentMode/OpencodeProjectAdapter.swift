@@ -61,6 +61,10 @@ public struct OpencodeProjectAdapter: Sendable {
         )]
     }
 
+    /// Servers are emitted in the ACP v1 `session/new` wire format (see
+    /// `ACPMCPServerProjection`): stdio `{name, command, args, env:[{name,value}]}`,
+    /// remote `{name, type: "http"|"sse", url, headers:[{name,value}]}`. ACP has no
+    /// per-server `enabled`, so disabled servers are excluded.
     public func loadMCPServers(for project: AgentProject) throws -> [ACPJSON] {
         let plugins = try ProjectPluginCatalog().listPlugins(for: project)
         var seenNames = Set<String>()
@@ -82,12 +86,17 @@ public struct OpencodeProjectAdapter: Sendable {
     }
 
     private func collectMCPServers(from plugin: ProjectPluginDescriptor, seenNames: inout Set<String>) throws -> [ACPJSON] {
-        try plugin.mcp.map { ref in
+        try plugin.mcp.compactMap { ref in
             let (name, value) = try resolveMCPRef(ref, plugin: plugin)
+            guard ProjectCapabilityMCPResolver.isEnabled(value) else { return nil }
             guard seenNames.insert(name).inserted else {
                 throw OpencodeProjectAdapterError.duplicateMCPServer(name)
             }
-            return value
+            do {
+                return try ACPMCPServerProjection.serverJSON(name: name, value: value)
+            } catch {
+                throw OpencodeProjectAdapterError.invalidMCPServer(name)
+            }
         }
     }
 

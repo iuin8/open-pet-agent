@@ -1,19 +1,18 @@
 import Foundation
 
-/// Translates the plugin-internal MCP server representation into the Claude Code
-/// project-scope `.mcp.json` format.
+/// Translates the plugin-internal MCP server representation into the ACP v1
+/// `session/new` `mcpServers` wire format.
 ///
-/// Reference: https://code.claude.com/docs/en/mcp (Project scope)
-/// - stdio: `command` is a STRING, `args` an optional string array, `type` may be
-///   omitted (an entry with no `type` is read as stdio); we emit it explicitly.
-/// - remote: `type` is `"http"` (alias `"streamable-http"`), `"sse"`, or `"ws"`,
-///   and `url` is required; `headers` is an optional string map.
-/// - Claude Code has no per-server `enabled` switch and no `"local"` transport;
-///   internal-only keys (`enabled`, `transport`, `cwd`, `args` on remote) must
-///   never leak into the rendered file. Disabled servers are filtered by the
-///   caller (`ProjectCapabilityMCPResolver.isEnabled`) because exclusion is the
-///   only faithful mapping.
-enum ClaudeCodeMCPServerProjection {
+/// Reference: https://agentclientprotocol.com/protocol/session-setup and
+/// schema/v1/schema.json (agentclientprotocol/agent-client-protocol).
+/// - stdio (NO `type` field): `{ name, command: string, args: [string], env: [{name, value}] }`
+/// - http/sse: `{ name, type: "http"|"sse", url, headers: [{name, value}] }`
+/// `args`/`env`/`headers` are required by the schema (empty arrays allowed) —
+/// strict agents (opencode ≥ 1.17 via @agentclientprotocol/sdk zod) answer
+/// -32602 when they are missing or shaped as maps. Internal-only keys
+/// (`enabled`, `transport`, `cwd`) never leak; ACP has no per-server `enabled`,
+/// so disabled servers are excluded by the caller.
+enum ACPMCPServerProjection {
     enum ProjectionError: Error, Equatable {
         case notAnObject(String)
         case invalidCommand(String)
@@ -34,8 +33,8 @@ enum ClaudeCodeMCPServerProjection {
             return .object(try stdioServer(name: name, url: url, object: object))
         case "http", "streamable-http":
             return .object(try remoteServer(name: name, type: "http", url: url, object: object))
-        case "sse", "ws":
-            return .object(try remoteServer(name: name, type: transport ?? "http", url: url, object: object))
+        case "sse":
+            return .object(try remoteServer(name: name, type: "sse", url: url, object: object))
         case nil:
             return url == nil
                 ? .object(try stdioServer(name: name, url: nil, object: object))
@@ -51,19 +50,12 @@ enum ClaudeCodeMCPServerProjection {
               let command = parts.first else {
             throw ProjectionError.invalidCommand(name)
         }
-        var server: [String: ACPJSON] = [
-            "type": .string("stdio"),
+        return [
+            "name": .string(name),
             "command": .string(command),
+            "args": .array(parts.dropFirst().map(ACPJSON.string)),
+            "env": .array(try namedValues(object["env"], error: { ProjectionError.invalidEnv(name) })),
         ]
-        let args = parts.dropFirst()
-        if !args.isEmpty { server["args"] = .array(args.map(ACPJSON.string)) }
-        if let env = object["env"] {
-            guard let values = env.objectValue, values.values.allSatisfy({ $0.stringValue != nil }) else {
-                throw ProjectionError.invalidEnv(name)
-            }
-            if !values.isEmpty { server["env"] = env }
-        }
-        return server
     }
 
     private static func remoteServer(name: String, type: String, url: String?, object: [String: ACPJSON]) throws -> [String: ACPJSON] {
@@ -74,16 +66,22 @@ enum ClaudeCodeMCPServerProjection {
               let host = parsed.host, !host.isEmpty else {
             throw ProjectionError.invalidURL(name)
         }
-        var server: [String: ACPJSON] = [
+        return [
+            "name": .string(name),
             "type": .string(type),
             "url": .string(url),
+            "headers": .array(try namedValues(object["headers"], error: { ProjectionError.invalidHeaders(name) })),
         ]
-        if let headers = object["headers"] {
-            guard let values = headers.objectValue, values.values.allSatisfy({ $0.stringValue != nil }) else {
-                throw ProjectionError.invalidHeaders(name)
-            }
-            if !values.isEmpty { server["headers"] = headers }
+    }
+
+    /// ACP v1 shapes `env`/`headers` as `[{name, value}]` arrays (empty allowed),
+    /// sorted by key for deterministic output.
+    private static func namedValues(_ value: ACPJSON?, error: () -> ProjectionError) throws -> [ACPJSON] {
+        guard let value else { return [] }
+        guard let map = value.objectValue else { throw error() }
+        return try map.sorted { $0.key < $1.key }.map { key, item in
+            guard let string = item.stringValue else { throw error() }
+            return .object(["name": .string(key), "value": .string(string)])
         }
-        return server
     }
 }
