@@ -1,9 +1,8 @@
 import Foundation
 
+/// opencode 投影落盘。ownership 判定走 `.open-pet-agent/state/generated-targets.json`
+/// 清单(见 `ProjectionGeneratedManifest.swift`),不在工程根/技能目录写任何 bookkeeping 文件。
 public struct OpencodeProjectionMaterializer: Sendable {
-    private static let fileMarker = ".open-pet-agent-generated.opencode"
-    private static let directoryMarker = ".open-pet-agent-generated"
-
     public init() {}
 
     public func apply(_ plans: [ProjectionPlan]) throws {
@@ -15,16 +14,16 @@ public struct OpencodeProjectionMaterializer: Sendable {
     public func apply(_ plan: ProjectionPlan) throws {
         guard plan.engineID == AgentEngineKind.openCode.rawValue else { return }
         for operation in plan.operations {
-            try apply(operation)
+            try apply(operation, engineID: plan.engineID)
         }
     }
 
-    private func apply(_ operation: ProjectionOperation) throws {
+    private func apply(_ operation: ProjectionOperation, engineID: String) throws {
         switch operation {
         case .writeFile(let contents, let destination):
-            try ensureSafeDestination(destination)
+            let projectRoot = try ensureSafeDestination(destination)
             if FileManager.default.fileExists(atPath: destination.path) {
-                guard isGeneratedFile(destination) else {
+                guard isOwned(destination, projectRoot: projectRoot) else {
                     throw OpencodeProjectionMaterializerError.unownedDestination(destination)
                 }
             }
@@ -32,11 +31,15 @@ public struct OpencodeProjectionMaterializer: Sendable {
                 at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
+            // 先登记再写 payload(crash 也不会留下「自己写的文件没有 ownership 记录」的自锁);
+            // 簿记失败静默放行,不阻断 materialize。
+            if let projectRoot {
+                ProjectionGeneratedManifestStore.claimBestEffort(destination, kind: .file, engineID: engineID, projectRoot: projectRoot)
+            }
             try contents.write(to: destination, atomically: true, encoding: .utf8)
-            try "generated".write(to: fileMarkerURL(for: destination), atomically: true, encoding: .utf8)
 
         case .copyDirectory(let source, let destination):
-            try replaceGeneratedDirectory(destination) {
+            try replaceGeneratedDirectory(destination, engineID: engineID) {
                 if opencodeMaterializedRoot(for: destination) != nil {
                     try copyConfigData(from: source, to: destination)
                 } else {
@@ -48,17 +51,20 @@ public struct OpencodeProjectionMaterializer: Sendable {
             throw OpencodeProjectionMaterializerError.destinationEscapesProject(destination)
 
         case .removeGenerated(let url):
-            try ensureSafeDestination(url)
+            let projectRoot = try ensureSafeDestination(url)
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
+            }
+            if let projectRoot {
+                ProjectionGeneratedManifestStore.releaseBestEffort(url, projectRoot: projectRoot)
             }
         }
     }
 
-    private func replaceGeneratedDirectory(_ destination: URL, with write: () throws -> Void) throws {
-        try ensureSafeDestination(destination)
+    private func replaceGeneratedDirectory(_ destination: URL, engineID: String, with write: () throws -> Void) throws {
+        let projectRoot = try ensureSafeDestination(destination)
         if FileManager.default.fileExists(atPath: destination.path) {
-            guard isGeneratedDirectory(destination) else {
+            guard isOwned(destination, projectRoot: projectRoot) else {
                 throw OpencodeProjectionMaterializerError.unownedDestination(destination)
             }
             try FileManager.default.removeItem(at: destination)
@@ -68,11 +74,15 @@ public struct OpencodeProjectionMaterializer: Sendable {
             withIntermediateDirectories: true
         )
         try write()
-        try "generated".write(
-            to: destination.appendingPathComponent(Self.directoryMarker),
-            atomically: true,
-            encoding: .utf8
-        )
+        // 目录落地后再登记;簿记失败静默放行,不阻断 materialize。
+        if let projectRoot {
+            ProjectionGeneratedManifestStore.claimBestEffort(destination, kind: .directory, engineID: engineID, projectRoot: projectRoot)
+        }
+    }
+
+    private func isOwned(_ destination: URL, projectRoot: URL?) -> Bool {
+        guard let projectRoot else { return false }
+        return ProjectionGeneratedManifestStore.isGeneratedTarget(destination, projectRoot: projectRoot)
     }
 
     private func copyConfigData(from source: URL, to destination: URL) throws {
@@ -123,19 +133,7 @@ public struct OpencodeProjectionMaterializer: Sendable {
         }
     }
 
-    private func isGeneratedDirectory(_ destination: URL) -> Bool {
-        FileManager.default.fileExists(atPath: destination.appendingPathComponent(Self.directoryMarker).path)
-    }
-
-    private func isGeneratedFile(_ destination: URL) -> Bool {
-        FileManager.default.fileExists(atPath: fileMarkerURL(for: destination).path)
-    }
-
-    private func fileMarkerURL(for destination: URL) -> URL {
-        destination.deletingLastPathComponent().appendingPathComponent(Self.fileMarker)
-    }
-
-    private func ensureSafeDestination(_ destination: URL) throws {
+    private func ensureSafeDestination(_ destination: URL) throws -> URL? {
         guard let root = opencodeProjectRoot(for: destination) else {
             throw OpencodeProjectionMaterializerError.destinationEscapesProject(destination)
         }
@@ -160,6 +158,7 @@ public struct OpencodeProjectionMaterializer: Sendable {
                 throw OpencodeProjectionMaterializerError.destinationEscapesProject(destination)
             }
         }
+        return root
     }
 
     private func ensureExistingAncestorsStayInsideProject(

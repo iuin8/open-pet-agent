@@ -1,9 +1,8 @@
 import Foundation
 
+/// Claude Code 投影落盘。ownership 判定走 `.open-pet-agent/state/generated-targets.json`
+/// 清单(见 `ProjectionGeneratedManifest.swift`),不在工程根/技能目录写任何 bookkeeping 文件。
 public struct ClaudeCodeProjectionMaterializer: Sendable {
-    private static let fileMarker = ".open-pet-agent-generated.mcp"
-    private static let directoryMarker = ".open-pet-agent-generated"
-
     public init() {}
 
     public func apply(_ plans: [ProjectionPlan]) throws {
@@ -15,16 +14,16 @@ public struct ClaudeCodeProjectionMaterializer: Sendable {
     public func apply(_ plan: ProjectionPlan) throws {
         guard plan.engineID == AgentEngineKind.claudeCode.rawValue else { return }
         for operation in plan.operations {
-            try apply(operation)
+            try apply(operation, engineID: plan.engineID)
         }
     }
 
-    private func apply(_ operation: ProjectionOperation) throws {
+    private func apply(_ operation: ProjectionOperation, engineID: String) throws {
         switch operation {
         case .writeFile(let contents, let destination):
-            try ensureSafeDestination(destination)
+            let projectRoot = try ensureSafeDestination(destination)
             if itemExistsOrSymlink(destination) {
-                guard isGeneratedFile(destination) else {
+                guard isOwned(destination, projectRoot: projectRoot) else {
                     throw ClaudeCodeProjectionMaterializerError.unownedDestination(destination)
                 }
             }
@@ -32,35 +31,38 @@ public struct ClaudeCodeProjectionMaterializer: Sendable {
                 at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
+            // 先登记再写 payload(crash 也不会留下「自己写的文件没有 ownership 记录」的自锁);
+            // 簿记失败静默放行,不阻断 materialize。
+            if let projectRoot {
+                ProjectionGeneratedManifestStore.claimBestEffort(destination, kind: .file, engineID: engineID, projectRoot: projectRoot)
+            }
             try contents.write(to: destination, atomically: true, encoding: .utf8)
-            try "generated".write(to: fileMarkerURL(for: destination), atomically: true, encoding: .utf8)
 
         case .copyDirectory(let source, let destination):
-            try replaceGeneratedDirectory(destination) {
+            try replaceGeneratedDirectory(destination, engineID: engineID) {
                 try FileManager.default.copyItem(at: source, to: destination)
             }
 
         case .symlinkDirectory(let source, let destination):
-            try replaceGeneratedDirectory(destination) {
+            try replaceGeneratedDirectory(destination, engineID: engineID) {
                 try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: source)
             }
 
         case .removeGenerated(let url):
-            try ensureSafeDestination(url)
+            let projectRoot = try ensureSafeDestination(url)
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
             }
-            let marker = fileMarkerURL(for: url)
-            if FileManager.default.fileExists(atPath: marker.path) {
-                try FileManager.default.removeItem(at: marker)
+            if let projectRoot {
+                ProjectionGeneratedManifestStore.releaseBestEffort(url, projectRoot: projectRoot)
             }
         }
     }
 
-    private func replaceGeneratedDirectory(_ destination: URL, with write: () throws -> Void) throws {
-        try ensureSafeDestination(destination)
+    private func replaceGeneratedDirectory(_ destination: URL, engineID: String, with write: () throws -> Void) throws {
+        let projectRoot = try ensureSafeDestination(destination)
         if FileManager.default.fileExists(atPath: destination.path) {
-            guard isGeneratedDirectory(destination) else {
+            guard isOwned(destination, projectRoot: projectRoot) else {
                 throw ClaudeCodeProjectionMaterializerError.unownedDestination(destination)
             }
             try FileManager.default.removeItem(at: destination)
@@ -70,27 +72,19 @@ public struct ClaudeCodeProjectionMaterializer: Sendable {
             withIntermediateDirectories: true
         )
         try write()
-        try "generated".write(
-            to: destination.appendingPathComponent(Self.directoryMarker),
-            atomically: true,
-            encoding: .utf8
-        )
+        // 目录落地后再登记;簿记失败静默放行,不阻断 materialize。
+        if let projectRoot {
+            ProjectionGeneratedManifestStore.claimBestEffort(destination, kind: .directory, engineID: engineID, projectRoot: projectRoot)
+        }
     }
 
-    private func isGeneratedFile(_ destination: URL) -> Bool {
-        FileManager.default.fileExists(atPath: fileMarkerURL(for: destination).path)
+    private func isOwned(_ destination: URL, projectRoot: URL?) -> Bool {
+        guard let projectRoot else { return false }
+        return ProjectionGeneratedManifestStore.isGeneratedTarget(destination, projectRoot: projectRoot)
     }
 
-    private func isGeneratedDirectory(_ destination: URL) -> Bool {
-        FileManager.default.fileExists(atPath: destination.appendingPathComponent(Self.directoryMarker).path)
-    }
-
-    private func fileMarkerURL(for destination: URL) -> URL {
-        destination.deletingLastPathComponent().appendingPathComponent(Self.fileMarker)
-    }
-
-    private func ensureSafeDestination(_ destination: URL) throws {
-        guard let root = claudeCodeProjectRoot(for: destination) else { return }
+    private func ensureSafeDestination(_ destination: URL) throws -> URL? {
+        guard let root = claudeCodeProjectRoot(for: destination) else { return nil }
         let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath()
         let parent = destination.deletingLastPathComponent()
         if FileManager.default.fileExists(atPath: parent.path) {
@@ -110,6 +104,7 @@ public struct ClaudeCodeProjectionMaterializer: Sendable {
                 throw ClaudeCodeProjectionMaterializerError.destinationEscapesProject(destination)
             }
         }
+        return root
     }
 
     private func itemExistsOrSymlink(_ url: URL) -> Bool {

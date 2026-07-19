@@ -37,10 +37,11 @@ final class OpencodeProjectionMaterializerTests: XCTestCase {
         try OpencodeProjectionMaterializer().apply([plan])
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent("plugin.json").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent(".open-pet-agent-generated").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent(".open-pet-agent-generated").path))
+        XCTAssertTrue(ProjectionGeneratedManifestStore.isGeneratedTarget(destination, projectRoot: project.rootURL))
     }
 
-    func testApplyReplacesMarkedGeneratedPluginDirectoryAndRemovesStaleFiles() throws {
+    func testApplyReplacesOwnedGeneratedPluginDirectoryAndRemovesStaleFiles() throws {
         let source = try makeSourcePlugin(id: "dev-toolkit", contents: "fresh")
         let destination = ProjectConfig.materializedPluginDirectory(
             for: project,
@@ -238,7 +239,8 @@ final class OpencodeProjectionMaterializerTests: XCTestCase {
         let config = try JSONDecoder().decode(ACPJSON.self, from: Data(contentsOf: configURL))
         XCTAssertNotNil(config.objectValue?["mcp"]?.objectValue?["filesystem"])
         XCTAssertTrue(FileManager.default.fileExists(atPath: skillDestination.appendingPathComponent("SKILL.md").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: skillDestination.appendingPathComponent(".open-pet-agent-generated").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: skillDestination.appendingPathComponent(".open-pet-agent-generated").path))
+        XCTAssertTrue(ProjectionGeneratedManifestStore.isGeneratedTarget(skillDestination, projectRoot: project.rootURL))
     }
 
     func testApplyRejectsExistingUserRootOpencodeConfig() throws {
@@ -316,6 +318,68 @@ final class OpencodeProjectionMaterializerTests: XCTestCase {
         ])) { error in
             XCTAssertEqual(error as? OpencodeProjectionMaterializerError, .destinationEscapesProject(configURL))
         }
+    }
+
+    func testApplyDoesNotBlockWhenManifestBookkeepingFails() throws {
+        // `.open-pet-agent/state` 被同名文件占用 → 登记静默放行,不阻断 materialize,也不写任何旁路文件。
+        let statePath = project.rootURL.appendingPathComponent(".open-pet-agent/state", isDirectory: true)
+        try FileManager.default.createDirectory(at: statePath.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("not a directory".utf8).write(to: statePath, options: .atomic)
+        let configURL = project.rootURL.appendingPathComponent("opencode.json")
+        let skillSource = try makeSourceSkill()
+        let skillDestination = project.rootURL.appendingPathComponent(".opencode/skills/dev-toolkit-code-review", isDirectory: true)
+        let plan = ProjectionPlan(
+            projectID: project.id,
+            engineID: AgentEngineKind.openCode.rawValue,
+            pluginID: "opencode",
+            operations: [
+                .writeFile(contents: #"{"mcp":{}}"#, destination: configURL),
+                .copyDirectory(source: skillSource, destination: skillDestination)
+            ]
+        )
+
+        try OpencodeProjectionMaterializer().apply([plan])
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: skillDestination.appendingPathComponent("SKILL.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: project.rootURL.appendingPathComponent(".open-pet-agent-generated.opencode").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: skillDestination.appendingPathComponent(".open-pet-agent-generated").path))
+        // 簿记失败 → 无 ownership 记录。
+        XCTAssertFalse(ProjectionGeneratedManifestStore.isGeneratedTarget(configURL, projectRoot: project.rootURL))
+
+        // state 修复后:目标已存在但 ownership 无法证明 → fail-closed 拒绝覆盖。
+        try FileManager.default.removeItem(at: statePath)
+        XCTAssertThrowsError(try OpencodeProjectionMaterializer().apply([plan])) { error in
+            XCTAssertEqual(error as? OpencodeProjectionMaterializerError, .unownedDestination(configURL))
+        }
+
+        // 恢复路径:删掉无归属 payload 重新 sync,成功并恢复登记。
+        try FileManager.default.removeItem(at: configURL)
+        try FileManager.default.removeItem(at: skillDestination)
+        try OpencodeProjectionMaterializer().apply([plan])
+        XCTAssertTrue(ProjectionGeneratedManifestStore.isGeneratedTarget(configURL, projectRoot: project.rootURL))
+        XCTAssertTrue(ProjectionGeneratedManifestStore.isGeneratedTarget(skillDestination, projectRoot: project.rootURL))
+    }
+
+    func testApplyRemoveGeneratedReleasesManifest() throws {
+        let configURL = project.rootURL.appendingPathComponent("opencode.json")
+        try FileManager.default.createDirectory(at: project.rootURL, withIntermediateDirectories: true)
+        try "{}".write(to: configURL, atomically: true, encoding: .utf8)
+        var manifest = ProjectionGeneratedManifest()
+        manifest.claim(path: "opencode.json", kind: .file, engineID: AgentEngineKind.openCode.rawValue)
+        try ProjectionGeneratedManifestStore.save(manifest, projectRoot: project.rootURL)
+
+        try OpencodeProjectionMaterializer().apply([
+            ProjectionPlan(
+                projectID: project.id,
+                engineID: AgentEngineKind.openCode.rawValue,
+                pluginID: "opencode",
+                operations: [.removeGenerated(configURL)]
+            )
+        ])
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: configURL.path))
+        XCTAssertFalse(try ProjectionGeneratedManifestStore.load(projectRoot: project.rootURL).contains(path: "opencode.json"))
     }
 
     private func makeSourcePlugin(id: String, contents: String = "source") throws -> URL {
