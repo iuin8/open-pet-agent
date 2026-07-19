@@ -10,6 +10,60 @@ public enum ProjectionPolicy: String, Codable, Sendable, Equatable {
     case disabled
 }
 
+public enum ProjectPluginSourceKind: String, Codable, Sendable, Equatable {
+    case manual
+    case imported
+    case local
+    case git
+    case marketplace
+    case unknown
+}
+
+public struct ProjectPluginSourceMetadata: Codable, Sendable, Equatable {
+    public let kind: ProjectPluginSourceKind
+    public let url: String?
+    public let revision: String?
+    public let contentHash: String?
+    public let installedAt: String?
+
+    public static let manual = ProjectPluginSourceMetadata(kind: .manual)
+
+    public init(
+        kind: ProjectPluginSourceKind,
+        url: String? = nil,
+        revision: String? = nil,
+        contentHash: String? = nil,
+        installedAt: String? = nil
+    ) {
+        self.kind = kind
+        self.url = url
+        self.revision = revision
+        self.contentHash = contentHash
+        self.installedAt = installedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case url
+        case revision
+        case contentHash
+        case installedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
+            self = ProjectPluginSourceMetadata(kind: .unknown)
+            return
+        }
+        let rawKind = try? container.decodeIfPresent(String.self, forKey: .kind)
+        self.kind = rawKind.flatMap(ProjectPluginSourceKind.init(rawValue:)) ?? .unknown
+        self.url = try? container.decodeIfPresent(String.self, forKey: .url)
+        self.revision = try? container.decodeIfPresent(String.self, forKey: .revision)
+        self.contentHash = try? container.decodeIfPresent(String.self, forKey: .contentHash)
+        self.installedAt = try? container.decodeIfPresent(String.self, forKey: .installedAt)
+    }
+}
+
 public struct ProjectExecutableCapabilities: Codable, Sendable, Equatable {
     public var hooks: Bool
     public var bin: Bool
@@ -35,6 +89,7 @@ public struct ProjectPluginDescriptor: Sendable, Equatable {
     public let skills: [String]
     public let prompts: [String]
     public let enginePolicies: [String: ProjectionPolicy]
+    public let sourceMetadata: ProjectPluginSourceMetadata
 }
 
 public struct ProjectPluginCatalog: Sendable {
@@ -98,7 +153,8 @@ public struct ProjectPluginCatalog: Sendable {
             mcp: raw.mcp ?? [],
             skills: raw.skills ?? [],
             prompts: raw.prompts ?? [],
-            enginePolicies: policies
+            enginePolicies: policies,
+            sourceMetadata: raw.source ?? .manual
         )
     }
 
@@ -130,6 +186,7 @@ private struct RawPlugin: Decodable {
     let skills: [String]?
     let prompts: [String]?
     let engines: [String: RawEnginePolicy]?
+    let source: ProjectPluginSourceMetadata?
 }
 
 private struct RawEnginePolicy: Decodable {

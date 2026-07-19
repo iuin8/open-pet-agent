@@ -287,6 +287,19 @@ final class ProjectCapabilityModelTests: XCTestCase {
         XCTAssertTrue(server.diagnostics.containsDiagnostic("MCP URL malformed: remote", severity: .warning))
     }
 
+    func testBuildPropagatesPluginSourceMetadata() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "source": { "kind": "git", "url": "https://example.com/repo.git", "revision": "abc123", "installedAt": "2026-07-19T00:00:00Z" }, "enabled": true, "capabilities": [], "engines": {} }
+        """)
+
+        let plugin = try XCTUnwrap(ProjectCapabilityCatalogModel.build(for: project).plugins.first)
+
+        XCTAssertEqual(plugin.sourceMetadata.kind, .git)
+        XCTAssertEqual(plugin.sourceMetadata.url, "https://example.com/repo.git")
+        XCTAssertEqual(plugin.sourceMetadata.revision, "abc123")
+        XCTAssertEqual(plugin.sourceMetadata.installedAt, "2026-07-19T00:00:00Z")
+    }
+
     private func writePlugin(_ id: String, _ json: String) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

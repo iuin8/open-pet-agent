@@ -27,6 +27,7 @@ public struct CapabilityPlugin: Identifiable, Sendable, Equatable {
     public var version: String?
     public var enabled: Bool
     public var source: CapabilitySource
+    public var sourceMetadata: ProjectPluginSourceMetadata = .manual
     public var skills: [CapabilitySkill]
     public var mcpServers: [CapabilityMCPServer]
     public var profiles: [CapabilityProfile]
@@ -198,6 +199,7 @@ private struct ProjectCapabilityModelBuilder {
             version: descriptor.version,
             enabled: descriptor.enabled,
             source: .local(path: descriptor.rootURL.path),
+            sourceMetadata: descriptor.sourceMetadata,
             skills: descriptor.skills.map { buildSkill($0, plugin: descriptor) },
             mcpServers: descriptor.mcp.map { buildMCP($0, plugin: descriptor) },
             profiles: [],

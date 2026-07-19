@@ -568,6 +568,7 @@ extension MinimalAppDelegate {
             "name": name,
             "enabled": true,
             "capabilities": [],
+            "source": ["kind": ProjectPluginSourceKind.manual.rawValue],
             "engines": [
                 AgentEngineKind.codex.rawValue: ["enabled": true, "projection": ProjectionPolicy.skillsAndMCPFiles.rawValue],
                 "claude-code": ["enabled": true, "projection": ProjectionPolicy.skillsAndMCPFiles.rawValue]
@@ -619,29 +620,18 @@ extension MinimalAppDelegate {
     static func addProjectCapabilityMCP(project: AgentProject, pluginID: String, serverName: String, command: [String] = ["npx", "-y", "@modelcontextprotocol/server-filesystem"]) throws {
         try createProjectCapabilityPlugin(project: project, pluginID: pluginID, name: pluginID)
         let safeServer = sanitizedCapabilityName(serverName)
-        let mcpDir = ProjectConfig.pluginMCPDirectory(for: project, pluginID: pluginID)
-        try FileManager.default.createDirectory(at: mcpDir, withIntermediateDirectories: true)
-        let mcpURL = mcpDir.appendingPathComponent("servers.json", isDirectory: false)
-        let object: [String: Any] = [
-            "mcpServers": [
-                safeServer: [
-                    "type": "local",
-                    "command": command.isEmpty ? ["npx", "-y", "@modelcontextprotocol/server-filesystem"] : command,
-                    "enabled": true
-                ]
-            ]
-        ]
-        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: mcpURL, options: .atomic)
-        try updateProjectCapabilityManifest(project: project, pluginID: pluginID) { manifest in
-            var capabilities = manifest["capabilities"] as? [String] ?? []
-            if !capabilities.contains(ProjectPluginCapability.mcp.rawValue) { capabilities.append(ProjectPluginCapability.mcp.rawValue) }
-            manifest["capabilities"] = capabilities
-            let ref = "mcp/servers.json#\(safeServer)"
-            var mcp = manifest["mcp"] as? [String] ?? []
-            if !mcp.contains(ref) { mcp.append(ref) }
-            manifest["mcp"] = mcp
-        }
+        let effectiveCommand = command.isEmpty ? ["npx", "-y", "@modelcontextprotocol/server-filesystem"] : command
+        try ProjectCapabilityWriter().upsertMCPServer(
+            project: project,
+            pluginID: pluginID,
+            fileRef: "mcp/servers.json",
+            serverName: safeServer,
+            value: .object([
+                "type": .string("local"),
+                "command": .array(effectiveCommand.map(ACPJSON.string)),
+                "enabled": .bool(true)
+            ])
+        )
     }
 
     private static func updateProjectCapabilityManifest(project: AgentProject, pluginID: String, mutate: (inout [String: Any]) -> Void) throws {
@@ -814,6 +804,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targets,
+                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
                 targets: skill.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isEnabled: plugin.enabled,
                 status: .warning,
@@ -850,6 +841,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targets,
+                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
                 targets: server.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isEnabled: plugin.enabled,
                 status: .warning,
@@ -886,6 +878,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targetsBySource[source] ?? [],
+                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
                 targets: targetStates(for: plugin),
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
@@ -909,6 +902,7 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: mcpTargets,
+                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
                 targets: targetStates(for: plugin),
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
@@ -916,6 +910,12 @@ extension MinimalAppDelegate {
             )
         }
         return skillItems + mcpItems
+    }
+
+    private static func sourceProvenance(_ metadata: ProjectPluginSourceMetadata) -> String {
+        let suffix = metadata.revision ?? metadata.contentHash
+        guard let suffix, !suffix.isEmpty else { return metadata.kind.rawValue }
+        return "\(metadata.kind.rawValue) · \(suffix)"
     }
 
     private static func diagnosticsForCapabilityItem(

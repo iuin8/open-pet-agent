@@ -90,6 +90,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
         public let pluginID: String
         public let sourcePath: String
         public let targetPaths: [String]
+        public let sourceProvenance: String?
         public let targets: [ProjectionTargetState]
         public let isEnabled: Bool
         public let status: Status
@@ -102,6 +103,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             pluginID: String,
             sourcePath: String,
             targetPaths: [String],
+            sourceProvenance: String? = nil,
             targets: [ProjectionTargetState] = [],
             isEnabled: Bool = true,
             status: Status,
@@ -113,6 +115,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             self.pluginID = pluginID
             self.sourcePath = sourcePath
             self.targetPaths = targetPaths
+            self.sourceProvenance = sourceProvenance
             self.targets = targets
             self.isEnabled = isEnabled
             self.status = status

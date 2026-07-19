@@ -110,7 +110,8 @@ public struct ProjectCapabilityWriter: Sendable {
             mcp: manifest["mcp"] as? [String] ?? [],
             skills: manifest["skills"] as? [String] ?? [],
             prompts: manifest["prompts"] as? [String] ?? [],
-            enginePolicies: enginePolicies(in: manifest)
+            enginePolicies: enginePolicies(in: manifest),
+            sourceMetadata: .manual
         )
     }
 

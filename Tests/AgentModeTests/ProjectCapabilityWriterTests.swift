@@ -393,6 +393,38 @@ final class ProjectCapabilityWriterTests: XCTestCase {
         XCTAssertEqual(body, "# code-review\n\nUpdated.\n")
     }
 
+    func testManifestMutationsPreserveSourceMetadata() throws {
+        try writePlugin("dev-toolkit", """
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev", "source": { "kind": "git", "url": "https://example.com/repo.git", "revision": "abc123", "installedAt": "2026-07-19T00:00:00Z" }, "enabled": true, "capabilities": ["mcp", "skills"], "mcp": ["mcp/servers.json#filesystem"], "skills": ["skills/code-review"], "engines": {} }
+        """)
+        try writeSkill("dev-toolkit", "code-review", "# code-review\n")
+        let mcpURL = pluginRoot("dev-toolkit").appendingPathComponent("mcp/servers.json")
+        try FileManager.default.createDirectory(at: mcpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        { "mcpServers": { "filesystem": { "type": "local", "command": ["npx"], "enabled": true } } }
+        """.data(using: .utf8)!.write(to: mcpURL, options: .atomic)
+
+        try ProjectCapabilityWriter().upsertMCPServer(
+            project: project,
+            pluginID: "dev-toolkit",
+            fileRef: "mcp/servers.json",
+            serverName: "filesystem",
+            value: .object([
+                "type": .string("local"),
+                "command": .array([.string("npx"), .string("server")]),
+                "enabled": .bool(true)
+            ])
+        )
+        try ProjectCapabilityWriter().deleteSkill(project: project, pluginID: "dev-toolkit", skillRef: "skills/code-review")
+
+        let manifest = try readJSONObject(pluginRoot("dev-toolkit").appendingPathComponent("plugin.json"))
+        let source = try XCTUnwrap(manifest["source"] as? [String: Any])
+        XCTAssertEqual(source["kind"] as? String, "git")
+        XCTAssertEqual(source["url"] as? String, "https://example.com/repo.git")
+        XCTAssertEqual(source["revision"] as? String, "abc123")
+        XCTAssertEqual(source["installedAt"] as? String, "2026-07-19T00:00:00Z")
+    }
+
     private func pluginRoot(_ id: String) -> URL {
         ProjectConfig.pluginDirectory(for: project, pluginID: id)
     }

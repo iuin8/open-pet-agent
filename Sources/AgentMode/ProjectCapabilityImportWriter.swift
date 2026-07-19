@@ -154,6 +154,9 @@ public extension ProjectCapabilityWriter {
             "capabilities": capabilities,
             "skills": skills.map { "skills/\($0.name)" }.sorted(),
             "mcp": mcp.map { "mcp/servers.json#\($0.name)" }.sorted(),
+            "source": ProjectCapabilityImportBuilder.sourceMetadata(
+                for: candidates
+            ).jsonObject,
             "engines": ProjectCapabilityImportBuilder.engines(
                 for: candidates
             )
@@ -191,6 +194,17 @@ public extension ProjectCapabilityWriter {
             options: [.prettyPrinted, .sortedKeys]
         )
         try data.write(to: url, options: .atomic)
+    }
+}
+
+private extension ProjectPluginSourceMetadata {
+    var jsonObject: [String: Any] {
+        var object: [String: Any] = ["kind": kind.rawValue]
+        if let url { object["url"] = url }
+        if let revision { object["revision"] = revision }
+        if let contentHash { object["contentHash"] = contentHash }
+        if let installedAt { object["installedAt"] = installedAt }
+        return object
     }
 }
 

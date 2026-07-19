@@ -56,10 +56,20 @@ enum ProjectCapabilityImportBuilder {
             version: nil,
             enabled: true,
             source: .local(path: root.path),
+            sourceMetadata: sourceMetadata(for: candidates),
             skills: skills.sorted { $0.name < $1.name },
             mcpServers: servers.sorted { $0.name < $1.name },
             profiles: [],
             diagnostics: []
+        )
+    }
+
+    static func sourceMetadata(
+        for candidates: [ProjectCapabilityImportCandidate]
+    ) -> ProjectPluginSourceMetadata {
+        ProjectPluginSourceMetadata(
+            kind: .imported,
+            url: firstSourceURL(for: candidates)?.path
         )
     }
 
@@ -87,6 +97,16 @@ enum ProjectCapabilityImportBuilder {
             ]
         }
         return engines
+    }
+
+    private static func firstSourceURL(
+        for candidates: [ProjectCapabilityImportCandidate]
+    ) -> URL? {
+        candidates
+            .flatMap(\.sources)
+            .map(\.url)
+            .sorted { $0.path < $1.path }
+            .first
     }
 
     private static func targetUnion(

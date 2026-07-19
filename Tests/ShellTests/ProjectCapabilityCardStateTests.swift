@@ -23,6 +23,24 @@ struct ProjectCapabilityCardStateTests {
         #expect(item.copyText == "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint → /tmp/repo/.agents/skills/dev-toolkit-lint\n/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint → /tmp/repo/.claude/skills/dev-toolkit-lint")
     }
 
+    @Test("Item：来源元数据用于展示，不影响复制 source → target")
+    func itemKeepsSourceProvenanceDisplay() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:lint",
+            kind: .skill,
+            name: "lint",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint",
+            targetPaths: ["/tmp/repo/.agents/skills/dev-toolkit-lint"],
+            sourceProvenance: "imported · abc123",
+            status: .enabled,
+            diagnostics: []
+        )
+
+        #expect(item.sourceProvenance == "imported · abc123")
+        #expect(item.copyText == "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint → /tmp/repo/.agents/skills/dev-toolkit-lint")
+    }
+
     @Test("State：按当前 tab 过滤 items")
     func stateFiltersItemsBySelectedTab() {
         let skill = ProjectCapabilityCardState.Item(

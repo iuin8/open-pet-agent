@@ -248,7 +248,7 @@ struct ProjectCapabilityManagerView: View {
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(ChatCardTheme.textPrimary)
                     smallBadge(kindLabel(for: item.kind), color: color(for: item.status))
-                    smallBadge("project", color: ChatCardTheme.textPrimary.opacity(0.45))
+                    smallBadge(item.sourceProvenance ?? "project", color: ChatCardTheme.textPrimary.opacity(0.45))
                     Text(item.pluginID)
                         .font(.system(size: 8, weight: .medium, design: .rounded))
                         .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))

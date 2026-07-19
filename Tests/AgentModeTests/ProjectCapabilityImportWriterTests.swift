@@ -63,7 +63,7 @@ final class ProjectCapabilityImportWriterTests: XCTestCase {
             )
         ]
 
-        try ProjectCapabilityWriter().importCandidates(
+        let plugin = try ProjectCapabilityWriter().importCandidates(
             candidates,
             project: project,
             pluginID: "imported-local",
@@ -94,6 +94,11 @@ final class ProjectCapabilityImportWriterTests: XCTestCase {
         XCTAssertEqual(manifest["id"] as? String, "imported-local")
         XCTAssertEqual(manifest["skills"] as? [String], ["skills/review"])
         XCTAssertEqual(manifest["mcp"] as? [String], ["mcp/servers.json#filesystem"])
+        let sourceMetadata = try XCTUnwrap(manifest["source"] as? [String: Any])
+        XCTAssertEqual(sourceMetadata["kind"] as? String, "imported")
+        XCTAssertEqual(sourceMetadata["url"] as? String, source.path)
+        XCTAssertEqual(plugin.sourceMetadata.kind, .imported)
+        XCTAssertEqual(plugin.sourceMetadata.url, source.path)
         let servers = try XCTUnwrap(
             try json(pluginRoot.appendingPathComponent("mcp/servers.json"))["mcpServers"]
                 as? [String: Any]

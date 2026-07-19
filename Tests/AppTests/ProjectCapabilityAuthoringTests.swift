@@ -14,6 +14,9 @@ struct ProjectCapabilityAuthoringTests {
         try MinimalAppDelegate.createProjectCapabilityPlugin(project: fixture.project, pluginID: "dev-toolkit", name: "Dev Toolkit")
         let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
 
+        let manifest = try fixture.manifest()
+        let source = try #require(manifest["source"] as? [String: Any])
+        #expect(source["kind"] as? String == "manual")
         #expect(FileManager.default.fileExists(atPath: fixture.pluginRoot.appendingPathComponent("plugin.json").path))
         #expect(state.items.isEmpty)
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
@@ -68,6 +71,27 @@ struct ProjectCapabilityAuthoringTests {
         #expect(state.visibleItems.map(\.name) == ["filesystem"])
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
     }
+
+    @Test("addMCP：追加 server 时保留已有 MCP server 和未知字段")
+    func addMCPMergesExistingServersAndUnknownFields() throws {
+        let fixture = try ProjectCapabilityAuthoringFixture()
+        try MinimalAppDelegate.createProjectCapabilityPlugin(project: fixture.project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+        let mcpURL = fixture.pluginRoot.appendingPathComponent("mcp/servers.json")
+        try FileManager.default.createDirectory(at: mcpURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        { "mcpServers": { "existing": { "type": "local", "command": ["uvx"], "enabled": true } }, "topLevel": "keep" }
+        """.data(using: .utf8)!.write(to: mcpURL, options: .atomic)
+
+        try MinimalAppDelegate.addProjectCapabilityMCP(project: fixture.project, pluginID: "dev-toolkit", serverName: "filesystem")
+
+        let root = try fixture.json(mcpURL)
+        #expect(root["topLevel"] as? String == "keep")
+        let servers = try #require(root["mcpServers"] as? [String: Any])
+        #expect(servers["existing"] != nil)
+        #expect(servers["filesystem"] != nil)
+        let manifest = try fixture.manifest()
+        #expect(manifest["mcp"] as? [String] == ["mcp/servers.json#filesystem"])
+    }
 }
 
 private struct ProjectCapabilityAuthoringFixture {
@@ -87,5 +111,14 @@ private struct ProjectCapabilityAuthoringFixture {
             createdAt: Date(timeIntervalSince1970: 0)
         )
         pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit")
+    }
+
+    func manifest() throws -> [String: Any] {
+        try json(pluginRoot.appendingPathComponent("plugin.json"))
+    }
+
+    func json(_ url: URL) throws -> [String: Any] {
+        let data = try Data(contentsOf: url)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 }

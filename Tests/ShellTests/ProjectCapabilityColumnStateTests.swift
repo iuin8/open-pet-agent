@@ -223,6 +223,7 @@ struct ProjectCapabilityColumnStateTests {
             }
         )
         let detail = try #require(model.skillDetail(pluginID: "dev-toolkit", skillRef: "skills/code-review"))
+        #expect(detail.sourceProvenance == "git · abc123")
         detail.beginEditing()
         detail.draftBody = "新正文"
 
@@ -352,6 +353,7 @@ struct ProjectCapabilityColumnStateTests {
             }
         )
         let detail = try #require(model.mcpDetail(pluginID: "dev-toolkit", serverName: "filesystem"))
+        #expect(detail.sourceProvenance == "git · abc123")
         detail.beginEditing()
         detail.draftCommand = "uvx"
         detail.draftArguments = "new"
@@ -491,6 +493,11 @@ struct ProjectCapabilityColumnStateTests {
                 version: nil,
                 enabled: true,
                 source: .local(path: "/tmp/dev-toolkit"),
+                sourceMetadata: ProjectPluginSourceMetadata(
+                    kind: .git,
+                    url: "https://example.com/repo.git",
+                    revision: "abc123"
+                ),
                 skills: [skill],
                 mcpServers: server.map { [$0] } ?? [],
                 profiles: [],
