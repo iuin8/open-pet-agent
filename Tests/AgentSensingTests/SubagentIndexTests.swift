@@ -94,4 +94,42 @@ struct SubagentIndexTests {
 
         #expect(refs.map(\.transcriptURL.lastPathComponent) == ["agent-real.jsonl"])
     }
+
+    @Test("team subagent:无 toolUseId 时用 teammate summary 匹配父 Task 描述")
+    func teamSubagentMatchesTaskBySummary() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("subagent-team-\(UUID().uuidString)")
+        let sessionURL = base.appendingPathComponent("s.jsonl")
+        let subdir = base.appendingPathComponent("s").appendingPathComponent("subagents")
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        try #"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_team","name":"Task","input":{"description":"Baseline Model reviewed","team_name":"review","name":"ga-upgrade-reviewer"}}]}}"#
+            .write(to: sessionURL, atomically: true, encoding: .utf8)
+        try JSONSerialization.data(withJSONObject: ["agentType": "claude", "description": "", "agentId": "ga-upgrade-reviewer"])
+            .write(to: subdir.appendingPathComponent("agent-team.meta.json"))
+        try #"{"type":"user","message":{"content":"<teammate-message teammate_id=\"ga-upgrade-reviewer\" summary=\"Baseline Model reviewed\">APPROVE</teammate-message>"}}"#
+            .write(to: subdir.appendingPathComponent("agent-team.jsonl"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let map = SubagentIndex.scan(sessionURL: sessionURL)
+
+        #expect(map["toolu_team"]?.agentType == "claude")
+        #expect(map["toolu_team"]?.description == "Baseline Model reviewed")
+        #expect(map["toolu_team"]?.transcriptURL.lastPathComponent == "agent-team.jsonl")
+    }
+
+    @Test("team subagent:普通 Task 描述相同也不误挂")
+    func regularTaskWithSameDescriptionDoesNotMatchTeamMessage() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("subagent-team-negative-\(UUID().uuidString)")
+        let sessionURL = base.appendingPathComponent("s.jsonl")
+        let subdir = base.appendingPathComponent("s").appendingPathComponent("subagents")
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        try #"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_plain","name":"Task","input":{"description":"Baseline Model reviewed","subagent_type":"code-reviewer"}}]}}"#
+            .write(to: sessionURL, atomically: true, encoding: .utf8)
+        try JSONSerialization.data(withJSONObject: ["agentType": "claude", "description": ""])
+            .write(to: subdir.appendingPathComponent("agent-team.meta.json"))
+        try #"{"type":"user","message":{"content":"<teammate-message teammate_id=\"ga-upgrade-reviewer\" summary=\"Baseline Model reviewed\">APPROVE</teammate-message>"}}"#
+            .write(to: subdir.appendingPathComponent("agent-team.jsonl"), atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        #expect(SubagentIndex.scan(sessionURL: sessionURL).isEmpty)
+    }
 }
