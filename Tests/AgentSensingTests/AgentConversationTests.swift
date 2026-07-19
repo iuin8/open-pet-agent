@@ -93,7 +93,8 @@ struct AgentConversationTests {
         let items = AgentConversation.build(from: [e(.systemNotice(text: "协作会话消息 · reviewer：APPROVE"), 1, detail: "<teammate-message>APPROVE</teammate-message>")])
         #expect(items.count == 1)
         #expect(items[0].kind == .systemNotice(text: "协作会话消息 · reviewer：APPROVE"))
-        #expect(items[0].compactSummary == nil)
+        #expect(items[0].systemNoticeDetail == "<teammate-message>APPROVE</teammate-message>")
+        #expect(items[0].detailAffordance == .sideCard)
     }
 
     @Test("sessionStart / done 不产可见项")

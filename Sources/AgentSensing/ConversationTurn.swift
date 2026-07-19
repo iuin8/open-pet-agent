@@ -19,12 +19,15 @@ public struct ConversationTurn: Sendable, Equatable, Identifiable {
     public let timestamp: Date
     /// `/compact` 边界携带的压缩摘要;仅 `kind == .compactBoundary` 使用。
     public let compactSummary: String?
+    /// 中性系统通知的原始详情;用于侧卡查看 teammate XML 等结构化内容。
+    public let systemNoticeDetail: String?
 
-    public init(id: Int, kind: Kind, timestamp: Date, compactSummary: String? = nil) {
+    public init(id: Int, kind: Kind, timestamp: Date, compactSummary: String? = nil, systemNoticeDetail: String? = nil) {
         self.id = id
         self.kind = kind
         self.timestamp = timestamp
         self.compactSummary = compactSummary
+        self.systemNoticeDetail = systemNoticeDetail
     }
 }
 
@@ -196,7 +199,7 @@ extension AgentConversation {
                 turns.append(ConversationTurn(id: id, kind: .user(text: text, attachments: event.attachments), timestamp: event.timestamp))
             case .systemNotice(let text):
                 flushAssistant()
-                turns.append(ConversationTurn(id: id, kind: .systemNotice(text: text), timestamp: event.timestamp))
+                turns.append(ConversationTurn(id: id, kind: .systemNotice(text: text), timestamp: event.timestamp, systemNoticeDetail: event.detail))
             case .awaitingUser(let reason):
                 // Codex 收尾问句(task_complete 末句以 ? 结尾 → 此 awaiting)的标题就是 assistant 自己的末条文字,
                 // 已由文字气泡渲染 → **折进进行中的 assistant 轮标 awaitingReply**,不另起重复「在等你回答」卡
@@ -256,7 +259,7 @@ extension AgentConversation {
             case .systemNotice(let t):   kind = .systemNotice(text: t)
             case .compactBoundary:       kind = .compactBoundary
             }
-            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, attachments: attachments, compactSummary: turn.compactSummary)
+            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, attachments: attachments, compactSummary: turn.compactSummary, systemNoticeDetail: turn.systemNoticeDetail)
         }
     }
 

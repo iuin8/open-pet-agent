@@ -37,8 +37,10 @@ public struct ConversationItem: Sendable, Equatable, Identifiable {
     public let workflowRunId: String?
     /// `/compact` 边界携带的压缩摘要;仅 `.compactBoundary` 使用,点击分割线在侧卡查看。
     public let compactSummary: String?
+    /// 中性系统通知的原始详情;用于侧卡查看 teammate XML 等结构化内容。
+    public let systemNoticeDetail: String?
 
-    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = [], workflowRunId: String? = nil, compactSummary: String? = nil) {
+    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = [], workflowRunId: String? = nil, compactSummary: String? = nil, systemNoticeDetail: String? = nil) {
         self.id = id
         self.kind = kind
         self.timestamp = timestamp
@@ -46,6 +48,7 @@ public struct ConversationItem: Sendable, Equatable, Identifiable {
         self.attachments = attachments
         self.workflowRunId = workflowRunId
         self.compactSummary = compactSummary
+        self.systemNoticeDetail = systemNoticeDetail
     }
 }
 
@@ -88,7 +91,7 @@ extension ConversationItem {
         case .user(let text), .assistant(let text), .thinking(let text):
             return Self.textExceedsSideCardBudget(text) ? .sideCard : .none
         case .systemNotice:
-            return .none
+            return systemNoticeDetail?.isEmpty == false ? .sideCard : .none
         case .assistantTurn(let a):
             // 有思考/工具(时间线可看)或最终文字很长 → 点开侧卡;纯短文字轮 → 内联直显。
             return (a.toolCount + a.thinkingCount > 0 || Self.textExceedsSideCardBudget(a.finalText)) ? .sideCard : .none
@@ -149,7 +152,7 @@ public enum AgentConversation {
             case .awaitingUser(let reason):
                 items.append(ConversationItem(id: id, kind: .awaiting(reason), timestamp: event.timestamp))
             case .systemNotice(let text):
-                items.append(ConversationItem(id: id, kind: .systemNotice(text: text), timestamp: event.timestamp))
+                items.append(ConversationItem(id: id, kind: .systemNotice(text: text), timestamp: event.timestamp, systemNoticeDetail: event.detail))
             case .compactBoundary:
                 items.append(ConversationItem(id: id, kind: .compactBoundary, timestamp: event.timestamp, compactSummary: event.detail))
             case .sessionStart, .done, .thinking, .interrupted:

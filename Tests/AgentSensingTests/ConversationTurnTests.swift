@@ -265,7 +265,7 @@ struct ConversationTurnTests {
         guard case .assistant(let first) = turns[0].kind else { Issue.record("第一轮应是 assistant"); return }
         #expect(first.finalText == "先说结论")
         #expect(turns[1].kind == .systemNotice(text: "协作会话消息 · reviewer：APPROVE"))
-        #expect(turns[1].compactSummary == nil)
+        #expect(turns[1].systemNoticeDetail == "<teammate-message>APPROVE</teammate-message>")
         guard case .assistant(let second) = turns[2].kind else { Issue.record("第三轮应是 assistant"); return }
         #expect(second.finalText == "继续")
     }
