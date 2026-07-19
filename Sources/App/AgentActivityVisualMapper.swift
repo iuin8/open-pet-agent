@@ -33,8 +33,8 @@ public enum AgentActivityVisualMapper {
             return .waiting                                       // petdex session.waiting → waiting 行
         case .done:
             return .idle                                          // 一轮收尾/静默 → idle(petdex stop→waving 靠 sidecar 自动复位 idle;本仓无复位,直接 idle 等效)
-        case .assistantText, .thinking, .sessionStart, .interrupted, .compactBoundary:
-            return nil                                            // petdex 无「生成文本」hook → 不改态(继承上一态),根治「一直挥手」
+        case .assistantText, .thinking, .sessionStart, .interrupted, .systemNotice, .compactBoundary:
+            return nil                                            // petdex 无「生成文本/系统通知」hook → 不改态(继承上一态),根治「一直挥手」
         }
     }
 }

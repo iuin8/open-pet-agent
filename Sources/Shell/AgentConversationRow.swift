@@ -41,6 +41,8 @@ struct AgentConversationRow: View {
             thinkingRow(text)
         case .assistantTurn(let turn):
             turnRow(turn)
+        case .systemNotice(let text):
+            systemNoticeRow(text)
         case .compactBoundary:
             if item.detailAffordance == .sideCard {
                 Button { onExpandToSide?() } label: { compactBoundaryRow }
@@ -51,6 +53,28 @@ struct AgentConversationRow: View {
                 compactBoundaryRow
             }
         }
+    }
+
+    // MARK: - 系统通知
+
+    private func systemNoticeRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 7) {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(ChatCardTheme.textPrimary.opacity(0.35))
+                .frame(width: 13, height: 16)
+            Text(text)
+                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                .foregroundColor(ChatCardTheme.textPrimary.opacity(0.55))
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.65)))
     }
 
     // MARK: - /compact 上下文压缩边界(分割线)

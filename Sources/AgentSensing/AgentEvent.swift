@@ -35,6 +35,8 @@ public enum AgentEventKind: Sendable, Equatable {
     case toolResult(name: String, isError: Bool)
     /// 助手停下来等用户(问题 / 权限 / 通知)。
     case awaitingUser(reason: AwaitReason)
+    /// Claude Code team/teammate 注入的跨会话协作通知。中性系统行,不冒充用户 prompt。
+    case systemNotice(text: String)
     /// 用户中断了当前这一轮(`[Request interrupted by user…]`)。给会话流标「(已中断)」、
     /// 让被打断的轮不再显示「正在思考…」(P1-6)。不出 pet 气泡、不改活动状态。
     case interrupted

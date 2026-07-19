@@ -8,6 +8,8 @@ public struct ConversationTurn: Sendable, Equatable, Identifiable {
         case user(text: String, attachments: [ImageAttachment] = [])
         case assistant(AssistantTurn)
         case awaiting(AwaitReason)
+        /// 中性系统通知(如 team/teammate 跨会话消息)。
+        case systemNotice(text: String)
         /// `/compact` 上下文压缩边界 → 会话流一条「上下文已压缩」分割线。
         case compactBoundary
     }
@@ -192,6 +194,9 @@ extension AgentConversation {
                 if text == "/compact", firstId == nil, turns.last?.kind == .compactBoundary { continue }
                 flushAssistant()
                 turns.append(ConversationTurn(id: id, kind: .user(text: text, attachments: event.attachments), timestamp: event.timestamp))
+            case .systemNotice(let text):
+                flushAssistant()
+                turns.append(ConversationTurn(id: id, kind: .systemNotice(text: text), timestamp: event.timestamp))
             case .awaitingUser(let reason):
                 // Codex 收尾问句(task_complete 末句以 ? 结尾 → 此 awaiting)的标题就是 assistant 自己的末条文字,
                 // 已由文字气泡渲染 → **折进进行中的 assistant 轮标 awaitingReply**,不另起重复「在等你回答」卡
@@ -248,6 +253,7 @@ extension AgentConversation {
             case .user(let t, let atts): kind = .user(text: t); attachments = atts   // P1-5:用户行带图
             case .assistant(let a):      kind = .assistantTurn(a)
             case .awaiting(let r):       kind = .awaiting(r)
+            case .systemNotice(let t):   kind = .systemNotice(text: t)
             case .compactBoundary:       kind = .compactBoundary
             }
             return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, attachments: attachments, compactSummary: turn.compactSummary)

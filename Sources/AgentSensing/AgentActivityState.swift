@@ -27,8 +27,8 @@ extension AgentEvent {
             return .awaitingUser
         case .done:
             return .idle
-        case .sessionStart, .interrupted, .compactBoundary:
-            return nil   // 中断/压缩边界不改活动状态(尤其别误判 →idle 触发「庆祝」招牌动作)
+        case .sessionStart, .interrupted, .systemNotice, .compactBoundary:
+            return nil   // 中断/系统通知/压缩边界不改活动状态(尤其别误判 →idle 触发「庆祝」招牌动作)
         }
     }
 }

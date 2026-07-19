@@ -540,8 +540,8 @@ extension MinimalAppDelegate {
             }
         case .done:
             return "✅ 完成一轮"
-        case .userPrompt, .assistantText, .thinking, .toolResult, .sessionStart, .interrupted, .compactBoundary:
-            return nil   // 思考/中断/压缩边界不出 pet 气泡(太碎/无动作语义)
+        case .userPrompt, .assistantText, .thinking, .toolResult, .sessionStart, .interrupted, .systemNotice, .compactBoundary:
+            return nil   // 思考/中断/系统通知/压缩边界不出 pet 气泡(太碎/无动作语义)
         }
     }
 

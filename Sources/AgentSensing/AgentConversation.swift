@@ -19,6 +19,8 @@ public struct ConversationItem: Sendable, Equatable, Identifiable {
         /// **模型一轮**(2026-06-16 turn 模型):主流的 assistant 行 = 最终输出 + 折叠的思考/工具元数据。
         /// 携 `AssistantTurn`(finalText + steps + 模型/用量/计数/状态)→ 渲染元数据栏 + 最终文字,点 → 时间线侧卡。
         case assistantTurn(AssistantTurn)
+        /// 中性系统通知(如 team/teammate 跨会话消息)。保留审计语义,但不按 user/assistant 气泡渲染。
+        case systemNotice(text: String)
         /// `/compact` 上下文压缩边界 → 渲染一条「上下文已压缩」分割线(不可点)。
         case compactBoundary
     }
@@ -85,6 +87,8 @@ extension ConversationItem {
             return details.isEmpty ? .none : .sideCard
         case .user(let text), .assistant(let text), .thinking(let text):
             return Self.textExceedsSideCardBudget(text) ? .sideCard : .none
+        case .systemNotice:
+            return .none
         case .assistantTurn(let a):
             // 有思考/工具(时间线可看)或最终文字很长 → 点开侧卡;纯短文字轮 → 内联直显。
             return (a.toolCount + a.thinkingCount > 0 || Self.textExceedsSideCardBudget(a.finalText)) ? .sideCard : .none
@@ -144,6 +148,8 @@ public enum AgentConversation {
                 // 孤立 toolResult(无匹配 running tool)忽略,不产项。
             case .awaitingUser(let reason):
                 items.append(ConversationItem(id: id, kind: .awaiting(reason), timestamp: event.timestamp))
+            case .systemNotice(let text):
+                items.append(ConversationItem(id: id, kind: .systemNotice(text: text), timestamp: event.timestamp))
             case .compactBoundary:
                 items.append(ConversationItem(id: id, kind: .compactBoundary, timestamp: event.timestamp, compactSummary: event.detail))
             case .sessionStart, .done, .thinking, .interrupted:

@@ -205,7 +205,7 @@ struct TranscriptRow {
         switch it.kind {
         case .user(let t):   // 行高随文字 + 缩略图条(P1-5:有图行更高,签名须含附件数)
             return t.count &+ it.attachments.count &* 7_777
-        case .assistant(let t), .thinking(let t): return t.count
+        case .assistant(let t), .thinking(let t), .systemNotice(let t): return t.count
         case .tool(let n, let s, let st, let i, let o):
             return n.count &+ s.count &* 31 &+ (i?.count ?? 0) &* 131 &+ (o?.count ?? 0) &* 1301 &+ st.hashValue
         case .awaiting: return 7

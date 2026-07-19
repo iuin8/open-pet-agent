@@ -168,6 +168,7 @@ public struct ClaudeTranscriptParser: TranscriptParser {
             let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return nil }
             if ParserHelpers.isInterruption(trimmed) { return (.interrupted, nil, nil) }   // P1-6:中断 → 标记轮,不丢
+            if let notice = ParserHelpers.teammateNoticeText(trimmed) { return (.systemNotice(text: notice), trimmed, nil) }
             if ParserHelpers.isClaudeHardNoise(trimmed) { return nil }   // caveat / 提醒 / 命令输出 / bash io
             if let slash = ParserHelpers.extractSlashCommand(trimmed) {  // slash 命令 → 清洗成可读 /cmd
                 return (.userPrompt(text: slash), nil, nil)
@@ -194,6 +195,7 @@ public struct ClaudeTranscriptParser: TranscriptParser {
             // 纯图片(无文字)→ 空文本 userPrompt(行只渲缩略图);图文 → 仅文字(图另渲)。
             if joined.isEmpty { return hasImage ? (.userPrompt(text: ""), nil, nil) : nil }
             if ParserHelpers.isInterruption(joined) { return (.interrupted, nil, nil) }   // P1-6:array 形态中断标也升标记
+            if let notice = ParserHelpers.teammateNoticeText(joined) { return (.systemNotice(text: notice), joined, nil) }
             if ParserHelpers.isClaudeHardNoise(joined) { return nil }
             return (.userPrompt(text: ParserHelpers.capped(joined) ?? joined), nil, nil)
         }

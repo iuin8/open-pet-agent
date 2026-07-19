@@ -140,4 +140,11 @@ struct TranscriptRowBuilderTests {
     func compactBoundaryLabelShowsCommandAndState() {
         #expect(AgentConversationRow.compactBoundaryLabel == "/compact · 上下文已压缩")
     }
+
+    @Test("systemNotice 内容进入行签名")
+    func systemNoticeAffectsRowSignature() {
+        let a = TranscriptRow(kind: .item(item(10, .systemNotice(text: "协作会话消息 · a：one"))), highlightRegion: nil, loading: false, subagent: nil)
+        let b = TranscriptRow(kind: .item(item(10, .systemNotice(text: "协作会话消息 · a：longer text"))), highlightRegion: nil, loading: false, subagent: nil)
+        #expect(a.heightSignature != b.heightSignature)
+    }
 }

@@ -120,6 +120,20 @@ enum ParserHelpers {
         return t.hasPrefix("<skill>") && t.contains("<name>") && t.contains("<path>") && t.contains("SKILL.md")
     }
 
+    /// Claude Code team/teammate 跨会话消息 → 中性系统通知文案。
+    /// claude-devtools 同样把 `<teammate-message …>` 排除在 UserChunk 外,并用 `summary` 关联 team subagent。
+    static func teammateNoticeText(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "Another Claude session sent a message:"
+        let body = t.hasPrefix(prefix) ? String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines) : t
+        guard body.hasPrefix("<teammate-message ") else { return nil }
+        let teammate = xmlAttribute(body, "teammate_id").map(xmlUnescape) ?? "teammate"
+        let summary = xmlAttribute(body, "summary").map(xmlUnescape).flatMap { $0.isEmpty ? nil : $0 }
+        let inner = xmlElementBody(body, tag: "teammate-message").map(xmlUnescape).flatMap { $0.isEmpty ? nil : $0 }
+        let message = snippet(summary ?? inner ?? "发来一条消息", limit: 96)
+        return "协作会话消息 · \(teammate)：\(message)"
+    }
+
     /// slash 命令注入(`<command-name>/effort</command-name>…<command-args>ultracode</command-args>`)
     /// → 清洗成可读 `/effort ultracode`(对照 contentSanitizer extractCommandDisplay)。非命令 → nil。
     static func extractSlashCommand(_ text: String) -> String? {
@@ -138,5 +152,27 @@ enum ParserHelpers {
         guard let open = s.range(of: "<\(tag)>"),
               let close = s.range(of: "</\(tag)>", range: open.upperBound..<s.endIndex) else { return nil }
         return String(s[open.upperBound..<close.lowerBound])
+    }
+
+    /// 抽 XML-ish 属性值。只处理 Claude Code transcript 这种双引号属性,不引入 XML parser。
+    private static func xmlAttribute(_ s: String, _ name: String) -> String? {
+        guard let key = s.range(of: name + "=\"") else { return nil }
+        let start = key.upperBound
+        guard let end = s[start...].firstIndex(of: "\"") else { return nil }
+        return String(s[start..<end])
+    }
+
+    private static func xmlElementBody(_ s: String, tag: String) -> String? {
+        guard let openEnd = s.range(of: ">")?.upperBound,
+              let close = s.range(of: "</\(tag)>", range: openEnd..<s.endIndex) else { return nil }
+        return String(s[openEnd..<close.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func xmlUnescape(_ s: String) -> String {
+        s.replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
     }
 }

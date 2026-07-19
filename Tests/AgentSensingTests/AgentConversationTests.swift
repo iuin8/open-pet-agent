@@ -88,6 +88,14 @@ struct AgentConversationTests {
         else { Issue.record("应是 .awaiting") }
     }
 
+    @Test("systemNotice → 中性系统通知项")
+    func systemNoticeVisibleButNotUser() {
+        let items = AgentConversation.build(from: [e(.systemNotice(text: "协作会话消息 · reviewer：APPROVE"), 1, detail: "<teammate-message>APPROVE</teammate-message>")])
+        #expect(items.count == 1)
+        #expect(items[0].kind == .systemNotice(text: "协作会话消息 · reviewer：APPROVE"))
+        #expect(items[0].compactSummary == nil)
+    }
+
     @Test("sessionStart / done 不产可见项")
     func noiseSkipped() {
         let items = AgentConversation.build(from: [

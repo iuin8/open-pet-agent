@@ -265,6 +265,20 @@ struct ClaudeTranscriptParserTests {
         #expect(parser.parse(line: line)?.kind == .userPrompt(text: "Background agent design notes"))
     }
 
+    @Test("teammate XML → 协作系统通知,不冒充用户消息")
+    func teammateMessageBecomesSystemNotice() {
+        let line = #"{"type":"user","message":{"content":"Another Claude session sent a message:\n<teammate-message teammate_id=\"ga-upgrade-reviewer\" color=\"blue\" summary=\"Baseline Model reviewed\">APPROVE</teammate-message>"}}"#
+        let event = parser.parse(line: line)
+        #expect(event?.kind == .systemNotice(text: "协作会话消息 · ga-upgrade-reviewer：Baseline Model reviewed"))
+        #expect(event?.detail?.contains("<teammate-message") == true)
+    }
+
+    @Test("普通 teammate 字样仍是用户消息")
+    func teammateTextStillUserPrompt() {
+        let line = #"{"type":"user","message":{"content":"Another Claude session sent a message: please review copy"}}"#
+        #expect(parser.parse(line: line)?.kind == .userPrompt(text: "Another Claude session sent a message: please review copy"))
+    }
+
     @Test("#30:slash 命令注入 → 清洗成可读 /cmd args")
     func slashCommandCleaned() {
         let line = #"{"type":"user","message":{"content":"<command-name>/effort</command-name><command-message>effort</command-message><command-args>ultracode</command-args>"}}"#

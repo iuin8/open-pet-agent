@@ -27,6 +27,8 @@ struct DetailPaneContent: View {
             textBody(role: "思考", glyph: "brain", text: text)
         case .assistantTurn(let turn):
             textBody(role: "助手回复", glyph: "sparkles", text: turn.finalText)
+        case .systemNotice(let text):
+            textBody(role: "协作通知", glyph: "person.2.fill", text: text)
         case .compactBoundary:
             textBody(role: "压缩上下文", glyph: "arrow.triangle.merge", text: item.compactSummary ?? "")
         case .awaiting:

@@ -254,6 +254,22 @@ struct ConversationTurnTests {
         #expect(a.finalText == "继续")
     }
 
+    @Test("systemNotice 独立成中性通知轮,不打进 assistant finalText")
+    func systemNoticeStaysSeparate() {
+        let turns = AgentConversation.buildTurns(from: [
+            ev(.assistantText(text: "先说结论"), 0),
+            ev(.systemNotice(text: "协作会话消息 · reviewer：APPROVE"), 1, detail: "<teammate-message>APPROVE</teammate-message>"),
+            ev(.assistantText(text: "继续"), 2),
+        ])
+        #expect(turns.count == 3)
+        guard case .assistant(let first) = turns[0].kind else { Issue.record("第一轮应是 assistant"); return }
+        #expect(first.finalText == "先说结论")
+        #expect(turns[1].kind == .systemNotice(text: "协作会话消息 · reviewer：APPROVE"))
+        #expect(turns[1].compactSummary == nil)
+        guard case .assistant(let second) = turns[2].kind else { Issue.record("第三轮应是 assistant"); return }
+        #expect(second.finalText == "继续")
+    }
+
     // MARK: - #9 workflow 衍生 agent
 
     @Test("#9:Workflow 工具 → 从 tool_result 输出抽 Run ID 到具体 step item")
