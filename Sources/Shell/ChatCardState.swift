@@ -34,6 +34,12 @@ public final class ChatCardState: ObservableObject {
     /// agent 思考中(ACP `agent_thought_chunk` 来时 true;流式 message 来时 false)。
     /// ACP engine 专属(灵魂层无 thought);`isSending` 期间子状态,UI 显示「思考中」替代打点。
     @Published public var isThinking: Bool = false
+    /// ACP `usage_update` 直报的上下文已用 token。nil = 尚无用量数据(composer 上方占用条不显示)。
+    @Published public var contextUsed: Int?
+    /// ACP `usage_update` 直报的上下文窗口总大小(token)。
+    @Published public var contextSize: Int?
+    /// ACP `usage_update` 的累计费用(App 预格式化展示串,如 "$0.0123";nil = agent 未报)。
+    @Published public var contextCost: String?
     /// 进场缩放锚点对应的边（由锚定结果驱动 spring transition）。
     @Published public var entranceEdge: ChatCardEdge = .above
     /// 是否已"放大就位"。controller 每次 show 先置 false 再 `withAnimation` 置 true →

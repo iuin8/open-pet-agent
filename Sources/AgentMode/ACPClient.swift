@@ -4,13 +4,14 @@ import Foundation
 // 收 notification(session/update)分发到 handler、收 response(id→continuation 配对)。
 //
 // 高层流程(ACP v1):connect(initialize 协商)→ createSession(session/new)→
-// prompt(session/prompt,流式 session/update,最后 result 带 stopReason)。
+// prompt(session/prompt,流式 session/update,最后 result 带 stopReason + unstable usage)。
 //
 // 健壮性(ACP-1a 审查 follow-up):
 // - `onEOF`(transport 的 EOF/进程死通知)→ 唤醒所有 pending continuation throwing,免永挂。
 // - per-request wall-clock timeout → agent 失联 response 不永挂。
 // - `withTaskCancellationHandler` → consumer 取消时唤醒 pending throwing(cancel 不响应是
 //   `withCheckedThrowingContinuation` 的固有限制,onCancel 兜底唤醒)。
+// - inbound 保序(ACP-3):AsyncStream 串行消费,流式 chunk/response 不乱序(见 connect)。
 
 /// ACP client 错误。
 public enum ACPClientError: Error, Sendable, Equatable {
@@ -53,6 +54,8 @@ public actor ACPClient {
     public var onPermissionRequest: (@Sendable (ACPPermissionRequest) async -> ACPPermissionOutcome)?
     private var didConnect = false
     private var eofHandled = false
+    /// 保序 inbound 消费 Task(connect 建,shutdown 取消;见 connect 内注释)。
+    private var inboundTask: Task<Void, Never>?
 
     /// 默认 per-request timeout(纳秒)。connect/createSession 用短,prompt 用长。
     private static let shortTimeoutNs: UInt64 = 30_000_000_000   // 30s
@@ -66,10 +69,18 @@ public actor ACPClient {
 
     public func connect() async throws -> ACPAgentCapabilities {
         guard !didConnect else { return ACPAgentCapabilities(protocolVersion: 1, agentCapabilities: []) }
+        // 保序(ACP-3 审查发现):onInbound 每条消息各开一个 Task hop actor,调度顺序不保证,
+        // 流式 chunk 可能乱序(测试实测 deltas 反转)。AsyncStream yield 保 FIFO;
+        // onEOF → stream finish,在读循环结束后处理(自然排在最后一条消息之后)。
+        let (inbound, inboundCont) = AsyncStream.makeStream(of: ACPInbound.self)
         try await transport.start(
-            onInbound: { [weak self] msg in Task { await self?.handleInbound(msg) } },
-            onEOF: { [weak self] in Task { await self?.handleEOF() } }
+            onInbound: { msg in inboundCont.yield(msg) },
+            onEOF: { inboundCont.finish() }
         )
+        inboundTask = Task { [weak self] in
+            for await msg in inbound { await self?.handleInbound(msg) }
+            await self?.handleEOF()
+        }
         let id = nextRequestID()
         let params: ACPJSON = .object([
             "protocolVersion": .int(1),
@@ -109,7 +120,7 @@ public actor ACPClient {
 
     // MARK: - prompt(session/prompt + 流式 update)
 
-    public func prompt(text: String, onUpdate: @escaping @Sendable (ACPSessionUpdate) -> Void) async throws -> String {
+    public func prompt(text: String, onUpdate: @escaping @Sendable (ACPSessionUpdate) -> Void) async throws -> ACPPromptResult {
         guard didConnect else { throw ACPClientError.notConnected }
         updateHandler = onUpdate
         defer { updateHandler = nil }
@@ -120,7 +131,10 @@ public actor ACPClient {
         if let sessionId { params["sessionId"] = .string(sessionId) }
         let result = try await sendRequest(
             id: id, method: ACPMethod.sessionPrompt, params: .object(params), timeoutNs: Self.promptTimeoutNs)
-        return result.objectValue?["stopReason"]?.stringValue ?? ""
+        return ACPPromptResult(
+            stopReason: result.objectValue?["stopReason"]?.stringValue ?? "",
+            usage: ACPPromptUsage.decode(fromResult: result)   // unstable,机会性(opencode 1.18 带)
+        )
     }
 
     // MARK: - 内部:request/response 配对 + timeout + cancel
@@ -227,6 +241,7 @@ public actor ACPClient {
     }
 
     public func shutdown() {
+        inboundTask?.cancel()
         transport.shutdown()
     }
 }

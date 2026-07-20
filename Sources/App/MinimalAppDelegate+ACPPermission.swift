@@ -5,6 +5,7 @@ import Shell
 // ACP-2 permission UI 接线:把 ACPAgentEngine 的 session/request_permission 回调接到
 // 现有 PermissionCard 管线(复用 AgentSensing 的 pet 旁侧卡 + PendingAction)。
 // agent 请求工具权限 → 弹卡 → 用户 allow/deny → outcome 回写 ACP client → agent 继续。
+// 同处接线:thought(思考中状态,ACP-2)+ usage(上下文占用条,ACP-3)engine 回调 → ChatCardState。
 // 非 ACP engine(Claude/Codex 本地子进程不经 ACP)→ wireACPPermissionHandler no-op(cast 失败)。
 
 extension MinimalAppDelegate {
@@ -29,6 +30,31 @@ extension MinimalAppDelegate {
                 self?.chatCardWindowController?.cardState.isThinking = true
             }
         }
+        // usage 展示(ACP-3):usage_update → composer 上方上下文占用条。
+        // 同 onThought:@Sendable 同步闭包 → `Task { @MainActor }` hop 回主 actor 设 cardState。
+        acp.onUsage = { [weak self] usage in
+            Task { @MainActor [weak self] in
+                guard let state = self?.chatCardWindowController?.cardState else { return }
+                Self.applyContextUsage(usage, to: state)
+            }
+        }
+    }
+
+    // MARK: - 用量映射(可单测)
+
+    /// `ACPUsage` → `ChatCardState` 上下文占用字段(usage_update → composer 上方占用条)。
+    /// size = nil(fallback 只报 used)不覆盖此前已知窗口 —— 精确值一旦到手就留住。
+    @MainActor
+    static func applyContextUsage(_ usage: ACPUsage, to state: ChatCardState) {
+        state.contextUsed = usage.used
+        if let size = usage.size { state.contextSize = size }
+        state.contextCost = usage.cost.map(formatUsageCost)
+    }
+
+    /// cost 展示格式化:USD → "$0.0123";其它币种原样前缀("CNY 0.0123")。
+    nonisolated static func formatUsageCost(_ cost: ACPUsage.Cost) -> String {
+        let amount = String(format: "%.4f", cost.amount)
+        return cost.currency == "USD" ? "$\(amount)" : "\(cost.currency) \(amount)"
     }
 
     /// 弹 pet 旁权限卡等用户处置 ACP 权限请求,返回 outcome。

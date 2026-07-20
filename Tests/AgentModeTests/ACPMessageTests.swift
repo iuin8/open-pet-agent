@@ -164,3 +164,74 @@ func sessionUpdateUnknownKind() throws {
     #expect(update.textContent == "ran cmd")
     // 未知 kind 不在 enum 内但不抛错(forward compat)
 }
+
+@Test("ACPSessionUpdate: usage_update 解码 used/size/cost(stable since 0.13.6)")
+func sessionUpdateUsageWithCost() throws {
+    let json = """
+    {"sessionId":"s","update":{"sessionUpdate":"usage_update","used":12345,"size":200000,"cost":{"amount":0.0123,"currency":"USD"}}}
+    """
+    let params = try #require(ACPJSON.parse(json))
+    let update = try #require(try ACPSessionUpdate.decode(from: params))
+    #expect(update.sessionUpdate == .usageUpdate)
+    let usage = try #require(update.usage)
+    #expect(usage.used == 12_345)
+    #expect(usage.size == 200_000)
+    #expect(usage.cost == ACPUsage.Cost(amount: 0.0123, currency: "USD"))
+    #expect(update.textContent == nil)   // usage_update 无 text
+}
+
+@Test("ACPSessionUpdate: usage_update 无 cost(可选)→ cost=nil,used/size 仍解出")
+func sessionUpdateUsageWithoutCost() throws {
+    let json = """
+    {"sessionId":"s","update":{"sessionUpdate":"usage_update","used":42000,"size":1000000}}
+    """
+    let params = try #require(ACPJSON.parse(json))
+    let update = try #require(try ACPSessionUpdate.decode(from: params))
+    #expect(update.sessionUpdate == .usageUpdate)
+    let usage = try #require(update.usage)
+    #expect(usage.used == 42_000)
+    #expect(usage.size == 1_000_000)
+    #expect(usage.cost == nil)
+}
+
+@Test("ACPSessionUpdate: usage_update 缺 used(畸形)→ usage=nil 不崩")
+func sessionUpdateUsageMalformed() throws {
+    let json = """
+    {"sessionId":"s","update":{"sessionUpdate":"usage_update","size":200000}}
+    """
+    let params = try #require(ACPJSON.parse(json))
+    let update = try #require(try ACPSessionUpdate.decode(from: params))
+    #expect(update.sessionUpdate == .usageUpdate)
+    #expect(update.usage == nil)
+}
+
+@Test("ACPSessionUpdate: usage_update 缺 size(宽容)→ used 解出,size=nil(fallback 同形)")
+func sessionUpdateUsageWithoutSize() throws {
+    let json = """
+    {"sessionId":"s","update":{"sessionUpdate":"usage_update","used":123}}
+    """
+    let params = try #require(ACPJSON.parse(json))
+    let update = try #require(try ACPSessionUpdate.decode(from: params))
+    let usage = try #require(update.usage)
+    #expect(usage.used == 123)
+    #expect(usage.size == nil)
+    #expect(usage.cost == nil)
+}
+
+@Test("ACPPromptUsage: 从 PromptResponse result 解 unstable usage(缺 cachedReadTokens → 0)")
+func promptUsageDecode() throws {
+    let result = try #require(ACPJSON.parse(#"{"stopReason":"end_turn","usage":{"inputTokens":93,"cachedReadTokens":29568,"totalTokens":29727}}"#))
+    let usage = try #require(ACPPromptUsage.decode(fromResult: result))
+    #expect(usage == ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568))
+    #expect(usage.contextUsed == 29_661)
+
+    let noCache = try #require(ACPJSON.parse(#"{"usage":{"inputTokens":100}}"#))
+    #expect(ACPPromptUsage.decode(fromResult: noCache) == ACPPromptUsage(inputTokens: 100, cachedReadTokens: 0))
+}
+
+@Test("ACPPromptUsage: result 无 usage / 缺 inputTokens → nil(agent 未报不崩)")
+func promptUsageDecodeAbsent() throws {
+    #expect(ACPPromptUsage.decode(fromResult: ACPJSON.parse(#"{"stopReason":"end_turn"}"#)) == nil)
+    #expect(ACPPromptUsage.decode(fromResult: ACPJSON.parse(#"{"usage":{"outputTokens":8}}"#)) == nil)
+    #expect(ACPPromptUsage.decode(fromResult: nil) == nil)
+}
