@@ -2,7 +2,15 @@ import CryptoKit
 import Foundation
 
 public struct ProjectCapabilityAuditStore: Sendable {
-    public init() {}
+    private let sourceConfirmationsURL: @Sendable (AgentProject) -> URL
+
+    public init(
+        sourceConfirmationsURL: @escaping @Sendable (AgentProject) -> URL = { project in
+            ProjectConfig.capabilitySourceConfirmationsURL(for: project)
+        }
+    ) {
+        self.sourceConfirmationsURL = sourceConfirmationsURL
+    }
 
     public func load(project: AgentProject) throws -> CapabilityAuditState {
         let url = ProjectConfig.capabilityAuditStateURL(for: project)
@@ -99,6 +107,49 @@ public struct ProjectCapabilityAuditStore: Sendable {
         ), project: project)
     }
 
+    public func loadSourceConfirmations(project: AgentProject) throws -> CapabilitySourceConfirmationState {
+        let url = sourceConfirmationsURL(project)
+        guard FileManager.default.fileExists(atPath: url.path) else { return CapabilitySourceConfirmationState() }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(CapabilitySourceConfirmationState.self, from: data)
+    }
+
+    public func confirmSource(
+        project: AgentProject,
+        pluginID: String,
+        source: ProjectPluginSourceMetadata,
+        date: Date = Date()
+    ) throws {
+        let state = try loadSourceConfirmations(project: project)
+        let contentHash = try sourceContentHash(project: project, pluginID: pluginID)
+        let confirmation = CapabilitySourceConfirmation(
+            pluginID: pluginID,
+            source: source,
+            contentHash: contentHash,
+            confirmedAtDescription: Self.isoString(date)
+        )
+        let confirmations = (state.confirmations.filter { $0.pluginID != pluginID } + [confirmation])
+            .sorted { $0.pluginID < $1.pluginID }
+        try saveSourceConfirmations(CapabilitySourceConfirmationState(confirmations: confirmations), project: project)
+    }
+
+    public func revokeSourceConfirmation(project: AgentProject, pluginID: String) throws {
+        let state = try loadSourceConfirmations(project: project)
+        let confirmations = state.confirmations.filter { $0.pluginID != pluginID }
+        try saveSourceConfirmations(CapabilitySourceConfirmationState(confirmations: confirmations), project: project)
+    }
+
+    public func isSourceConfirmed(
+        project: AgentProject,
+        pluginID: String,
+        source: ProjectPluginSourceMetadata
+    ) throws -> Bool {
+        let contentHash = try sourceContentHash(project: project, pluginID: pluginID)
+        return try loadSourceConfirmations(project: project).confirmations.contains {
+            $0.pluginID == pluginID && $0.source == source && $0.contentHash == contentHash
+        }
+    }
+
     public static func key(for diagnostic: ProjectConfigDiagnostic) -> String {
         "\(diagnostic.severity.rawValue)|\(diagnostic.path ?? "")|\(diagnostic.message)"
     }
@@ -110,6 +161,33 @@ public struct ProjectCapabilityAuditStore: Sendable {
     /// ownership 判定:以 `.open-pet-agent/state/generated-targets.json` 清单为准(fail-closed)。
     public static func isGeneratedTarget(_ url: URL, projectRoot: URL) -> Bool {
         ProjectionGeneratedManifestStore.isGeneratedTarget(url, projectRoot: projectRoot)
+    }
+
+    private func saveSourceConfirmations(_ state: CapabilitySourceConfirmationState, project: AgentProject) throws {
+        let url = sourceConfirmationsURL(project)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(state).write(to: url, options: .atomic)
+    }
+
+    public func sourceContentHash(project: AgentProject, pluginID: String) throws -> String {
+        guard !pluginID.isEmpty, !pluginID.contains("/"), pluginID != ".", pluginID != ".." else {
+            throw ProjectCapabilityValidationError("Invalid plugin id: \(pluginID)")
+        }
+        let pluginRoot = ProjectConfig.pluginRoot(for: project).standardizedFileURL
+        let pluginURL = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID).standardizedFileURL
+        guard ProjectionTrust.isPath(pluginURL, inside: pluginRoot),
+              ProjectionTrust.isPath(pluginURL.resolvingSymlinksInPath(), inside: pluginRoot.resolvingSymlinksInPath()) else {
+            throw ProjectCapabilityValidationError("Invalid plugin id: \(pluginID)")
+        }
+        guard let hash = ProjectCapabilityAuditHasher.hash(pluginURL) else {
+            throw ProjectCapabilityValidationError("Cannot hash plugin source: \(pluginID)")
+        }
+        return hash
     }
 
     private func save(_ state: CapabilityAuditState, project: AgentProject) throws {
@@ -283,29 +361,54 @@ public struct ProjectCapabilityAuditor: Sendable {
 private enum ProjectCapabilityAuditHasher {
     static func hash(_ url: URL) -> String? {
         var hasher = SHA256()
-        guard update(&hasher, with: url) else { return nil }
+        let root = url.standardizedFileURL
+        guard update(&hasher, with: root, relativePath: "") else { return nil }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func update(_ hasher: inout SHA256, with url: URL) -> Bool {
+    private static func update(_ hasher: inout SHA256, with url: URL, relativePath: String) -> Bool {
         let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         if values?.isSymbolicLink == true {
             guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path) else { return false }
-            hasher.update(data: Data("symlink:\(target)".utf8))
+            updateEntry(&hasher, type: "symlink", relativePath: relativePath, payload: Data(target.utf8))
             return true
         }
         if values?.isDirectory == true {
-            guard let children = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { return false }
-            let childURLs = children.compactMap { $0 as? URL }.sorted { $0.path < $1.path }
-            for childURL in childURLs {
-                hasher.update(data: Data(childURL.path.replacingOccurrences(of: url.path, with: "").utf8))
-                guard update(&hasher, with: childURL) else { return false }
+            updateEntry(&hasher, type: "directory", relativePath: relativePath, payload: Data())
+            guard let children = try? FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: []
+            ) else { return false }
+            for childURL in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                let childRelativePath = relativePath.isEmpty
+                    ? childURL.lastPathComponent
+                    : "\(relativePath)/\(childURL.lastPathComponent)"
+                guard update(&hasher, with: childURL, relativePath: childRelativePath) else { return false }
             }
             return true
         }
         guard let data = try? Data(contentsOf: url) else { return false }
-        hasher.update(data: data)
+        updateEntry(&hasher, type: "file", relativePath: relativePath, payload: data)
         return true
+    }
+
+    private static func updateEntry(
+        _ hasher: inout SHA256,
+        type: String,
+        relativePath: String,
+        payload: Data
+    ) {
+        updateField(&hasher, type)
+        updateField(&hasher, relativePath)
+        updateField(&hasher, String(payload.count))
+        hasher.update(data: payload)
+    }
+
+    private static func updateField(_ hasher: inout SHA256, _ value: String) {
+        let data = Data(value.utf8)
+        hasher.update(data: Data("\(data.count):".utf8))
+        hasher.update(data: data)
     }
 }
 

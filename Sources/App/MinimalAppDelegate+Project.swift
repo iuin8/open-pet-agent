@@ -233,13 +233,21 @@ extension MinimalAppDelegate {
 
     private static func validateTrustedSources(project: AgentProject, target: CapabilityTarget) throws {
         let targetKeys = Set(engineKeys(for: target))
+        let auditStore = ProjectCapabilityAuditStore()
         let untrusted = try ProjectPluginCatalog().listPlugins(for: project)
             .filter { plugin in
                 plugin.enabled
                     && hasProjectedReferences(plugin)
                     && targetPolicyEnabled(plugin, target: target, targetKeys: targetKeys)
             }
-            .filter { !$0.sourceMetadata.allowsAutomaticProjection }
+            .filter { plugin in
+                guard !plugin.sourceMetadata.allowsAutomaticProjection else { return false }
+                return try !auditStore.isSourceConfirmed(
+                    project: project,
+                    pluginID: plugin.id,
+                    source: plugin.sourceMetadata
+                )
+            }
             .sorted { $0.id < $1.id }
         guard untrusted.isEmpty else {
             let summary = untrusted.map { "\($0.id): \($0.sourceMetadata.trustLabel)" }.joined(separator: ", ")
@@ -367,6 +375,16 @@ extension MinimalAppDelegate {
                     try Self.setProjectPluginTarget(project: project, pluginID: pluginID, target: target, enabled: enabled)
                 } catch {
                     self.showProjectError(title: "更新项目能力目标失败", error: error)
+                }
+                return card(for: project)
+            },
+            onSetSourceConfirmed: { [weak self] pluginID, confirmed in
+                guard let self else { return ProjectCapabilityCardState(selectedTab: .overview, items: []) }
+                do {
+                    guard !confirmed || self.confirmProjectPluginSource(project: project, pluginID: pluginID) else { return card(for: project) }
+                    try Self.setProjectPluginSourceConfirmed(project: project, pluginID: pluginID, confirmed: confirmed)
+                } catch {
+                    self.showProjectError(title: "更新项目能力来源确认失败", error: error)
                 }
                 return card(for: project)
             },
@@ -504,6 +522,28 @@ extension MinimalAppDelegate {
         )
     }
 
+    @MainActor private func confirmProjectPluginSource(project: AgentProject, pluginID: String) -> Bool {
+        guard let plugin = try? ProjectPluginCatalog().listPlugins(for: project).first(where: { $0.id == pluginID }) else { return false }
+        let contentHash = (try? ProjectCapabilityAuditStore().sourceContentHash(project: project, pluginID: pluginID)) ?? "unknown"
+        let alert = NSAlert()
+        alert.messageText = "确认项目能力来源？"
+        alert.informativeText = """
+        Plugin: \(plugin.id)
+        kind: \(plugin.sourceMetadata.kind.rawValue)
+        url: \(plugin.sourceMetadata.url ?? "-")
+        revision: \(plugin.sourceMetadata.revision ?? "-")
+        contentHash: \(plugin.sourceMetadata.contentHash ?? "-")
+        installedAt: \(plugin.sourceMetadata.installedAt ?? "-")
+        边界: \(plugin.sourceMetadata.trustLabel)
+        canonical hash: \(contentHash)
+        确认后当前内容可同步到启用的 agent 目标；来源或内容变化会自动失效。
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "确认来源")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     @MainActor func showProjectCapabilityManagerCard() {
         projectCapabilityCardWindowController?.hide()
         let project = ProjectStore.current(defaults: userDefaults)
@@ -585,7 +625,8 @@ extension MinimalAppDelegate {
                 diagnostics: diagnosticsByPlugin[plugin.id] ?? catalog.validate(plugin),
                 projectionDiagnostics: diagnostics,
                 targetsBySource: targetsBySource,
-                mcpTargets: mcpTargets
+                mcpTargets: mcpTargets,
+                project: project
             )
         }
         return ProjectCapabilityCardState(
@@ -713,6 +754,26 @@ extension MinimalAppDelegate {
         return result.isEmpty ? "example" : result
     }
 
+    static func setProjectPluginSourceConfirmed(
+        project: AgentProject,
+        pluginID: String,
+        confirmed: Bool
+    ) throws {
+        let plugin = try ProjectPluginCatalog().listPlugins(for: project)
+            .first { $0.id == pluginID }
+        guard let plugin else { throw ProjectCapabilityManagerError.invalidPluginID(pluginID) }
+        let store = ProjectCapabilityAuditStore()
+        if confirmed {
+            try store.confirmSource(
+                project: project,
+                pluginID: pluginID,
+                source: plugin.sourceMetadata
+            )
+        } else {
+            try store.revokeSourceConfirmation(project: project, pluginID: pluginID)
+        }
+    }
+
     static func setProjectPluginEnabled(project: AgentProject, pluginID: String, enabled: Bool) throws {
         guard !pluginID.isEmpty, !pluginID.contains("/"), pluginID != ".", pluginID != ".." else {
             throw ProjectCapabilityManagerError.invalidPluginID(pluginID)
@@ -766,10 +827,9 @@ extension MinimalAppDelegate {
 
     private static func targetStates(for plugin: ProjectPluginDescriptor) -> [ProjectCapabilityCardState.ProjectionTargetState] {
         CapabilityTarget.allCases.map { target in
-            let policies = engineKeys(for: target).compactMap { plugin.enginePolicies[$0] }
-            return ProjectCapabilityCardState.ProjectionTargetState(
+            ProjectCapabilityCardState.ProjectionTargetState(
                 target: target,
-                isEnabled: policies.contains { $0 != .disabled }
+                isEnabled: targetPolicyEnabled(plugin, target: target, targetKeys: Set(engineKeys(for: target)))
             )
         }
     }
@@ -816,6 +876,13 @@ extension MinimalAppDelegate {
             message: partialWarning,
             path: root
         )]
+        let isConfirmable = !plugin.sourceMetadata.allowsAutomaticProjection
+        let isConfirmed = isConfirmable && ((try? ProjectCapabilityAuditStore().isSourceConfirmed(
+            project: project,
+            pluginID: plugin.id,
+            source: plugin.sourceMetadata
+        )) ?? false)
+        let sourceConfirmation = (isConfirmable: isConfirmable, isConfirmed: isConfirmed)
         let skills = plugin.skills.map { skill in
             let source = URL(fileURLWithPath: root)
                 .appendingPathComponent(
@@ -851,6 +918,8 @@ extension MinimalAppDelegate {
                 sourceProvenance: plugin.sourceMetadata.provenanceLabel,
                 sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: skill.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
+                isSourceConfirmable: sourceConfirmation.isConfirmable,
+                isSourceConfirmed: sourceConfirmation.isConfirmed,
                 isEnabled: plugin.enabled,
                 status: .warning,
                 diagnostics: diagnostics
@@ -889,6 +958,8 @@ extension MinimalAppDelegate {
                 sourceProvenance: plugin.sourceMetadata.provenanceLabel,
                 sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: server.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
+                isSourceConfirmable: sourceConfirmation.isConfirmable,
+                isSourceConfirmed: sourceConfirmation.isConfirmed,
                 isEnabled: plugin.enabled,
                 status: .warning,
                 diagnostics: diagnostics
@@ -897,18 +968,33 @@ extension MinimalAppDelegate {
         return skills + servers
     }
 
+    private static func sourceConfirmationState(
+        plugin: ProjectPluginDescriptor,
+        project: AgentProject
+    ) -> (isConfirmable: Bool, isConfirmed: Bool) {
+        guard !plugin.sourceMetadata.allowsAutomaticProjection else { return (false, false) }
+        let isConfirmed = (try? ProjectCapabilityAuditStore().isSourceConfirmed(
+            project: project,
+            pluginID: plugin.id,
+            source: plugin.sourceMetadata
+        )) ?? false
+        return (true, isConfirmed)
+    }
+
     private static func capabilityItems(
         for plugin: ProjectPluginDescriptor,
         diagnostics: [ProjectConfigDiagnostic],
         projectionDiagnostics: [ProjectCapabilityPanelState.Diagnostic],
         targetsBySource: [String: [String]],
-        mcpTargets: [String]
+        mcpTargets: [String],
+        project: AgentProject
     ) -> [ProjectCapabilityCardState.Item] {
         let pluginDiagnostics = diagnostics.map { ProjectCapabilityPanelState.Diagnostic(
             severity: $0.severity.rawValue,
             message: $0.message,
             path: $0.path
         ) }
+        let sourceConfirmation = sourceConfirmationState(plugin: plugin, project: project)
         let skillItems = plugin.skills.map { ref in
             let source = plugin.rootURL.appendingPathComponent(ref, isDirectory: true).path
             let name = URL(fileURLWithPath: ref).lastPathComponent
@@ -927,6 +1013,8 @@ extension MinimalAppDelegate {
                 sourceProvenance: plugin.sourceMetadata.provenanceLabel,
                 sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: targetStates(for: plugin),
+                isSourceConfirmable: sourceConfirmation.isConfirmable,
+                isSourceConfirmed: sourceConfirmation.isConfirmed,
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics
@@ -952,6 +1040,8 @@ extension MinimalAppDelegate {
                 sourceProvenance: plugin.sourceMetadata.provenanceLabel,
                 sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: targetStates(for: plugin),
+                isSourceConfirmable: sourceConfirmation.isConfirmable,
+                isSourceConfirmed: sourceConfirmation.isConfirmed,
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics

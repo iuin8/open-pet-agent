@@ -692,6 +692,33 @@ struct ProjectCapabilityManagerCardTests {
         #expect(states[.opencode] == false)
     }
 
+    @Test("build：远端来源行显示可确认状态，确认后显示已确认")
+    func remoteSourceItemsExposeConfirmationState() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "SourceConfirmState")
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
+        )
+
+        let before = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+        let beforeItem = try #require(before.visibleItems.first)
+        #expect(beforeItem.isSourceConfirmable == true)
+        #expect(beforeItem.isSourceConfirmed == false)
+        #expect(beforeItem.nextSourceConfirmedValue == true)
+
+        try MinimalAppDelegate.setProjectPluginSourceConfirmed(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            confirmed: true
+        )
+
+        let after = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+        let afterItem = try #require(after.visibleItems.first)
+        #expect(afterItem.isSourceConfirmable == true)
+        #expect(afterItem.isSourceConfirmed == true)
+        #expect(afterItem.nextSourceConfirmedValue == false)
+    }
+
     @Test("preview：Codex 同步预览列出操作但不 materialize engine 文件")
     func codexPreviewListsOperationsWithoutMaterializing() throws {
         let fixture = try ProjectCapabilityManagerFixture()

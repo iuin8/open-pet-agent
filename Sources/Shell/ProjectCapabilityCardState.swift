@@ -93,6 +93,8 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
         public let sourceProvenance: String?
         public let sourceTrust: String?
         public let targets: [ProjectionTargetState]
+        public let isSourceConfirmable: Bool
+        public let isSourceConfirmed: Bool
         public let isEnabled: Bool
         public let status: Status
         public let diagnostics: [ProjectCapabilityPanelState.Diagnostic]
@@ -107,6 +109,8 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             sourceProvenance: String? = nil,
             sourceTrust: String? = nil,
             targets: [ProjectionTargetState] = [],
+            isSourceConfirmable: Bool = false,
+            isSourceConfirmed: Bool = false,
             isEnabled: Bool = true,
             status: Status,
             diagnostics: [ProjectCapabilityPanelState.Diagnostic]
@@ -120,6 +124,8 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             self.sourceProvenance = sourceProvenance
             self.sourceTrust = sourceTrust
             self.targets = targets
+            self.isSourceConfirmable = isSourceConfirmable
+            self.isSourceConfirmed = isSourceConfirmed
             self.isEnabled = isEnabled
             self.status = status
             self.diagnostics = diagnostics
@@ -131,6 +137,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
         }
 
         public var nextEnabledValue: Bool { !isEnabled }
+        public var nextSourceConfirmedValue: Bool { !isSourceConfirmed }
     }
 
     public let selectedTab: Tab

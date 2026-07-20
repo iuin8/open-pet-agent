@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// PetAgent 项目配置(production-grade 架构,详见 `docs/project-config-architecture-design.md`)。
@@ -52,6 +53,31 @@ public enum ProjectConfig {
     /// 指定项目 local-only 能力状态路径。只记录 PetAgent 自己的审计元数据,不投影给外部 agent。
     public static func capabilityAuditStateURL(for project: AgentProject) -> URL {
         project.rootURL.appendingPathComponent(".open-pet-agent/state/capabilities.local.json", isDirectory: false)
+    }
+
+    /// 指定项目的用户私有来源确认状态路径。授权状态不能放进项目目录，避免随仓库被篡改或提交。
+    public static func capabilitySourceConfirmationsURL(for project: AgentProject) -> URL {
+        userPrivateProjectStateRoot(for: project)
+            .appendingPathComponent("capability-source-confirmations.local.json", isDirectory: false)
+    }
+
+    private static func userPrivateProjectStateRoot(for project: AgentProject) -> URL {
+        homeRoot
+            .appendingPathComponent(".open-pet-agent/state/projects", isDirectory: true)
+            .appendingPathComponent("\(sanitizedStateComponent(project.id))-\(stablePathDigest(project.rootURL))", isDirectory: true)
+    }
+
+    private static func sanitizedStateComponent(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let scalars = value.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        let result = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return result.isEmpty ? "project" : result
+    }
+
+    private static func stablePathDigest(_ url: URL) -> String {
+        let path = url.standardizedFileURL.path
+        let digest = SHA256.hash(data: Data(path.utf8))
+        return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     /// 指定项目某个 plugin bundle 路径:`.open-pet-agent/plugins/<plugin-id>/`。

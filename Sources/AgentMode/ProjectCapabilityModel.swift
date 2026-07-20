@@ -176,6 +176,33 @@ public struct CapabilityAuditState: Sendable, Equatable, Codable {
     }
 }
 
+public struct CapabilitySourceConfirmation: Sendable, Equatable, Codable {
+    public let pluginID: String
+    public let source: ProjectPluginSourceMetadata
+    public let contentHash: String
+    public let confirmedAtDescription: String
+
+    public init(
+        pluginID: String,
+        source: ProjectPluginSourceMetadata,
+        contentHash: String,
+        confirmedAtDescription: String
+    ) {
+        self.pluginID = pluginID
+        self.source = source
+        self.contentHash = contentHash
+        self.confirmedAtDescription = confirmedAtDescription
+    }
+}
+
+public struct CapabilitySourceConfirmationState: Sendable, Equatable, Codable {
+    public let confirmations: [CapabilitySourceConfirmation]
+
+    public init(confirmations: [CapabilitySourceConfirmation] = []) {
+        self.confirmations = confirmations
+    }
+}
+
 public enum MCPTransport: String, Sendable, Equatable {
     case stdio
     case http

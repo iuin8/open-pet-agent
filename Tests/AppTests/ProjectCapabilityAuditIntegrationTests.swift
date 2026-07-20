@@ -295,6 +295,64 @@ struct ProjectCapabilityAuditIntegrationTests {
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".claude/skills/dev-toolkit-code-review/SKILL.md").path))
     }
 
+    @Test("sync：已本地确认的远端来源允许 materialize")
+    func syncAllowsLocallyConfirmedRemoteSource() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "ConfirmedRemote")
+        defer { fixture.cleanup() }
+        let sourceJSON = #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
+        try fixture.writePlugin(enabled: true, sourceJSON: sourceJSON)
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            source: ProjectPluginSourceMetadata(
+                kind: .git,
+                url: "https://example.com/plugin.git",
+                revision: "abc123"
+            ),
+            date: Date(timeIntervalSince1970: 7)
+        )
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message == "Codex 配置已同步")
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path))
+        #expect(try ProjectCapabilityAuditStore().load(project: fixture.project).lastSyncDescription != nil)
+    }
+
+    @Test("sync：远端来源变更后旧确认自动失效")
+    func syncRejectsRemoteSourceAfterConfirmedTupleChanges() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "ChangedRemote")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true, sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "def456" }"#)
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            source: ProjectPluginSourceMetadata(
+                kind: .git,
+                url: "https://example.com/plugin.git",
+                revision: "abc123"
+            ),
+            date: Date(timeIntervalSince1970: 7)
+        )
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message.contains("来源需确认"))
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+    }
+
     @Test("doctor：打开诊断列会记录最近 validation 时间")
     func diagnosticsPanelRecordsLastValidation() throws {
         let fixture = try ProjectCapabilityAuditFixture(prefix: "Validation")

@@ -8,6 +8,7 @@ struct ProjectCapabilityManagerView: View {
     let onSelectTab: (ProjectCapabilityCardState.Tab) -> Void
     let onSetEnabled: (String, Bool) -> Void
     var onSetTargetEnabled: (String, CapabilityTarget, Bool) -> Void = { _, _, _ in }
+    var onSetSourceConfirmed: (String, Bool) -> Void = { _, _ in }
     var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
     var onOpenAdd: (() -> Void)? = nil
     var onShowDiagnostics: (() -> Void)? = nil
@@ -182,14 +183,18 @@ struct ProjectCapabilityManagerView: View {
         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white.opacity(0.45)))
     }
 
+    private func isSyncProblem(_ message: String) -> Bool {
+        message.contains("失败") || message.contains("未同步") || message.contains("需确认")
+    }
+
     private var syncMessageList: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(syncMessages.suffix(3).enumerated()), id: \.offset) { _, message in
                 HStack(spacing: 4) {
-                    Image(systemName: message.contains("失败") ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    Image(systemName: isSyncProblem(message) ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     Text(message).lineLimit(1)
                 }
-                .foregroundStyle(message.contains("失败") ? Color.red.opacity(0.75) : ChatCardTheme.activeGreen)
+                .foregroundStyle(isSyncProblem(message) ? Color.red.opacity(0.75) : ChatCardTheme.activeGreen)
             }
         }
         .font(.system(size: 9, weight: .medium, design: .rounded))
@@ -262,11 +267,12 @@ struct ProjectCapabilityManagerView: View {
                     .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.52))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if !item.targets.isEmpty {
+                if !item.targets.isEmpty || item.isSourceConfirmable {
                     HStack(spacing: 4) {
                         ForEach(item.targets, id: \.target) { target in
                             targetToggle(item.pluginID, target: target)
                         }
+                        if item.isSourceConfirmable { sourceConfirmationToggle(item) }
                     }
                 }
                 ForEach(item.targetPaths, id: \.self) { target in
@@ -346,6 +352,23 @@ struct ProjectCapabilityManagerView: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 1.5)
             .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(color.opacity(0.10)))
+    }
+
+    private func sourceConfirmationToggle(_ item: ProjectCapabilityCardState.Item) -> some View {
+        Button {
+            onSetSourceConfirmed(item.pluginID, item.nextSourceConfirmedValue)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: item.isSourceConfirmed ? "checkmark.shield.fill" : "shield.lefthalf.filled")
+                Text(item.isSourceConfirmed ? "已确认" : "确认来源")
+            }
+            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .foregroundStyle(item.isSourceConfirmed ? ChatCardTheme.activeGreen : ChatCardTheme.accent)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.white.opacity(0.55)))
+        }
+        .buttonStyle(.plain)
     }
 
     private func targetToggle(_ pluginID: String, target: ProjectCapabilityCardState.ProjectionTargetState) -> some View {
@@ -466,7 +489,6 @@ private enum AddAction: CaseIterable {
         }
     }
 }
-
 
 struct ProjectCapabilityAddFormView: View {
     var onImportExisting: (() -> Void)? = nil

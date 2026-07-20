@@ -224,6 +224,7 @@ private struct ProjectCapabilityManagerColumnView: View {
                 onSelectTab: { model.selectTab($0) },
                 onSetEnabled: { model.setPluginEnabled(pluginID: $0, enabled: $1) },
                 onSetTargetEnabled: { model.setTargetEnabled(pluginID: $0, target: $1, enabled: $2) },
+                onSetSourceConfirmed: { model.setSourceConfirmed(pluginID: $0, confirmed: $1) },
                 onOpenItem: { model.openItem($1, rowID: $0) },
                 onOpenAdd: { model.openAdd() },
                 onShowDiagnostics: { model.showDiagnostics() },

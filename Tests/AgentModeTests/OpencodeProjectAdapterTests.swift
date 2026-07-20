@@ -87,6 +87,50 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         XCTAssertEqual(servers.count, 0)
     }
 
+    func testLoadMCPServersAcceptsConfirmedRemoteSource() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
+        )
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: project,
+            pluginID: "dev-toolkit",
+            source: ProjectPluginSourceMetadata(
+                kind: .git,
+                url: "https://example.com/plugin.git",
+                revision: "abc123"
+            ),
+            date: Date(timeIntervalSince1970: 8)
+        )
+
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+
+        XCTAssertEqual(servers.count, 1)
+    }
+
+    func testLoadMCPServersSkipsRemoteSourceWhenConfirmationTupleChanges() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "def456" }"#
+        )
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: project,
+            pluginID: "dev-toolkit",
+            source: ProjectPluginSourceMetadata(
+                kind: .git,
+                url: "https://example.com/plugin.git",
+                revision: "abc123"
+            ),
+            date: Date(timeIntervalSince1970: 8)
+        )
+
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+
+        XCTAssertEqual(servers.count, 0)
+    }
+
     func testLoadMCPServersSkipsDisabledServer() throws {
         try writePlugin(id: "dev-toolkit", enabled: true, serversFileJSON: """
         { "mcpServers": { "filesystem": { "type": "local", "command": ["npx"], "enabled": false } } }

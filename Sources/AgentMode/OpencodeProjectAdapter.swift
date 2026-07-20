@@ -67,9 +67,10 @@ public struct OpencodeProjectAdapter: Sendable {
     /// per-server `enabled`, so disabled servers are excluded.
     public func loadMCPServers(for project: AgentProject) throws -> [ACPJSON] {
         let plugins = try ProjectPluginCatalog().listPlugins(for: project)
+        let auditStore = ProjectCapabilityAuditStore()
         var seenNames = Set<String>()
         return try plugins
-            .filter(supportsOpencodeMCP)
+            .filter { try supportsOpencodeMCP($0, project: project, auditStore: auditStore) }
             .flatMap { try collectMCPServers(from: $0, seenNames: &seenNames) }
     }
 
@@ -81,10 +82,18 @@ public struct OpencodeProjectAdapter: Sendable {
         return false
     }
 
-    private func supportsOpencodeMCP(_ plugin: ProjectPluginDescriptor) -> Bool {
-        supportsOpencodeProjection(plugin)
-            && plugin.capabilities.contains(.mcp)
-            && plugin.sourceMetadata.allowsAutomaticProjection
+    private func supportsOpencodeMCP(
+        _ plugin: ProjectPluginDescriptor,
+        project: AgentProject,
+        auditStore: ProjectCapabilityAuditStore
+    ) throws -> Bool {
+        guard supportsOpencodeProjection(plugin), plugin.capabilities.contains(.mcp) else { return false }
+        guard !plugin.sourceMetadata.allowsAutomaticProjection else { return true }
+        return try auditStore.isSourceConfirmed(
+            project: project,
+            pluginID: plugin.id,
+            source: plugin.sourceMetadata
+        )
     }
 
     private func collectMCPServers(from plugin: ProjectPluginDescriptor, seenNames: inout Set<String>) throws -> [ACPJSON] {

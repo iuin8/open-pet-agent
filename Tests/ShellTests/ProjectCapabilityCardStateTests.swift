@@ -59,6 +59,25 @@ struct ProjectCapabilityCardStateTests {
         #expect(item.copyText == "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint → /tmp/repo/.agents/skills/dev-toolkit-lint")
     }
 
+    @Test("Item：来源确认状态决定确认按钮下一步动作")
+    func itemTracksSourceConfirmationAction() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "skill:remote:lint",
+            kind: .skill,
+            name: "lint",
+            pluginID: "remote",
+            sourcePath: "/tmp/plugin/skills/lint",
+            targetPaths: [],
+            sourceTrust: "需确认 · git",
+            isSourceConfirmable: true,
+            isSourceConfirmed: false,
+            status: .enabled,
+            diagnostics: []
+        )
+
+        #expect(item.nextSourceConfirmedValue == true)
+    }
+
     @Test("State：按当前 tab 过滤 items")
     func stateFiltersItemsBySelectedTab() {
         let skill = ProjectCapabilityCardState.Item(

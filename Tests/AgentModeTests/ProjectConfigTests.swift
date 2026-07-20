@@ -59,4 +59,18 @@ final class ProjectConfigTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: ProjectConfig.pluginDirectory(for: project, pluginID: "dev-toolkit").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: ProjectConfig.opencodeConfig(for: project).path))
     }
+
+    func testSourceConfirmationStateUsesUserPrivatePathOutsideProjectRoot() {
+        let project = AgentProject(
+            id: "p1", name: "P1", rootURL: tmpHome.appendingPathComponent("repo", isDirectory: true),
+            isExternal: true, createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let url = ProjectConfig.capabilitySourceConfirmationsURL(for: project)
+
+        XCTAssertTrue(url.path.hasPrefix(tmpHome.appendingPathComponent(".open-pet-agent/state/projects", isDirectory: true).path))
+        XCTAssertFalse(url.path.hasPrefix(project.rootURL.path))
+        XCTAssertTrue(url.lastPathComponent.contains("source-confirmations"))
+    }
+
 }
