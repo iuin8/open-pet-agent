@@ -224,6 +224,7 @@ struct ProjectCapabilityColumnStateTests {
         )
         let detail = try #require(model.skillDetail(pluginID: "dev-toolkit", skillRef: "skills/code-review"))
         #expect(detail.sourceProvenance == "git · abc123")
+        #expect(detail.sourceTrust == "需确认 · git")
         detail.beginEditing()
         detail.draftBody = "新正文"
 

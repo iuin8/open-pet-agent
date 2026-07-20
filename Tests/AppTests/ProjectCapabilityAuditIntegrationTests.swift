@@ -187,6 +187,114 @@ struct ProjectCapabilityAuditIntegrationTests {
         ))
     }
 
+    @Test("sync：未确认远端来源拒绝 materialize")
+    func syncRejectsUnconfirmedRemoteSourceBeforeMaterializing() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "UntrustedRemote")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true, sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message.contains("来源需确认"))
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents").path) == false)
+        #expect((try? ProjectCapabilityAuditStore().load(project: fixture.project).lastSyncDescription) == nil)
+    }
+
+    @Test("sync：未确认 MCP-only 远端来源也拒绝 materialize")
+    func syncRejectsUnconfirmedRemoteMCPOnlySourceBeforeMaterializing() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "UntrustedMCPOnly")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/mcp.git", "revision": "abc123" }"#,
+            capabilitiesJSON: #"["mcp"]"#,
+            skillsJSON: #"[]"#
+        )
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncClaudeCodeProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message.contains("来源需确认"))
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
+        #expect((try? ProjectCapabilityAuditStore().load(project: fixture.project).lastSyncDescription) == nil)
+    }
+
+    @Test("sync：无可投影能力的未确认来源不阻断可信插件同步")
+    func syncIgnoresUntrustedSourceWithoutProjectedCapabilities() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "UntrustedEmpty")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true)
+        let extra = ProjectConfig.pluginDirectory(for: fixture.project, pluginID: "empty-remote")
+        try FileManager.default.createDirectory(at: extra, withIntermediateDirectories: true)
+        try Data(#"{ "schemaVersion": 1, "id": "empty-remote", "name": "Empty Remote", "source": { "kind": "git", "revision": "abc123" }, "enabled": true, "capabilities": [], "engines": { "codex": { "enabled": true, "projection": "skills-and-mcp-files" } } }"#.utf8).write(to: extra.appendingPathComponent("plugin.json"), options: .atomic)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message == "Codex 配置已同步")
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path))
+    }
+
+    @Test("sync：未确认来源声明空 skill refs 不阻断可信插件同步")
+    func syncIgnoresUntrustedSourceWithNoProjectedRefs() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "UntrustedNoRefs")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true)
+        let extra = ProjectConfig.pluginDirectory(for: fixture.project, pluginID: "empty-skill-remote")
+        try FileManager.default.createDirectory(at: extra, withIntermediateDirectories: true)
+        try Data(#"{ "schemaVersion": 1, "id": "empty-skill-remote", "name": "Empty Skill Remote", "source": { "kind": "git", "revision": "abc123" }, "enabled": true, "capabilities": ["skills"], "skills": [], "engines": { "codex": { "enabled": true, "projection": "skills-and-mcp-files" } } }"#.utf8).write(to: extra.appendingPathComponent("plugin.json"), options: .atomic)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message == "Codex 配置已同步")
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path))
+    }
+
+    @Test("sync：target gate 跟随 adapter 首个 engine alias")
+    func syncTrustGateFollowsFirstEngineAlias() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "AliasOrder")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true)
+        let extra = ProjectConfig.pluginDirectory(for: fixture.project, pluginID: "alias-remote")
+        try FileManager.default.createDirectory(at: extra.appendingPathComponent("skills/code-review", isDirectory: true), withIntermediateDirectories: true)
+        try Data("# review\n".utf8).write(to: extra.appendingPathComponent("skills/code-review/SKILL.md"), options: .atomic)
+        try Data(#"{ "schemaVersion": 1, "id": "alias-remote", "name": "Alias Remote", "source": { "kind": "git", "revision": "abc123" }, "enabled": true, "capabilities": ["skills"], "skills": ["skills/code-review"], "engines": { "claudeCode": { "enabled": true, "projection": "disabled" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } } }"#.utf8).write(to: extra.appendingPathComponent("plugin.json"), options: .atomic)
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncClaudeCodeProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message == "Claude Code 配置已同步")
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".claude/skills/dev-toolkit-code-review/SKILL.md").path))
+    }
+
     @Test("doctor：打开诊断列会记录最近 validation 时间")
     func diagnosticsPanelRecordsLastValidation() throws {
         let fixture = try ProjectCapabilityAuditFixture(prefix: "Validation")
@@ -284,13 +392,18 @@ private struct ProjectCapabilityAuditFixture {
         try? FileManager.default.removeItem(at: root)
     }
 
-    func writePlugin(enabled: Bool) throws {
+    func writePlugin(
+        enabled: Bool,
+        sourceJSON: String = #"{ "kind": "manual" }"#,
+        capabilitiesJSON: String = #"["mcp", "skills"]"#,
+        skillsJSON: String = #"["skills/code-review"]"#
+    ) throws {
         try FileManager.default.createDirectory(at: pluginRoot.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
         let skillRoot = pluginRoot.appendingPathComponent("skills/code-review", isDirectory: true)
         try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
         try "# code-review\n\nReview staged diffs.\n".data(using: .utf8)!.write(to: skillRoot.appendingPathComponent("SKILL.md"), options: .atomic)
         try """
-        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "enabled": \(enabled), "capabilities": ["mcp", "skills"], "mcp": ["mcp/servers.json#filesystem"], "skills": ["skills/code-review"], "engines": { "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } } }
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "source": \(sourceJSON), "enabled": \(enabled), "capabilities": \(capabilitiesJSON), "mcp": ["mcp/servers.json#filesystem"], "skills": \(skillsJSON), "engines": { "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } } }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("plugin.json"), options: .atomic)
         try """
         { "mcpServers": { "filesystem": { "type": "local", "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"], "enabled": true } } }

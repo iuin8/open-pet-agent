@@ -52,6 +52,8 @@ struct ProjectCapabilityMCPDetailView: View {
     private var metadata: some View {
         VStack(alignment: .leading, spacing: 6) {
             metadataRow("来源", model.sourcePath)
+            if let provenance = model.sourceProvenance { metadataRow("来源标签", provenance) }
+            if let trust = model.sourceTrust { metadataRow("可信边界", trust) }
             metadataRow("Canonical", "\(model.server.fileRef)#\(model.server.name)")
             metadataRow("Transport", model.server.transport.rawValue)
             metadataRow("目标", model.server.targets.map(displayName).joined(separator: " · ").nonEmpty ?? "未启用")

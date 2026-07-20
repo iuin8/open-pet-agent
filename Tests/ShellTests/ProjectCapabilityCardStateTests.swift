@@ -41,6 +41,24 @@ struct ProjectCapabilityCardStateTests {
         #expect(item.copyText == "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint → /tmp/repo/.agents/skills/dev-toolkit-lint")
     }
 
+    @Test("Item：来源信任状态用于展示可信边界，不影响复制 source → target")
+    func itemKeepsSourceTrustDisplay() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:lint",
+            kind: .skill,
+            name: "lint",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint",
+            targetPaths: ["/tmp/repo/.agents/skills/dev-toolkit-lint"],
+            sourceTrust: "需确认 · git",
+            status: .enabled,
+            diagnostics: []
+        )
+
+        #expect(item.sourceTrust == "需确认 · git")
+        #expect(item.copyText == "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/skills/lint → /tmp/repo/.agents/skills/dev-toolkit-lint")
+    }
+
     @Test("State：按当前 tab 过滤 items")
     func stateFiltersItemsBySelectedTab() {
         let skill = ProjectCapabilityCardState.Item(

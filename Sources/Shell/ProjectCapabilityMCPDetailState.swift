@@ -39,6 +39,7 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
     public let pluginID: String
     public let sourcePath: String
     public let sourceProvenance: String?
+    public let sourceTrust: String?
     private let onSave: (ACPJSON) throws -> CapabilityMCPServer
     private let onDelete: () throws -> Void
 
@@ -46,6 +47,7 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         pluginID: String,
         sourcePath: String,
         sourceProvenance: String? = nil,
+        sourceTrust: String? = nil,
         server: CapabilityMCPServer,
         onSave: @escaping (ACPJSON) throws -> CapabilityMCPServer,
         onDelete: @escaping () throws -> Void = { throw ProjectCapabilityMCPDetailError.savingUnavailable }
@@ -53,6 +55,7 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         self.pluginID = pluginID
         self.sourcePath = sourcePath
         self.sourceProvenance = sourceProvenance
+        self.sourceTrust = sourceTrust
         self.server = server
         self.onSave = onSave
         self.onDelete = onDelete

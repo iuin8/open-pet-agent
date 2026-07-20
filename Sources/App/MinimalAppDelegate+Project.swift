@@ -5,11 +5,13 @@ import Shell
 enum ProjectCapabilityManagerError: Error, Equatable, CustomStringConvertible {
     case invalidPluginID(String)
     case invalidManifest(String)
+    case untrustedSource(String)
 
     var description: String {
         switch self {
         case .invalidPluginID(let pluginID): return "无效项目能力 plugin id: \(pluginID)"
         case .invalidManifest(let pluginID): return "无效项目能力 manifest: \(pluginID)"
+        case .untrustedSource(let summary): return "来源需确认，未同步项目能力：\(summary)"
         }
     }
 }
@@ -164,6 +166,7 @@ extension MinimalAppDelegate {
         let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
             try ProjectConfig.ensure(for: project)
+            try Self.validateTrustedSources(project: project, target: .codex)
             let plans = try CodexProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
             try ProjectCapabilityAuditStore().recordBackup(project: project, plans: plans)
@@ -173,6 +176,8 @@ extension MinimalAppDelegate {
                 project: project,
                 plans: plans
             )
+        } catch ProjectCapabilityManagerError.untrustedSource(let summary) {
+            return "\(ProjectCapabilityManagerError.untrustedSource(summary))"
         } catch {
             showProjectError(title: "同步 Codex 配置失败", error: error)
             return "同步 Codex 配置失败：\(error)"
@@ -184,6 +189,7 @@ extension MinimalAppDelegate {
         let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
             try ProjectConfig.ensure(for: project)
+            try Self.validateTrustedSources(project: project, target: .claudeCode)
             let plans = try ClaudeCodeProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
             try ProjectCapabilityAuditStore().recordBackup(project: project, plans: plans)
@@ -193,6 +199,8 @@ extension MinimalAppDelegate {
                 project: project,
                 plans: plans
             )
+        } catch ProjectCapabilityManagerError.untrustedSource(let summary) {
+            return "\(ProjectCapabilityManagerError.untrustedSource(summary))"
         } catch {
             showProjectError(title: "同步 Claude Code 配置失败", error: error)
             return "同步 Claude Code 配置失败：\(error)"
@@ -205,6 +213,7 @@ extension MinimalAppDelegate {
         let project = project ?? ProjectStore.current(defaults: userDefaults)
         do {
             try ProjectConfig.ensure(for: project)
+            try Self.validateTrustedSources(project: project, target: .opencode)
             let plans = try OpencodeProjectAdapter().plans(for: project)
             let operationCount = plans.reduce(0) { $0 + $1.operations.count }
             try ProjectCapabilityAuditStore().recordBackup(project: project, plans: plans)
@@ -214,10 +223,44 @@ extension MinimalAppDelegate {
                 project: project,
                 plans: plans
             )
+        } catch ProjectCapabilityManagerError.untrustedSource(let summary) {
+            return "\(ProjectCapabilityManagerError.untrustedSource(summary))"
         } catch {
             showProjectError(title: "同步 opencode 配置失败", error: error)
             return "同步 opencode 配置失败：\(error)"
         }
+    }
+
+    private static func validateTrustedSources(project: AgentProject, target: CapabilityTarget) throws {
+        let targetKeys = Set(engineKeys(for: target))
+        let untrusted = try ProjectPluginCatalog().listPlugins(for: project)
+            .filter { plugin in
+                plugin.enabled
+                    && hasProjectedReferences(plugin)
+                    && targetPolicyEnabled(plugin, target: target, targetKeys: targetKeys)
+            }
+            .filter { !$0.sourceMetadata.allowsAutomaticProjection }
+            .sorted { $0.id < $1.id }
+        guard untrusted.isEmpty else {
+            let summary = untrusted.map { "\($0.id): \($0.sourceMetadata.trustLabel)" }.joined(separator: ", ")
+            throw ProjectCapabilityManagerError.untrustedSource(summary)
+        }
+    }
+
+    private static func hasProjectedReferences(_ plugin: ProjectPluginDescriptor) -> Bool {
+        (plugin.capabilities.contains(.skills) && !plugin.skills.isEmpty)
+            || (plugin.capabilities.contains(.mcp) && !plugin.mcp.isEmpty)
+    }
+
+    private static func targetPolicyEnabled(
+        _ plugin: ProjectPluginDescriptor,
+        target: CapabilityTarget,
+        targetKeys _: Set<String>
+    ) -> Bool {
+        for key in engineKeys(for: target) {
+            if let policy = plugin.enginePolicies[key] { return policy != .disabled }
+        }
+        return false
     }
 
     private static func syncResultMessage(
@@ -249,6 +292,7 @@ extension MinimalAppDelegate {
         target: CapabilityTarget
     ) -> ProjectCapabilityCardState.SyncPreview {
         do {
+            try validateTrustedSources(project: project, target: target)
             let plans = try projectCapabilityPlans(for: project, target: target)
             return ProjectCapabilityCardState.SyncPreview(
                 target: target,
@@ -804,7 +848,8 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targets,
-                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
+                sourceProvenance: plugin.sourceMetadata.provenanceLabel,
+                sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: skill.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isEnabled: plugin.enabled,
                 status: .warning,
@@ -841,7 +886,8 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targets,
-                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
+                sourceProvenance: plugin.sourceMetadata.provenanceLabel,
+                sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: server.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isEnabled: plugin.enabled,
                 status: .warning,
@@ -878,7 +924,8 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: targetsBySource[source] ?? [],
-                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
+                sourceProvenance: plugin.sourceMetadata.provenanceLabel,
+                sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: targetStates(for: plugin),
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
@@ -902,7 +949,8 @@ extension MinimalAppDelegate {
                 pluginID: plugin.id,
                 sourcePath: source,
                 targetPaths: mcpTargets,
-                sourceProvenance: sourceProvenance(plugin.sourceMetadata),
+                sourceProvenance: plugin.sourceMetadata.provenanceLabel,
+                sourceTrust: plugin.sourceMetadata.trustLabel,
                 targets: targetStates(for: plugin),
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
@@ -910,12 +958,6 @@ extension MinimalAppDelegate {
             )
         }
         return skillItems + mcpItems
-    }
-
-    private static func sourceProvenance(_ metadata: ProjectPluginSourceMetadata) -> String {
-        let suffix = metadata.revision ?? metadata.contentHash
-        guard let suffix, !suffix.isEmpty else { return metadata.kind.rawValue }
-        return "\(metadata.kind.rawValue) · \(suffix)"
     }
 
     private static func diagnosticsForCapabilityItem(

@@ -63,6 +63,30 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         XCTAssertNil(server["command"])
     }
 
+    func testLoadMCPServersSkipsUnconfirmedRemoteSource() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
+        )
+
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+
+        XCTAssertEqual(servers.count, 0)
+    }
+
+    func testLoadMCPServersSkipsUnknownSource() throws {
+        try writePlugin(
+            id: "dev-toolkit",
+            enabled: true,
+            sourceJSON: #"{ "kind": "registry", "url": "https://example.com/plugin" }"#
+        )
+
+        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+
+        XCTAssertEqual(servers.count, 0)
+    }
+
     func testLoadMCPServersSkipsDisabledServer() throws {
         try writePlugin(id: "dev-toolkit", enabled: true, serversFileJSON: """
         { "mcpServers": { "filesystem": { "type": "local", "command": ["npx"], "enabled": false } } }
@@ -340,7 +364,8 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         mcpRefs: [String] = ["mcp/servers.json#filesystem"],
         skills: [String] = [],
         enginesJSON: String = #"{ "openCode": { "enabled": true, "projection": "plugin-dir" } }"#,
-        serversFileJSON: String? = nil
+        serversFileJSON: String? = nil,
+        sourceJSON: String = #"{ "kind": "manual" }"#
     ) throws {
         let dir = ProjectConfig.pluginDirectory(for: project, pluginID: id)
         try FileManager.default.createDirectory(at: dir.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
@@ -350,7 +375,7 @@ final class OpencodeProjectAdapterTests: XCTestCase {
         let refsJSON = mcpRefs.map { "\"\($0)\"" }.joined(separator: ", ")
         let skillsJSON = skills.map { "\"\($0)\"" }.joined(separator: ", ")
         try """
-        { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "enabled": \(enabled), "capabilities": [\(capabilityJSON)], "mcp": [\(refsJSON)], "skills": [\(skillsJSON)], "engines": \(enginesJSON) }
+        { "schemaVersion": 1, "id": "\(id)", "name": "Dev", "source": \(sourceJSON), "enabled": \(enabled), "capabilities": [\(capabilityJSON)], "mcp": [\(refsJSON)], "skills": [\(skillsJSON)], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: dir.appendingPathComponent("plugin.json"), options: .atomic)
         try (serversFileJSON ?? mcpServersJSON).data(using: .utf8)!.write(to: dir.appendingPathComponent("mcp/servers.json"), options: .atomic)
     }

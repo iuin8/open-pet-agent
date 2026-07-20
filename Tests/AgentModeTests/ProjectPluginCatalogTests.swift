@@ -78,6 +78,20 @@ final class ProjectPluginCatalogTests: XCTestCase {
         XCTAssertEqual(badKind.sourceMetadata.url, "https://example.com/bad")
     }
 
+    func testSourceMetadataLabelsDescribeProvenanceAndTrustBoundary() {
+        let manual = ProjectPluginSourceMetadata(kind: .manual)
+        XCTAssertEqual(manual.provenanceLabel, "manual")
+        XCTAssertEqual(manual.trustLabel, "本地 · manual")
+
+        let git = ProjectPluginSourceMetadata(kind: .git, revision: "abc123")
+        XCTAssertEqual(git.provenanceLabel, "git · abc123")
+        XCTAssertEqual(git.trustLabel, "需确认 · git")
+
+        let unknown = ProjectPluginSourceMetadata(kind: .unknown, url: "https://example.com/plugin")
+        XCTAssertEqual(unknown.provenanceLabel, "unknown")
+        XCTAssertEqual(unknown.trustLabel, "未知来源")
+    }
+
     func testManifestIDMustMatchDirectoryName() throws {
         try writePlugin("dev-toolkit", """
         { "schemaVersion": 1, "id": "other", "name": "Other", "enabled": true, "capabilities": [], "engines": {} }

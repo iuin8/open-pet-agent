@@ -14,12 +14,17 @@ struct ProjectCapabilityManagerCardTests {
     @Test("build：从当前项目 plugin catalog 派生 Skills 和 MCP 卡片，不写 engine 文件")
     func buildsCardStateWithoutMaterializingEngineFiles() throws {
         let fixture = try ProjectCapabilityManagerFixture()
-        try fixture.writePlugin(enabled: true)
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "revision": "abc123" }"#
+        )
 
         let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
 
         #expect(state.visibleItems.map(\.name) == ["code-review"])
         #expect(state.visibleItems.first?.pluginID == "dev-toolkit")
+        #expect(state.visibleItems.first?.sourceProvenance == "git · abc123")
+        #expect(state.visibleItems.first?.sourceTrust == "需确认 · git")
         #expect(state.visibleItems.first?.status == .enabled)
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".mcp.json").path) == false)
@@ -706,6 +711,24 @@ struct ProjectCapabilityManagerCardTests {
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".agents").path) == false)
     }
 
+    @Test("preview：未确认远端来源只显示来源错误，不列出计划写入")
+    func previewShowsUnconfirmedSourceFailureWithoutPlanningWrites() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "PreviewUntrusted")
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "revision": "abc123" }"#
+        )
+
+        let preview = MinimalAppDelegate.projectCapabilitySyncPreview(
+            for: fixture.project,
+            target: .codex
+        )
+
+        #expect(preview.failureMessage?.contains("来源需确认") == true)
+        #expect(preview.operationSummaries.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+    }
+
     @Test("preview：项目能力列先预览不写文件，确认同步后才 materialize")
     func columnPreviewDoesNotMaterializeUntilConfirmedSync() throws {
         let fixture = try ProjectCapabilityManagerFixture(prefix: "PreviewThenSync")
@@ -843,14 +866,15 @@ private struct ProjectCapabilityManagerFixture {
         enabled: Bool,
         mcpRef: String = "mcp/servers.json#filesystem",
         enginesJSON: String = #"{ "codex": { "enabled": true, "projection": "skills-and-mcp-files" }, "claude-code": { "enabled": true, "projection": "skills-and-mcp-files" } }"#,
-        commandJSON: String = #"["/bin/echo"]"#
+        commandJSON: String = #"["/bin/echo"]"#,
+        sourceJSON: String = #"{ "kind": "manual" }"#
     ) throws {
         try FileManager.default.createDirectory(at: pluginRoot.appendingPathComponent("mcp", isDirectory: true), withIntermediateDirectories: true)
         let skillRoot = pluginRoot.appendingPathComponent("skills/code-review", isDirectory: true)
         try FileManager.default.createDirectory(at: skillRoot, withIntermediateDirectories: true)
         try "# code-review\n\nReview staged diffs.\n".data(using: .utf8)!.write(to: skillRoot.appendingPathComponent("SKILL.md"), options: .atomic)
         try """
-        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "enabled": \(enabled), "capabilities": ["mcp", "skills"], "mcp": ["\(mcpRef)"], "skills": ["skills/code-review"], "engines": \(enginesJSON) }
+        { "schemaVersion": 1, "id": "dev-toolkit", "name": "Dev Toolkit", "source": \(sourceJSON), "enabled": \(enabled), "capabilities": ["mcp", "skills"], "mcp": ["\(mcpRef)"], "skills": ["skills/code-review"], "engines": \(enginesJSON) }
         """.data(using: .utf8)!.write(to: pluginRoot.appendingPathComponent("plugin.json"), options: .atomic)
         try """
         { "mcpServers": { "filesystem": { "type": "local", "command": \(commandJSON), "enabled": true } } }

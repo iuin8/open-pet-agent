@@ -82,7 +82,9 @@ public struct OpencodeProjectAdapter: Sendable {
     }
 
     private func supportsOpencodeMCP(_ plugin: ProjectPluginDescriptor) -> Bool {
-        supportsOpencodeProjection(plugin) && plugin.capabilities.contains(.mcp)
+        supportsOpencodeProjection(plugin)
+            && plugin.capabilities.contains(.mcp)
+            && plugin.sourceMetadata.allowsAutomaticProjection
     }
 
     private func collectMCPServers(from plugin: ProjectPluginDescriptor, seenNames: inout Set<String>) throws -> [ACPJSON] {

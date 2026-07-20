@@ -140,7 +140,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         return ProjectCapabilitySkillDetailState(
             pluginID: pluginID,
             sourcePath: sourcePath,
-            sourceProvenance: Self.sourceProvenance(plugin.sourceMetadata),
+            sourceProvenance: plugin.sourceMetadata.provenanceLabel,
+            sourceTrust: plugin.sourceMetadata.trustLabel,
             skill: skill,
             onSave: { [weak self] body in
                 guard let self, let onUpdateSkillBody = self.onUpdateSkillBody else {
@@ -175,7 +176,8 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         return ProjectCapabilityMCPDetailState(
             pluginID: pluginID,
             sourcePath: sourcePath,
-            sourceProvenance: Self.sourceProvenance(plugin.sourceMetadata),
+            sourceProvenance: plugin.sourceMetadata.provenanceLabel,
+            sourceTrust: plugin.sourceMetadata.trustLabel,
             server: server,
             onSave: { [weak self] value in
                 guard let self, let onUpdateMCPServer = self.onUpdateMCPServer else {
@@ -390,12 +392,6 @@ public final class ProjectCapabilityColumnState: ObservableObject {
             auditSummary: card.auditSummary,
             syncPreview: card.syncPreview
         )
-    }
-
-    private static func sourceProvenance(_ metadata: ProjectPluginSourceMetadata) -> String {
-        let suffix = metadata.revision ?? metadata.contentHash
-        guard let suffix, !suffix.isEmpty else { return metadata.kind.rawValue }
-        return "\(metadata.kind.rawValue) · \(suffix)"
     }
 
     private func sourcePath(pluginID: String, skillRef: String) -> String? {

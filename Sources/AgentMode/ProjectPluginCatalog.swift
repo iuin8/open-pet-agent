@@ -50,6 +50,32 @@ public struct ProjectPluginSourceMetadata: Codable, Sendable, Equatable {
         case installedAt
     }
 
+    public var provenanceLabel: String {
+        let suffix = revision ?? contentHash
+        guard let suffix, !suffix.isEmpty else { return kind.rawValue }
+        return "\(kind.rawValue) · \(suffix)"
+    }
+
+    public var trustLabel: String {
+        switch kind {
+        case .manual, .imported, .local:
+            return "本地 · \(kind.rawValue)"
+        case .git, .marketplace:
+            return "需确认 · \(kind.rawValue)"
+        case .unknown:
+            return "未知来源"
+        }
+    }
+
+    public var allowsAutomaticProjection: Bool {
+        switch kind {
+        case .manual, .imported, .local:
+            return true
+        case .git, .marketplace, .unknown:
+            return false
+        }
+    }
+
     public init(from decoder: Decoder) throws {
         guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
             self = ProjectPluginSourceMetadata(kind: .unknown)

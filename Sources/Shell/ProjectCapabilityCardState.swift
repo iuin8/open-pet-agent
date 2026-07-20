@@ -91,6 +91,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
         public let sourcePath: String
         public let targetPaths: [String]
         public let sourceProvenance: String?
+        public let sourceTrust: String?
         public let targets: [ProjectionTargetState]
         public let isEnabled: Bool
         public let status: Status
@@ -104,6 +105,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             sourcePath: String,
             targetPaths: [String],
             sourceProvenance: String? = nil,
+            sourceTrust: String? = nil,
             targets: [ProjectionTargetState] = [],
             isEnabled: Bool = true,
             status: Status,
@@ -116,6 +118,7 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             self.sourcePath = sourcePath
             self.targetPaths = targetPaths
             self.sourceProvenance = sourceProvenance
+            self.sourceTrust = sourceTrust
             self.targets = targets
             self.isEnabled = isEnabled
             self.status = status

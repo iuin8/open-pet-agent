@@ -249,6 +249,9 @@ struct ProjectCapabilityManagerView: View {
                         .foregroundStyle(ChatCardTheme.textPrimary)
                     smallBadge(kindLabel(for: item.kind), color: color(for: item.status))
                     smallBadge(item.sourceProvenance ?? "project", color: ChatCardTheme.textPrimary.opacity(0.45))
+                    if let sourceTrust = item.sourceTrust {
+                        smallBadge(sourceTrust, color: trustColor(for: sourceTrust))
+                    }
                     Text(item.pluginID)
                         .font(.system(size: 8, weight: .medium, design: .rounded))
                         .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
@@ -405,6 +408,10 @@ struct ProjectCapabilityManagerView: View {
         case .warning: return "警告"
         case .failed: return "失败"
         }
+    }
+
+    private func trustColor(for value: String) -> Color {
+        value.hasPrefix("本地") ? ChatCardTheme.activeGreen : ChatCardTheme.accent
     }
 
     private func color(for status: ProjectCapabilityCardState.Item.Status) -> Color {

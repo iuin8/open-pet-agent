@@ -24,18 +24,21 @@ public final class ProjectCapabilitySkillDetailState: ObservableObject {
     public let pluginID: String
     public let sourcePath: String
     public let sourceProvenance: String?
+    public let sourceTrust: String?
     private let onSave: (String) throws -> CapabilitySkill
 
     public init(
         pluginID: String,
         sourcePath: String,
         sourceProvenance: String? = nil,
+        sourceTrust: String? = nil,
         skill: CapabilitySkill,
         onSave: @escaping (String) throws -> CapabilitySkill
     ) {
         self.pluginID = pluginID
         self.sourcePath = sourcePath
         self.sourceProvenance = sourceProvenance
+        self.sourceTrust = sourceTrust
         self.skill = skill
         self.draftBody = skill.body ?? ""
         self.onSave = onSave
@@ -112,6 +115,7 @@ struct ProjectCapabilitySkillDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             metadataRow("来源", model.sourcePath)
             if let provenance = model.sourceProvenance { metadataRow("来源标签", provenance) }
+            if let trust = model.sourceTrust { metadataRow("可信边界", trust) }
             metadataRow("Canonical", model.skill.relativePath)
             metadataRow("目标", model.skill.targets.map(\.displayName).joined(separator: " · ").nonEmpty ?? "未启用")
             ForEach(model.skill.diagnostics.indices, id: \.self) { index in
