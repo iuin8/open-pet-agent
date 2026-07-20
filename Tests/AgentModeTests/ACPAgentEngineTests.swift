@@ -27,6 +27,15 @@ struct ACPAgentEngineTests {
         return .notification(method: "session/update", params: ACPJSON.parse(json))
     }
 
+    /// usage_update(agent 每轮后推的上下文用量)—— engine 应**不** yield,走 onUsage。
+    private func usageUpdate(used: Int, size: Int, costJSON: String? = nil) -> ACPInbound {
+        let costField = costJSON.map { #","cost":"# + $0 } ?? ""
+        let json = """
+        {"sessionId":"s","update":{"sessionUpdate":"usage_update","used":\(used),"size":\(size)\(costField)}}
+        """
+        return .notification(method: "session/update", params: ACPJSON.parse(json))
+    }
+
     @Test("ACPAgentEngine.run: 只 yield agent_message_chunk(thought_chunk 不 yield,免 pet 显示思考碎片)")
     func runYieldsDeltas() async throws {
         // send-driven 预置(mock 每次 send 取「到下一个 response 含」组):
@@ -95,19 +104,18 @@ struct ACPAgentEngineTests {
         #expect(ACPAgentEngine.kind == .openCode)
     }
 
-    @Test("ACPAgentEngine: connection 复用 —— 第二次 run 不重发 initialize(生产级性能)")
+    @Test("ACPAgentEngine: connection + session 复用 —— 第二轮不重发 initialize / session/new,同一 sessionId 跑两轮 prompt(上下文连贯)")
     func connectionReusedAcrossRuns() async throws {
         // mock queue 按 send 顺序预置(send-driven 每次 send 取「到下一个 response 含」组):
         // initialize(0) → session_1(1) → [update "第一回" + prompt1 result(2)] →
-        // session_2(3) → [update "第二回" + prompt2 result(4)]
+        // prompt2(3,**无 session/new**,复用 sess_1)→ [update "第二回" + prompt2 result(3)]
         let mock = MockACPTransport([
             resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
             resp(1, #"{"sessionId":"sess_1"}"#),
             updateChunk("第一回"),
             resp(2, #"{"stopReason":"end_turn"}"#),
-            resp(3, #"{"sessionId":"sess_2"}"#),
             updateChunk("第二回"),
-            resp(4, #"{"stopReason":"end_turn"}"#),
+            resp(3, #"{"stopReason":"end_turn"}"#),
         ])
         let engine = ACPAgentEngine(
             command: ["fake", "acp"],
@@ -121,11 +129,145 @@ struct ACPAgentEngineTests {
         var second: [String] = []
         for try await d in engine.run(prompt: "b") { second.append(d) }
 
-        // sentLines 含 initialize method 次数应 = 1(第二轮复用 connection,不重发)
+        // initialize 与 session/new 各只发一次(第二轮复用 connection + session)
         let initCount = mock.sentLines.filter { $0.contains("\"initialize\"") }.count
         #expect(initCount == 1, "第二轮应复用 connection,不重发 initialize(实际 \(initCount))")
+        // 按解析后的 method 计(原样字符串匹配会被 JSONEncoder 的 `\/` 转义坑:`"session\/new"`)
+        let sessionNewCount = mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .filter { $0["method"]?.stringValue == "session/new" }
+            .count
+        #expect(sessionNewCount == 1, "第二轮应复用 session,不重发 session/new(实际 \(sessionNewCount))")
+        // 两轮 prompt 携带同一 sessionId
+        let promptSessionIds = mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .filter { $0["method"]?.stringValue == "session/prompt" }
+            .map { $0["params"]?.objectValue?["sessionId"]?.stringValue }
+        #expect(promptSessionIds == ["sess_1", "sess_1"])
         #expect(first == ["第一回"])
         #expect(second == ["第二回"])
+    }
+
+    @Test("ACPAgentEngine: run 出错 → 清 client + 缓存 session,下次 run 重 initialize + 新 session/new")
+    func resetClearsCachedSession() async throws {
+        // run1 正常 → run2 prompt 返回 error(engine 清 client + session)→
+        // run3 新 client(request id 从 0 重计)重 initialize + 新 session。
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            updateChunk("第一回"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+            .response(id: 3, result: nil, error: ACPRPCError(code: -32603, message: "boom", data: nil)),
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_2"}"#),
+            updateChunk("第三回"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            transportFactory: { mock }
+        )
+
+        var first: [String] = []
+        for try await d in engine.run(prompt: "a") { first.append(d) }
+        #expect(first == ["第一回"])
+
+        var threw = false
+        do {
+            for try await _ in engine.run(prompt: "b") {}
+        } catch {
+            threw = true
+        }
+        #expect(threw, "prompt error 应抛错触发 reset")
+
+        var third: [String] = []
+        for try await d in engine.run(prompt: "c") { third.append(d) }
+        #expect(third == ["第三回"])
+
+        let initCount = mock.sentLines.filter { $0.contains("\"initialize\"") }.count
+        #expect(initCount == 2, "reset 后应重 initialize(实际 \(initCount))")
+        let sessionNewCount = mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .filter { $0["method"]?.stringValue == "session/new" }
+            .count
+        #expect(sessionNewCount == 2, "reset 后应重开 session(实际 \(sessionNewCount))")
+        let promptSessionIds = mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .filter { $0["method"]?.stringValue == "session/prompt" }
+            .map { $0["params"]?.objectValue?["sessionId"]?.stringValue }
+        #expect(promptSessionIds == ["sess_1", "sess_1", "sess_2"])
+    }
+
+    @Test("ACPAgentEngine.onUsage: usage_update → onUsage 回调带 used/size/cost(不 yield)")
+    func usageUpdateTriggersOnUsage() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            usageUpdate(used: 12_345, size: 200_000, costJSON: #"{"amount":0.0123,"currency":"USD"}"#),
+            updateChunk("你好"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            transportFactory: { mock }
+        )
+        var usages: [ACPUsage] = []
+        engine.onUsage = { usages.append($0) }
+
+        var deltas: [String] = []
+        for try await d in engine.run(prompt: "hi") { deltas.append(d) }
+
+        #expect(deltas == ["你好"])   // usage 不 yield(只 message)
+        #expect(usages == [ACPUsage(used: 12_345, size: 200_000, cost: .init(amount: 0.0123, currency: "USD"))])
+    }
+
+    @Test("ACPAgentEngine.onUsage fallback: 无 usage_update 但响应带 unstable usage(opencode 1.18 口径)→ 合成 used=input+cacheRead,size=nil")
+    func usageFallbackFromPromptResponse() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            updateChunk("你好"),
+            resp(2, #"{"stopReason":"end_turn","usage":{"inputTokens":2034,"cachedReadTokens":27520,"outputTokens":49,"totalTokens":29630}}"#),
+        ])
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            transportFactory: { mock }
+        )
+        var usages: [ACPUsage] = []
+        engine.onUsage = { usages.append($0) }
+
+        var deltas: [String] = []
+        for try await d in engine.run(prompt: "hi") { deltas.append(d) }
+
+        #expect(deltas == ["你好"])
+        #expect(usages == [ACPUsage(used: 29_554, size: nil, cost: nil)])
+    }
+
+    @Test("ACPAgentEngine.onUsage: 本轮已收 usage_update → 响应里的 unstable usage 不再重复发(精确值优先)")
+    func noDuplicateUsageWhenUpdateArrived() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            usageUpdate(used: 29_661, size: 200_000),
+            updateChunk("你好"),
+            resp(2, #"{"stopReason":"end_turn","usage":{"inputTokens":93,"cachedReadTokens":29568,"totalTokens":29727}}"#),
+        ])
+        let engine = ACPAgentEngine(
+            command: ["fake", "acp"],
+            binaryPath: "/usr/bin/true",
+            transportFactory: { mock }
+        )
+        var usages: [ACPUsage] = []
+        engine.onUsage = { usages.append($0) }
+
+        var deltas: [String] = []
+        for try await d in engine.run(prompt: "hi") { deltas.append(d) }
+
+        #expect(deltas == ["你好"])
+        #expect(usages == [ACPUsage(used: 29_661, size: 200_000, cost: nil)])   // 仅 usage_update 那一次
     }
 
     @Test("ACPAgentEngine.run: forwards injected mcpServers to session/new")

@@ -45,10 +45,19 @@ struct ACPSmoke {
             log("[session] \(sid)")
 
             log("[prompt] \(prompt)")
-            let stop = try await client.prompt(text: prompt) { update in
-                log("[update kind=\(String(describing: update.sessionUpdate)) mid=\(update.messageId ?? "nil") text=\(update.textContent ?? "nil")]")
+            let result = try await client.prompt(text: prompt) { update in
+                log("[update kind=\(String(describing: update.sessionUpdate)) mid=\(update.messageId ?? "nil") text=\(update.textContent ?? "nil") usage=\(String(describing: update.usage))]")
             }
-            log("[stop] \(stop)")
+            log("[stop] \(result.stopReason) usage=\(String(describing: result.usage))")
+
+            // ACP-3 冒烟:同 client 同 sessionId 第二轮 prompt(不重发 session/new)——
+            // 验证 opencode 接受会话延续并推 usage_update(P1 会话保持的真互操作证据)。
+            let followup = "第二轮:我刚才问了你什么?一句话回答"
+            log("[prompt2 same-session] \(followup)")
+            let result2 = try await client.prompt(text: followup) { update in
+                log("[update2 kind=\(String(describing: update.sessionUpdate)) mid=\(update.messageId ?? "nil") text=\(update.textContent ?? "nil") usage=\(String(describing: update.usage))]")
+            }
+            log("[stop2] \(result2.stopReason) usage=\(String(describing: result2.usage))")
         } catch {
             log("[err] \(error)")
             failed = true

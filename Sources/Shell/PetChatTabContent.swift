@@ -61,6 +61,16 @@ struct PetChatTabContent: View {
 
     private var composer: some View {
         VStack(spacing: 6) {
+            // ACP-3:有 used 即显示上下文占用条 —— size 精确(usage_update)优先;
+            // 缺省走自适应猜窗口(PromptResponse.usage fallback,opencode 1.18 不推 usage_update)。
+            // 无数据不占位,免闪进闪出。
+            if let used = state.contextUsed {
+                if let size = state.contextSize {
+                    ContextUsageBar(used: used, size: size, cost: state.contextCost)
+                } else {
+                    ContextUsageBar(adaptiveUsed: used, cost: state.contextCost)
+                }
+            }
             if !state.replyOptions.isEmpty || state.currentProject != nil {
                 HStack(spacing: 6) {
                     if !state.replyOptions.isEmpty {

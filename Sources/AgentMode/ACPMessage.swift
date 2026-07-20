@@ -11,8 +11,12 @@ import Foundation
 //   Response(id+result|error)。`ACPInbound` 把收到的 raw JSON 判类后归一。
 // - session/update 是 notification,其 params.update 含 sessionUpdate discriminator
 //   (spec v1 共 6 类:agent_message_chunk / user_message_chunk / plan / tool_call /
-//   tool_call_update / usage_update)。本层只解 agent_message_chunk 的 text,未知 kind
-//   退 nil 不崩(向前兼容;tool_call 等留 ACP-2)。
+//   tool_call_update / usage_update)。本层解 message/thought chunk 的 text +
+//   usage_update 的 used/size/cost(ACP-3),未知 kind 退 nil 不崩(向前兼容;
+//   tool_call 等留 ACP-2)。
+// - PromptResponse 的 unstable `usage`(RFD end-turn-token-usage 仍 Draft)机会性解为
+//   `ACPPromptUsage` —— opencode 1.18 实测不推 usage_update 只带此字段,作 fallback;
+//   不依赖(agent 可合法不发)。
 // - 属性 camelCase,sessionUpdate 值 snake_case(ACP spec 约定)。
 
 // MARK: - ACPJSON(最小 JSON 值,承载 params/result)
@@ -156,6 +160,99 @@ public enum ACPSessionUpdateKind: String, Sendable, Equatable {
     case userMessageChunk = "user_message_chunk"
     /// 思考流(opencode/deepseek 扩展,reasoning token)—— engine 不 yield(避免 pet 显示思考碎片)。
     case agentThoughtChunk = "agent_thought_chunk"
+    /// 上下文/token 用量(stable since schema 0.13.6,agent 每轮后推)—— engine 走 onUsage 回调。
+    case usageUpdate = "usage_update"
+}
+
+/// `usage_update` 的用量负载:`used` 必填,`size`/`cost` 可选。
+/// 核自 ACP RFD session-usage(opencode 每轮 prompt 后推)。
+/// size = nil 的另一来源:PromptResponse.usage fallback(agent 未报窗口,UI 自适应猜)。
+public struct ACPUsage: Sendable, Equatable {
+    /// 已用 token 数(上下文占用)。
+    public let used: Int
+    /// 上下文窗口总大小(token)。nil = agent 未报(UI 自适应猜窗口;wiring 处 nil 不覆盖已知值)。
+    public let size: Int?
+    /// 累计费用(agent 未报则 nil)。
+    public let cost: Cost?
+
+    public struct Cost: Sendable, Equatable {
+        public let amount: Double
+        /// 币种代码(如 "USD")。
+        public let currency: String
+
+        public init(amount: Double, currency: String) {
+            self.amount = amount
+            self.currency = currency
+        }
+    }
+
+    public init(used: Int, size: Int? = nil, cost: Cost? = nil) {
+        self.used = used
+        self.size = size
+        self.cost = cost
+    }
+
+    /// 从 update payload(整体 dict)解出。used 缺失或类型不符 → nil(不崩);size 可缺(宽容)。
+    static func decode(from update: [String: ACPJSON]) -> ACPUsage? {
+        guard let used = acpIntValue(update["used"]) else { return nil }
+        var cost: Cost? = nil
+        if let c = update["cost"]?.objectValue,
+           let amount = acpDoubleValue(c["amount"]),
+           let currency = c["currency"]?.stringValue {
+            cost = Cost(amount: amount, currency: currency)
+        }
+        return ACPUsage(used: used, size: acpIntValue(update["size"]), cost: cost)
+    }
+}
+
+/// uint64 token 数:正常走 .int;超大值被 ACPJSON 退成 .double 时兜底截断。
+private func acpIntValue(_ json: ACPJSON?) -> Int? {
+    switch json {
+    case .int(let v): return v
+    case .double(let d): return Int(d)
+    default: return nil
+    }
+}
+
+private func acpDoubleValue(_ json: ACPJSON?) -> Double? {
+    switch json {
+    case .double(let d): return d
+    case .int(let i): return Double(i)
+    default: return nil
+    }
+}
+
+/// PromptResponse 的 unstable `usage`(RFD end-turn-token-usage 仍 Draft;机会性读取,不依赖)。
+/// opencode 1.18 实测:per-turn 值(非 spec 草案的累计口径),`inputTokens + cachedReadTokens`
+/// ≈ 该轮后上下文占用(与 opencode 自家 usage_update.used 同公式)。无窗口 size。
+public struct ACPPromptUsage: Sendable, Equatable {
+    public let inputTokens: Int
+    public let cachedReadTokens: Int
+    /// 上下文占用近似(= input + cache.read,同 opencode usage_update.used 公式)。
+    public var contextUsed: Int { inputTokens + cachedReadTokens }
+
+    public init(inputTokens: Int, cachedReadTokens: Int = 0) {
+        self.inputTokens = inputTokens
+        self.cachedReadTokens = cachedReadTokens
+    }
+
+    /// 从 PromptResponse result 整体解 `usage` 字段。缺 inputTokens → nil(agent 未报,不崩)。
+    static func decode(fromResult result: ACPJSON?) -> ACPPromptUsage? {
+        guard let u = result?.objectValue?["usage"]?.objectValue,
+              let input = acpIntValue(u["inputTokens"]) else { return nil }
+        return ACPPromptUsage(inputTokens: input, cachedReadTokens: acpIntValue(u["cachedReadTokens"]) ?? 0)
+    }
+}
+
+/// session/prompt 的响应:stopReason(stable)+ usage(unstable,机会性;agent 未报则 nil)。
+public struct ACPPromptResult: Sendable, Equatable {
+    public let stopReason: String
+    public let usage: ACPPromptUsage?
+
+    public init(stopReason: String, usage: ACPPromptUsage? = nil) {
+        self.stopReason = stopReason
+        self.usage = usage
+    }
 }
 
 /// `session/update` 的 update payload(从 notification params 解出)。
@@ -164,6 +261,8 @@ public struct ACPSessionUpdate: Sendable, Equatable {
     public let messageId: String?
     /// `content.text` 提取(agent_message_chunk 的 delta 文本;无则 nil)。
     public let textContent: String?
+    /// `usage_update` 的用量负载(仅 kind == .usageUpdate 且字段齐时非 nil)。
+    public let usage: ACPUsage?
 
     /// 从 `session/update` notification 的 **params**(整体)解出 update 字段。
     /// params 形如 `{"sessionId":..,"update":{...}}`。
@@ -177,7 +276,8 @@ public struct ACPSessionUpdate: Sendable, Equatable {
         // content 形如 {"type":"text","text":"..."}
         let content = update["content"]?.objectValue
         let text = content?["text"]?.stringValue
-        return ACPSessionUpdate(sessionUpdate: kind, messageId: messageId, textContent: text)
+        let usage: ACPUsage? = (kind == .usageUpdate) ? ACPUsage.decode(from: update) : nil
+        return ACPSessionUpdate(sessionUpdate: kind, messageId: messageId, textContent: text, usage: usage)
     }
 }
 

@@ -48,4 +48,23 @@ struct ChatCardStateTests {
         #expect(s.isSending == false)
         #expect(s.messages.count == 2)   // 重开仍在
     }
+
+    @Test("上下文用量字段:默认 nil(无 usage_update 数据,composer 不显示占用条)")
+    func contextUsageDefaultsNil() {
+        let s = ChatCardState()
+        #expect(s.contextUsed == nil)
+        #expect(s.contextSize == nil)
+        #expect(s.contextCost == nil)
+    }
+
+    @Test("上下文用量字段:写入 used/size/cost 后可读(ACP usage_update 落点,驱动占用条显隐)")
+    func contextUsageRoundTrip() {
+        let s = ChatCardState()
+        s.contextUsed = 12_345
+        s.contextSize = 200_000
+        s.contextCost = "$0.0123"
+        #expect(s.contextUsed == 12_345)
+        #expect(s.contextSize == 200_000)
+        #expect(s.contextCost == "$0.0123")
+    }
 }

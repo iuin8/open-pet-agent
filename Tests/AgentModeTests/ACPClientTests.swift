@@ -95,11 +95,33 @@ func clientPromptStream() async throws {
     }
 
     var chunks: [String] = []
-    let stopReason = try await client.prompt(text: "hi") { update in
+    let result = try await client.prompt(text: "hi") { update in
         if let t = update.textContent { chunks.append(t) }
     }
     #expect(chunks == ["Hello ", "world!"])
-    #expect(stopReason == "end_turn")
+    #expect(result.stopReason == "end_turn")
+    #expect(result.usage == nil)   // 响应无 unstable usage(agent 未报)→ nil 不崩
+}
+
+@Test("ACPClient.prompt: 响应带 unstable usage(opencode 1.18 实测口径)→ 解出 input/cacheRead,contextUsed = 两者之和")
+func clientPromptResponseUsage() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+        resp(1, #"{"sessionId":"sess_xyz"}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    _ = try await client.connect()
+    _ = try await client.createSession(cwd: "/tmp", mcpServers: [])
+
+    Task {
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        mock.push(resp(2, #"{"stopReason":"end_turn","usage":{"inputTokens":93,"outputTokens":8,"cachedReadTokens":29568,"thoughtTokens":58,"totalTokens":29727}}"#))
+    }
+
+    let result = try await client.prompt(text: "hi") { _ in }
+    #expect(result.stopReason == "end_turn")
+    #expect(result.usage == ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568))
+    #expect(result.usage?.contextUsed == 29_661)
 }
 
 @Test("ACPClient: response error 透传")
