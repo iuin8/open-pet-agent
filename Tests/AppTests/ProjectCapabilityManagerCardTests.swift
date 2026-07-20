@@ -695,6 +695,11 @@ struct ProjectCapabilityManagerCardTests {
     @Test("build：远端来源行显示可确认状态，确认后显示已确认")
     func remoteSourceItemsExposeConfirmationState() throws {
         let fixture = try ProjectCapabilityManagerFixture(prefix: "SourceConfirmState")
+        ProjectConfig.homeDirectoryOverride = fixture.root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
         try fixture.writePlugin(
             enabled: true,
             sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
@@ -706,17 +711,37 @@ struct ProjectCapabilityManagerCardTests {
         #expect(beforeItem.isSourceConfirmed == false)
         #expect(beforeItem.nextSourceConfirmedValue == true)
 
-        try MinimalAppDelegate.setProjectPluginSourceConfirmed(
+        let source = ProjectPluginSourceMetadata(
+            kind: .git,
+            url: "https://example.com/plugin.git",
+            revision: "abc123"
+        )
+        try ProjectCapabilityAuditStore().confirmSource(
             project: fixture.project,
             pluginID: "dev-toolkit",
-            confirmed: true
+            source: source,
+            date: Date(timeIntervalSince1970: 6)
+        )
+        let contentHash = try ProjectCapabilityAuditStore().sourceContentHash(
+            project: fixture.project,
+            pluginID: "dev-toolkit"
         )
 
         let after = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
         let afterItem = try #require(after.visibleItems.first)
         #expect(afterItem.isSourceConfirmable == true)
         #expect(afterItem.isSourceConfirmed == true)
+        #expect(afterItem.sourceConfirmationAudit == "确认 1970-01-01T00:00:06Z · hash \(String(contentHash.prefix(12)))")
         #expect(afterItem.nextSourceConfirmedValue == false)
+
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "def456" }"#
+        )
+        let changed = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+        let changedItem = try #require(changed.visibleItems.first)
+        #expect(changedItem.isSourceConfirmed == false)
+        #expect(changedItem.sourceConfirmationAudit == nil)
     }
 
     @Test("preview：Codex 同步预览列出操作但不 materialize engine 文件")

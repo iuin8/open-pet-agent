@@ -71,11 +71,13 @@ struct ProjectCapabilityCardStateTests {
             sourceTrust: "需确认 · git",
             isSourceConfirmable: true,
             isSourceConfirmed: false,
+            sourceConfirmationAudit: "确认 1970-01-01T00:00:06Z · hash abc123",
             status: .enabled,
             diagnostics: []
         )
 
         #expect(item.nextSourceConfirmedValue == true)
+        #expect(item.sourceConfirmationAudit == "确认 1970-01-01T00:00:06Z · hash abc123")
     }
 
     @Test("State：按当前 tab 过滤 items")

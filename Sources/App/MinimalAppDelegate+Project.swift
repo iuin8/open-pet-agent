@@ -876,13 +876,11 @@ extension MinimalAppDelegate {
             message: partialWarning,
             path: root
         )]
-        let isConfirmable = !plugin.sourceMetadata.allowsAutomaticProjection
-        let isConfirmed = isConfirmable && ((try? ProjectCapabilityAuditStore().isSourceConfirmed(
-            project: project,
+        let sourceConfirmation = sourceConfirmationState(
             pluginID: plugin.id,
-            source: plugin.sourceMetadata
-        )) ?? false)
-        let sourceConfirmation = (isConfirmable: isConfirmable, isConfirmed: isConfirmed)
+            source: plugin.sourceMetadata,
+            project: project
+        )
         let skills = plugin.skills.map { skill in
             let source = URL(fileURLWithPath: root)
                 .appendingPathComponent(
@@ -920,6 +918,7 @@ extension MinimalAppDelegate {
                 targets: skill.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isSourceConfirmable: sourceConfirmation.isConfirmable,
                 isSourceConfirmed: sourceConfirmation.isConfirmed,
+                sourceConfirmationAudit: sourceConfirmation.audit,
                 isEnabled: plugin.enabled,
                 status: .warning,
                 diagnostics: diagnostics
@@ -960,6 +959,7 @@ extension MinimalAppDelegate {
                 targets: server.targets.map { ProjectCapabilityCardState.ProjectionTargetState(target: $0, isEnabled: true) },
                 isSourceConfirmable: sourceConfirmation.isConfirmable,
                 isSourceConfirmed: sourceConfirmation.isConfirmed,
+                sourceConfirmationAudit: sourceConfirmation.audit,
                 isEnabled: plugin.enabled,
                 status: .warning,
                 diagnostics: diagnostics
@@ -971,14 +971,31 @@ extension MinimalAppDelegate {
     private static func sourceConfirmationState(
         plugin: ProjectPluginDescriptor,
         project: AgentProject
-    ) -> (isConfirmable: Bool, isConfirmed: Bool) {
-        guard !plugin.sourceMetadata.allowsAutomaticProjection else { return (false, false) }
-        let isConfirmed = (try? ProjectCapabilityAuditStore().isSourceConfirmed(
-            project: project,
+    ) -> (isConfirmable: Bool, isConfirmed: Bool, audit: String?) {
+        sourceConfirmationState(
             pluginID: plugin.id,
-            source: plugin.sourceMetadata
-        )) ?? false
-        return (true, isConfirmed)
+            source: plugin.sourceMetadata,
+            project: project
+        )
+    }
+
+    private static func sourceConfirmationState(
+        pluginID: String,
+        source: ProjectPluginSourceMetadata,
+        project: AgentProject
+    ) -> (isConfirmable: Bool, isConfirmed: Bool, audit: String?) {
+        guard !source.allowsAutomaticProjection else { return (false, false, nil) }
+        let store = ProjectCapabilityAuditStore()
+        let contentHash = try? store.sourceContentHash(project: project, pluginID: pluginID)
+        let confirmation = try? store.loadSourceConfirmations(project: project).confirmations.first {
+            $0.pluginID == pluginID && $0.source == source && $0.contentHash == contentHash
+        }
+        let audit = confirmation.map { "确认 \($0.confirmedAtDescription) · hash \(shortHash($0.contentHash))" }
+        return (true, confirmation != nil, audit)
+    }
+
+    private static func shortHash(_ value: String) -> String {
+        String(value.prefix(12))
     }
 
     private static func capabilityItems(
@@ -1015,6 +1032,7 @@ extension MinimalAppDelegate {
                 targets: targetStates(for: plugin),
                 isSourceConfirmable: sourceConfirmation.isConfirmable,
                 isSourceConfirmed: sourceConfirmation.isConfirmed,
+                sourceConfirmationAudit: sourceConfirmation.audit,
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics
@@ -1042,6 +1060,7 @@ extension MinimalAppDelegate {
                 targets: targetStates(for: plugin),
                 isSourceConfirmable: sourceConfirmation.isConfirmable,
                 isSourceConfirmed: sourceConfirmation.isConfirmed,
+                sourceConfirmationAudit: sourceConfirmation.audit,
                 isEnabled: plugin.enabled,
                 status: capabilityStatus(enabled: plugin.enabled, diagnostics: itemDiagnostics),
                 diagnostics: itemDiagnostics

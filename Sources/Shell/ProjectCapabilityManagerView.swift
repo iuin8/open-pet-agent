@@ -275,6 +275,12 @@ struct ProjectCapabilityManagerView: View {
                         if item.isSourceConfirmable { sourceConfirmationToggle(item) }
                     }
                 }
+                if let sourceConfirmationAudit = item.sourceConfirmationAudit {
+                    Text(sourceConfirmationAudit)
+                        .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
+                        .lineLimit(1)
+                }
                 ForEach(item.targetPaths, id: \.self) { target in
                     Text("→ \(target)")
                         .font(.system(size: 8.5, design: .monospaced))
