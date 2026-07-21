@@ -39,6 +39,17 @@ struct SessionHistoryReaderTests {
         #expect(events.last?.kind == .toolUse(name: "Bash", summary: "t3"))
     }
 
+    @Test("fingerprint:文件追加后改变")
+    func fingerprintChangesWhenFileAppends() throws {
+        let url = try tempFile("one\n")
+
+        let first = try #require(SessionHistoryReader.fingerprint(url: url))
+        try "one\ntwo\n".write(to: url, atomically: true, encoding: .utf8)
+        let second = try #require(SessionHistoryReader.fingerprint(url: url))
+
+        #expect(first != second)
+    }
+
     @Test("不存在的文件 → []")
     func missing() {
         #expect(SessionHistoryReader.read(url: URL(fileURLWithPath: "/nope-\(UUID().uuidString).jsonl")).isEmpty)

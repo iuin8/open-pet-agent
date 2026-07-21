@@ -45,6 +45,8 @@ public actor AgentSensingService {
     /// 会话超过这么久无新行 → 合成 idle(根治:Claude transcript 不产 .done,否则活跃态会卡死不回 idle)。
     /// 取 activeWindow 的一半但不超 8s:足够长不误判模型「思考间隙」,又够短让停手后桌宠及时归位。
     private var silenceThreshold: TimeInterval { Swift.min(activeWindow / 2, 8) }
+    /// ponytail: last tool can be a long build/test; after this ceiling, prefer unsticking UI over perfect process knowledge.
+    private var staleToolThreshold: TimeInterval { Swift.max(silenceThreshold * 3, 24) }
     /// 每 agent 最近一次 poll 发现的最活跃文件(mtime 最新)。供陪伴卡片打开时回填会话历史。
     private var activeURLs: [AgentKind: URL] = [:]
     /// 最近 poll 发现的**全部**活跃会话(每 agent 多个,按 mtime 新→旧)。供会话切换 picker
@@ -113,8 +115,10 @@ public actor AgentSensingService {
     private func emitSilenceIdle(now: Date) async {
         for (sid, state) in tracker.states {
             guard state == .working || state == .talking else { continue }
-            guard lastEventWasToolUse[sid] != true else { continue }   // 工具在飞(长 build/test 无新行)→ 别误判停了
-            guard let last = lastEventAt[sid], now.timeIntervalSince(last) >= silenceThreshold else { continue }
+            guard let last = lastEventAt[sid] else { continue }
+            let idleAge = now.timeIntervalSince(last)
+            if lastEventWasToolUse[sid] == true, idleAge < staleToolThreshold { continue }
+            guard idleAge >= silenceThreshold else { continue }
             let synthesized = AgentEvent(
                 agent: sessionAgent[sid] ?? .claudeCode, sessionId: sid, cwd: nil, kind: .done, timestamp: now)
             if let transition = tracker.ingest(synthesized) {
@@ -168,8 +172,10 @@ public actor AgentSensingService {
     private func stamped(_ e: AgentEvent, sessionId: String) -> AgentEvent {
         guard e.sessionId != sessionId else { return e }
         // detail / attachments 必须随重建保留 —— Codex 工具行常带自身 id(≠文件名)走这条分支,丢了详情/图就没了。
-        return AgentEvent(agent: e.agent, sessionId: sessionId, cwd: e.cwd, kind: e.kind, timestamp: e.timestamp,
-                          detail: e.detail, attachments: e.attachments)
+        return AgentEvent(
+            agent: e.agent, sessionId: sessionId, cwd: e.cwd, kind: e.kind, timestamp: e.timestamp,
+            detail: e.detail, toolUseId: e.toolUseId, usage: e.usage, model: e.model, attachments: e.attachments
+        )
     }
 
     /// 用文件名(去后缀)作每文件稳定 id。Claude=`<uuid>.jsonl`,Codex=`rollout-<ts>-<uuid>.jsonl`。

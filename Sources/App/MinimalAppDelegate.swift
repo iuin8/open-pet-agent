@@ -442,6 +442,8 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     var agentSensingService: AgentSensingService?
     /// 感知层轮询计时器（~1.5s 扫一次活跃会话文件）。
     var agentSensingTickTimer: Timer?
+    /// transcript 目录文件事件 wakeup（只触发现有 poll，timer 仍兜底）。
+    var agentTranscriptWakeupWatcher: AgentTranscriptWakeupWatcher?
     /// 上次「在跑什么」气泡时间 —— tool 事件高频,节流到每 ~2.5s 一颗(等你/完成不节流)。
     var agentSensingLastBubbleAt: Date?
     /// P3.8 G3 会话元数据扫描器(标题/分支/消息数;按 mtime 缓存,轮询后 off-main 刷 picker)。
@@ -854,8 +856,9 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
         if let token = proactiveAppActivationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(token)
         }
-        // 感知层轮询计时器收口。
+        // 感知层轮询计时器 / 文件事件 wakeup 收口。
         agentSensingTickTimer?.invalidate()
+        agentTranscriptWakeupWatcher?.stop()
         // 权限应答 server 收口(留 hook 在 settings.json:server 关时 POST 连接被拒 → 快速失败
         // 走正常权限流,不阻塞;下次启动重装刷端口。卸 hook 只在用户菜单主动关时做)。
         permissionHookServer?.stop()

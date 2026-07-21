@@ -144,6 +144,28 @@ struct AgentSensingServiceTests {
         #expect(await collector.outputs.count == before)
     }
 
+    @Test("长工具静默超 stale 阈值 → 最终合成 idle")
+    func longSilentToolEventuallyEmitsIdle() async throws {
+        let (claude, codex) = try tempRoots()
+        let file = claude.appendingPathComponent("sess.jsonl")
+        try write("", to: file)
+        let collector = Collector()
+        let clock = MutableClock(Date())
+        let svc = AgentSensingService(
+            enabled: true, claudeRoot: claude, codexRoot: codex, activeWindow: 120,
+            clock: { clock.now }, sink: { o in await collector.add(o) })
+
+        await svc.poll()
+        try append(#"{"type":"assistant","sessionId":"sess","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"long build"}}]}}"# + "\n", to: file)
+        await svc.poll()
+
+        clock.advance(31)
+        await svc.poll()
+
+        let silence = await collector.outputs.first { $0.isSilenceIdle }
+        #expect(silence?.transition?.to == .idle)
+    }
+
     @Test("disabled → poll 静默")
     func disabledSilent() async throws {
         let (claude, codex) = try tempRoots()
@@ -176,22 +198,24 @@ struct AgentSensingServiceTests {
         #expect(outs.first?.event.kind == .toolUse(name: "exec", summary: "ls"))
     }
 
-    @Test("Codex 工具行带自身 id(≠文件名)→ stamped 钉死 sessionId 但保留 detail")
+    @Test("sessionId mismatch → stamped 保留 detail / toolUseId / usage / model")
     func stampedPreservesDetail() async throws {
         let (claude, codex) = try tempRoots()
-        let file = codex.appendingPathComponent("rollout-x.jsonl")   // 文件名派生 sessionId = rollout-x
+        let file = claude.appendingPathComponent("canonical.jsonl")
         try write("", to: file)
         let collector = Collector()
         let svc = makeService(claude: claude, codex: codex, enabled: true, collector: collector)
         await svc.poll()
 
-        // 顶层 id "fc_999" ≠ "rollout-x" → 命中 stamped 重建分支(以前会把 detail 丢成 nil)。
-        try append(#"{"type":"response_item","id":"fc_999","payload":{"type":"function_call","name":"exec_command","arguments":"{\"command\":[\"ls\",\"-la\"]}"}}"# + "\n", to: file)
+        // 行内 sessionId != 文件名 → 命中 stamped 重建分支。
+        try append(#"{"type":"assistant","sessionId":"old-session","message":{"model":"claude-opus-4-8","usage":{"input_tokens":7,"output_tokens":3},"content":[{"type":"tool_use","id":"tool-123","name":"Bash","input":{"command":"ls -la"}}]}}"# + "\n", to: file)
         await svc.poll()
 
-        let outs = await collector.outputs
-        #expect(outs.count == 1)
-        #expect(outs.first?.event.sessionId == "rollout-x")          // 钉死成文件 sessionId
-        #expect(outs.first?.event.detail == "ls -la")                // detail 不被重建吞掉
+        let out = await collector.outputs.first
+        #expect(out?.event.sessionId == "canonical")
+        #expect(out?.event.detail == "ls -la")
+        #expect(out?.event.toolUseId == "tool-123")
+        #expect(out?.event.usage?.input == 7)
+        #expect(out?.event.model == "claude-opus-4-8")
     }
 }

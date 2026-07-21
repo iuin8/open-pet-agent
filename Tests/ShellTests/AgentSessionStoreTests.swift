@@ -97,6 +97,39 @@ struct AgentSessionStoreTests {
         #expect(!store.loadDidFail(for: .claudeCode))
     }
 
+    @Test("setHistory:相同 fingerprint 跳过重复 rebuild")
+    func setHistorySkipsUnchangedFingerprint() {
+        let store = AgentSessionStore()
+        let ts = Date(timeIntervalSince1970: 1)
+        let fp = SessionFileFingerprint(mtime: ts, size: 10)
+        let first = [e(.assistantText(text: "first"), 1)]
+        let second = [e(.assistantText(text: "second"), 2)]
+
+        store.setHistory(first, agent: .claudeCode, sessionId: "s", fingerprint: fp)
+        store.setHistory(second, agent: .claudeCode, sessionId: "s", fingerprint: fp)
+
+        #expect(store.items(for: .claudeCode).count == 1)
+        if case .assistantTurn(let turn)? = store.items(for: .claudeCode).first?.kind {
+            #expect(turn.finalText == "first")
+        } else {
+            Issue.record("应保留第一次 history")
+        }
+    }
+
+    @Test("setHistory:reset 后相同 fingerprint 仍可重载")
+    func setHistorySameFingerprintReloadsAfterReset() {
+        let store = AgentSessionStore()
+        let ts = Date(timeIntervalSince1970: 1)
+        let fp = SessionFileFingerprint(mtime: ts, size: 10)
+        let history = [e(.assistantText(text: "first"), 1)]
+
+        store.setHistory(history, agent: .claudeCode, sessionId: "s", fingerprint: fp)
+        store.resetSession(agent: .claudeCode)
+        store.setHistory(history, agent: .claudeCode, sessionId: "s", fingerprint: fp)
+
+        #expect(store.items(for: .claudeCode).isEmpty == false)
+    }
+
     @Test("resetSession:无选中会话 → no-op(不触发 onSelectSession)")
     func resetSessionNoSelection() {
         let store = AgentSessionStore()

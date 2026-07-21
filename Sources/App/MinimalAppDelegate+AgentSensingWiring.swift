@@ -40,6 +40,7 @@ extension MinimalAppDelegate {
             let urls = await service.activeSessionURLs()
             // 两个 agent 当前最活跃会话都回填历史尾部窗口(各用自己的 parser),带游标供 G4「加载更早」。
             for (agent, url) in urls {
+                let fingerprint = SessionHistoryReader.fingerprint(url: url)
                 let window = await Task.detached { SessionHistoryReader.readRecentHistory(url: url, agent: agent) }.value
                 guard !window.events.isEmpty else { continue }
                 let sid = AgentSensingService.canonicalSessionId(from: url)
@@ -49,7 +50,8 @@ extension MinimalAppDelegate {
                     agent: agent,
                     sessionId: sid,
                     startOffset: window.startOffset,
-                    reachedStart: window.reachedStart
+                    reachedStart: window.reachedStart,
+                    fingerprint: fingerprint
                 )
                 await self.scanSubagents(url: url, agent: agent)   // D2:扫该会话子 agent 索引
             }
@@ -70,6 +72,7 @@ extension MinimalAppDelegate {
                 }
                 let store = self.chatCardWindowController?.agentSessionStore
                 guard let url else { store?.markLoadFailed(agent, sessionId: sid); return }   // P2-10:找不到会话文件 → 失败态
+                let fingerprint = SessionHistoryReader.fingerprint(url: url)
                 let window = await Task.detached { SessionHistoryReader.readRecentHistory(url: url, agent: agent) }.value
                 guard !window.events.isEmpty else {
                     // P2-10:**文件不可读**(删除/权限)→ 真失败;可读但解析为空(全新/纯噪音会话)→ 中性空态,不误标失败。
@@ -79,7 +82,8 @@ extension MinimalAppDelegate {
                 self.loadedSessionURLs[agent, default: [:]][sid] = url
                 self.chatCardWindowController?.agentSessionStore.setHistory(
                     window.events, agent: agent, sessionId: sid,
-                    startOffset: window.startOffset, reachedStart: window.reachedStart)
+                    startOffset: window.startOffset, reachedStart: window.reachedStart,
+                    fingerprint: fingerprint)
                 await self.scanSubagents(url: url, agent: agent)   // D2:扫该会话子 agent 索引
             }
         }
@@ -202,6 +206,17 @@ extension MinimalAppDelegate {
         }
         RunLoop.main.add(timer, forMode: .common)
         self.agentSensingTickTimer = timer
+        let watcher = AgentTranscriptWakeupWatcher(
+            roots: [SessionDiscovery.claudeProjectsRoot, SessionDiscovery.codexSessionsRoot]
+        ) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.agentSensingService?.poll()
+                await self.refreshSessionMetadata()
+            }
+        }
+        watcher.start()
+        self.agentTranscriptWakeupWatcher = watcher
         wireSessionBrowseAndPin()          // 会话历史浏览 + 钉住:注入钉住 store + 接 picker 回调 + 启动加载钉住
         debugInjectSubagentIfRequested()   // env-gated:注入关联真实子 agent 的 Task 行,验 D2 pill + 卡
         debugOpenColumnIfRequested()       // env-gated:开 workflow / image 列,验这两条 drill-in 路径
