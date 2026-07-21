@@ -1,6 +1,16 @@
 import Foundation
 
 /// 一个历史窗口的读取结果(P3.8 G4 增量加载)。
+public struct SessionFileFingerprint: Sendable, Equatable, Hashable {
+    public let mtime: Date
+    public let size: UInt64
+
+    public init(mtime: Date, size: UInt64) {
+        self.mtime = mtime
+        self.size = size
+    }
+}
+
 public struct HistoryWindow: Sendable, Equatable {
     /// 本窗口解析出的事件(按文件顺序)。
     public let events: [AgentEvent]
@@ -174,6 +184,14 @@ public enum SessionHistoryReader {
             windows += 1
         }
         return HistoryWindow(events: events, startOffset: window.startOffset, reachedStart: window.reachedStart)
+    }
+
+    public static func fingerprint(url: URL) -> SessionFileFingerprint? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = (attrs[.size] as? NSNumber)?.uint64Value,
+              let mtime = attrs[.modificationDate] as? Date
+        else { return nil }
+        return SessionFileFingerprint(mtime: mtime, size: size)
     }
 
     private static func fileSize(_ url: URL) -> UInt64? {

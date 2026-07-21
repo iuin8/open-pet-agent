@@ -171,6 +171,8 @@ public final class AgentSessionStore: ObservableObject {
     private var historyCursor: [AgentKind: [String: UInt64]] = [:]
     /// agent → sessionId → 是否已读到文件头(没有更早内容了 → 隐藏「加载更早」)。
     private var historyReachedStart: [AgentKind: [String: Bool]] = [:]
+    /// agent → sessionId → 最近一次落入 store 的 transcript 指纹;同指纹重读跳过 rebuild。
+    private var historyFingerprint: [AgentKind: [String: SessionFileFingerprint]] = [:]
     /// 钉住会话持久化(注入;nil = 未接线时退化为「只活跃」旧行为)。
     private var pinnedStore: PinnedSessionStore?
     /// agent → sessionId → 注入元数据(浏览/钉住加载某会话时存,**不被 poll 的 `updateMetadata` 全量替换冲掉**)
@@ -235,8 +237,11 @@ public final class AgentSessionStore: ObservableObject {
         agent: AgentKind,
         sessionId sid: String,
         startOffset: UInt64? = nil,
-        reachedStart: Bool = false
+        reachedStart: Bool = false,
+        fingerprint: SessionFileFingerprint? = nil
     ) {
+        if let fingerprint, historyFingerprint[agent]?[sid] == fingerprint { return }
+        if let fingerprint { setHistoryFingerprint(agent, sid, fingerprint) }
         var bySession = logs[agent] ?? [:]
         let existing = bySession[sid] ?? []
         let merged: [AgentEvent]
@@ -327,6 +332,7 @@ public final class AgentSessionStore: ObservableObject {
         setSeqBase(agent, sid, 0)
         historyCursor[agent]?[sid] = nil
         historyReachedStart[agent]?[sid] = nil
+        clearHistoryFingerprint(agent, sid)
         loadingEarlier.remove(agent)
         loadFailed.remove(agent)       // P2-10:重试 = 新一次加载,先清旧失败标
         clearHighlight()               // 高亮 id + 子区复位 + 缩回连接线(P2-9 helper)
@@ -380,6 +386,17 @@ public final class AgentSessionStore: ObservableObject {
     private func setReachedStart(_ agent: AgentKind, _ sid: String, _ v: Bool) {
         var m = historyReachedStart[agent] ?? [:]; m[sid] = v; historyReachedStart[agent] = m
     }
+    private func setHistoryFingerprint(_ agent: AgentKind, _ sid: String, _ fingerprint: SessionFileFingerprint) {
+        var by = historyFingerprint[agent] ?? [:]
+        by[sid] = fingerprint
+        historyFingerprint[agent] = by
+    }
+    private func clearHistoryFingerprint(_ agent: AgentKind, _ sid: String) {
+        var by = historyFingerprint[agent] ?? [:]
+        by.removeValue(forKey: sid)
+        historyFingerprint[agent] = by
+    }
+
 
     /// 选中**粘滞**:已选且会话还在 → 保持(**永不自动切换** —— 切会话是用户主动行为,见 selectSession)。
     /// 仅「无选中(首次)」或「选中会话消失」→ 初选/回退到最近活跃会话。
