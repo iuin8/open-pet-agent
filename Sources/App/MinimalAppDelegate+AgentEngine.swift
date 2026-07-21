@@ -8,11 +8,10 @@ extension MinimalAppDelegate {
     /// N2.4 — 按 UserDefaults `tool.engine.kind` 把对应 engine 装到 router。
     ///
     /// 不再写死 `switch kind`:经 `AgentEngineRegistry.resolve(from:)` 选中 entry
-    /// (UD 没设 / 值不识别 → fallback `all[0]` = claudeCode,5417612 起的默认行为),
-    /// 再调 `entry.makeEngine()` 构造 engine。新增 engine = 注册表加一条 entry,
-    /// 这里零改动(镜像「形象插件化」,与灵魂层 `SoulBackendRegistry` 同构)。
-    /// 注:opencode entry 的 `makeEngine` 当前兜底到 ClaudeCodeEngine(bundled
-    /// opencode runtime N3.x 接入前),细节见 `AgentEngineRegistry.openCode`。
+    /// (UD 没设 / 值不识别 → fallback `all[0]` = claudeCode,5417612 起的默认行为)。
+    /// P3 起三个引擎统一 ACP:`acpCommand(for:)` 命中的 entry 在此按项目 cwd 组装
+    /// 适配器子进程(opencode 另注 OPENCODE_CONFIG + 项目 MCP projection);
+    /// 未命中走 `entry.makeEngine()`。
     ///
     /// 两个调用方:
     /// - `didFinishLaunching` 启动时初始化 router
@@ -24,41 +23,71 @@ extension MinimalAppDelegate {
     ) {
         guard let router else { return }
         let entry = AgentEngineRegistry.resolve(from: defaults)
-        // ACP engine(opencode):用 ProjectStore.current() 选中的项目(非写死 default)做 cwd + OPENCODE_CONFIG env
-        // (P1a 多项目数据地基;详见 docs/project-config-architecture-design.md)
-        // 首次启动 ensureDefaultProjectRegistered 幂等迁移;ensure 失败 fallback project.rootURL(P0 行为不变)。
-        if entry.id == AgentEngineKind.openCode.rawValue {
+        // 三个 ACP engine(P3 起统一:opencode / claude-agent-acp / codex-acp):
+        // 用 ProjectStore.current() 选中的项目做 cwd,长驻适配器子进程(P1a 多项目数据地基;
+        // 详见 docs/project-config-architecture-design.md)。opencode 额外注入 OPENCODE_CONFIG
+        // + 项目 MCP projection;claude/codex 适配器读各自生态配置(.mcp.json / ~/.codex),
+        // ACP mcpServers 传空。
+        if let acpCommand = acpCommand(for: entry.id) {
             ProjectStore.ensureDefaultProjectRegistered(defaults: defaults)
             let project = ProjectStore.current(defaults: defaults)
-            let projectRoot = currentACPProjectRoot(defaults: defaults)   // 与 P2 会话指针 key 同一解析入口
-            let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
-            let mcpServersProvider: @Sendable (ACPAgentCapabilities) -> [ACPJSON] = { caps in
-                do {
-                    let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
-                    // ACP v1 的 http/sse 是能力门控:agent 未声明的 transport 不下发。
-                    return ACPMCPServerProjection.supported(servers, capabilities: caps.mcpCapabilities)
-                } catch {
-                    fputs("[ProjectConfig] opencode MCP projection failed: \(error)\n", stderr)
-                    return []
+            let projectRoot = currentACPProjectRoot(defaults: defaults)
+            var env = CLIProcessEnvironment.augmented()
+            let mcpServersProvider: @Sendable (ACPAgentCapabilities) -> [ACPJSON]
+            if entry.id == AgentEngineKind.openCode.rawValue {
+                let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
+                env = env.merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new }
+                mcpServersProvider = { caps in
+                    do {
+                        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+                        // ACP v1 的 http/sse 是能力门控:agent 未声明的 transport 不下发。
+                        return ACPMCPServerProjection.supported(servers, capabilities: caps.mcpCapabilities)
+                    } catch {
+                        fputs("[ProjectConfig] opencode MCP projection failed: \(error)\n", stderr)
+                        return []
+                    }
                 }
+            } else {
+                mcpServersProvider = { _ in [] }
             }
-            router.setEngine(ACPAgentEngine(
-                command: ["opencode", "acp"],
-                cwd: projectRoot,
-                mcpServersProvider: mcpServersProvider,
-                transportFactory: {
-                    ACPStdioTransport(
-                        command: ["opencode", "acp"],
-                        processEnvironment: CLIProcessEnvironment.augmented()
-                            .merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new },
-                        currentDirectoryURL: projectRoot
-                    )
-                }
-            ))
+            let transportFactory: @Sendable () -> any ACPTransport = {
+                ACPStdioTransport(
+                    command: acpCommand,
+                    processEnvironment: env,
+                    currentDirectoryURL: projectRoot
+                )
+            }
+            switch entry.id {
+            case AgentEngineKind.claudeCode.rawValue:
+                router.setEngine(ClaudeACPAgentEngine(
+                    command: acpCommand, cwd: projectRoot,
+                    mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
+                ))
+            case AgentEngineKind.codex.rawValue:
+                router.setEngine(CodexACPAgentEngine(
+                    command: acpCommand, cwd: projectRoot,
+                    mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
+                ))
+            default:
+                router.setEngine(ACPAgentEngine(
+                    command: acpCommand, cwd: projectRoot,
+                    mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
+                ))
+            }
             return
         }
         // 其他 engine / fallback:registry makeEngine
         router.setEngine(entry.makeEngine())
+    }
+
+    /// entry id → ACP 适配器 spawn 命令(P3 三引擎统一 ACP;非 ACP entry → nil 走 makeEngine)。
+    nonisolated static func acpCommand(for entryId: String) -> [String]? {
+        switch entryId {
+        case AgentEngineKind.openCode.rawValue: return ["opencode", "acp"]
+        case AgentEngineKind.claudeCode.rawValue: return ["claude-agent-acp"]
+        case AgentEngineKind.codex.rawValue: return ["codex-acp"]
+        default: return nil
+        }
     }
 
     /// ACP engine 的会话 cwd(与 applySelectedAgentEngine 的 openCode 分支同一解析:

@@ -66,22 +66,24 @@ public struct AgentEngineEntry: Sendable, Identifiable {
 /// entry id 沿用 `AgentEngineKind` 的 rawValue,避免字符串漂移。
 public enum AgentEngineRegistry {
 
-    /// `claude -p` 子进程 —— 本地读写文件 + 跑命令。需用户已装 claude CLI。
+    /// Claude Code via **ACP**(`claude-agent-acp` 适配器子进程,P3 起取代 `claude -p` 一次性
+    /// 子进程)。认证带外(复用 claude CLI 登录态);能力实测见 ACPAgentEngineKinds.swift。
     public static let claudeCode = AgentEngineEntry(
         id: AgentEngineKind.claudeCode.rawValue,
         displayName: "Claude Code",
-        binaryName: "claude",
+        binaryName: "claude-agent-acp",
         capabilities: [.requiresCLI],
-        makeEngine: { ClaudeCodeEngine() }
+        makeEngine: { ClaudeACPAgentEngine(command: ["claude-agent-acp"]) }
     )
 
-    /// `codex exec --json` 子进程 —— 本地写代码 + 原生视觉。需用户已装 codex CLI。
+    /// Codex via **ACP**(`codex-acp` 适配器子进程,P3 起取代 `codex exec` 一次性子进程)。
+    /// 认证带外(复用 codex CLI 登录态);原生视觉经 ACP image prompt capability。
     public static let codex = AgentEngineEntry(
         id: AgentEngineKind.codex.rawValue,
         displayName: "Codex",
-        binaryName: "codex",
+        binaryName: "codex-acp",
         capabilities: [.requiresCLI, .nativeVision],
-        makeEngine: { CodexEngine() }
+        makeEngine: { CodexACPAgentEngine(command: ["codex-acp"]) }
     )
 
     /// opencode via **ACP**(Agent Client Protocol)—— 经 JSON-RPC/stdio 接 opencode 子进程,

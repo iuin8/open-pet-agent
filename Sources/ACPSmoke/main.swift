@@ -2,8 +2,10 @@ import Foundation
 import Darwin
 import AgentMode
 
-// ACP-1a 冒烟:用真 ACPStdioTransport spawn `opencode acp`,验证自写 ACP client 真能跟
-// opencode 互操作。用法:.build/.../ACPSmoke "prompt"
+// ACP-1a 冒烟:用真 ACPStdioTransport spawn ACP agent 子进程,验证自写 ACP client 真能跟
+// agent 互操作。用法:.build/.../ACPSmoke "prompt"
+// 默认 `opencode acp`;env `ACP_SMOKE_CMD` 覆盖命令(P3:claude-agent-acp / codex-acp 同款冒烟)。
+// 非 opencode 命令时跳过 OPENCODE_CONFIG 与 opencode MCP projection(mcpServers 传空)。
 //
 // 用 FileHandle.write 直接写(stdout 重定向时 print 跨线程 buffer 不 flush,会丢日志)。
 
@@ -11,19 +13,25 @@ import AgentMode
 struct ACPSmoke {
     static func main() async {
         let prompt = CommandLine.arguments.dropFirst().first ?? "用一句话说你好"
+        let command = ProcessInfo.processInfo.environment["ACP_SMOKE_CMD"]
+            .map { $0.split(separator: " ").map(String.init) } ?? ["opencode", "acp"]
+        let isOpencode = command.first == "opencode"
 
         // P1d:走 ProjectStore.current()(vs 之前 shell cwd)—— 与 applySelectedAgentEngine 同路径,
         // 真互操作 verify 走 ProjectStore(冒烟工具对齐生产架构)。env 指向选中项目 opencode.json。
         ProjectStore.ensureDefaultProjectRegistered()
         let project = ProjectStore.current()
         let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
-        let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
-        log("[project] id=\(project.id) root=\(projectRoot.path) config=\(opencodeConfigPath)")
+        log("[project] id=\(project.id) root=\(projectRoot.path) cmd=\(command)")
 
+        var env = CLIProcessEnvironment.augmented()
+        if isOpencode {
+            let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
+            env = env.merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new }
+        }
         let real = ACPStdioTransport(
-            command: ["opencode", "acp"],
-            processEnvironment: CLIProcessEnvironment.augmented()
-                .merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new },
+            command: command,
+            processEnvironment: env,
             currentDirectoryURL: projectRoot
         )
         let transport: any ACPTransport = LoggingTransport(wrapping: real)
@@ -36,10 +44,16 @@ struct ACPSmoke {
             let caps = try await client.connect()
             log("[connect] protocolVersion=\(caps.protocolVersion) caps=\(caps.agentCapabilities.sorted())")
 
-            let mcpServers = ACPMCPServerProjection.supported(
-                try OpencodeProjectAdapter().loadMCPServers(for: project),
-                capabilities: caps.mcpCapabilities
-            )
+            let mcpServers: [ACPJSON]
+            if isOpencode {
+                mcpServers = ACPMCPServerProjection.supported(
+                    try OpencodeProjectAdapter().loadMCPServers(for: project),
+                    capabilities: caps.mcpCapabilities
+                )
+            } else {
+                mcpServers = []   // 非 opencode 冒烟不注入项目 MCP(claude/codex 适配器各自生态)
+            }
+            log("[caps] loadSession=\(caps.loadSession) sessionCaps=\(caps.sessionCapabilities.map(\.rawValue).sorted()) mcpCaps=\(caps.mcpCapabilities.map(\.rawValue).sorted())")
             let sid = try await client.createSession(cwd: projectRoot.path, mcpServers: mcpServers)
             await client.setSessionId(sid)
             log("[session] \(sid)")
@@ -59,21 +73,29 @@ struct ACPSmoke {
             }
             log("[stop2] \(result2.stopReason) usage=\(String(describing: result2.usage))")
 
-            // P2 冒烟:session/list 应含当前会话;session/load 回放全部历史(跨重启恢复语义)。
-            let page = try await client.listSessions(cwd: projectRoot.path, cursor: nil)
-            log("[list] \(page.sessions.count) sessions, nextCursor=\(page.nextCursor ?? "nil")")
-            for s in page.sessions.prefix(5) {
-                log("[list]   \(s.sessionId) title=\(s.title ?? "nil") updatedAt=\(s.updatedAt ?? "nil")")
-            }
-            var replayed = 0
-            try await client.loadSession(sessionId: sid, cwd: projectRoot.path, mcpServers: mcpServers) { update in
-                if update.sessionUpdate == .userMessageChunk || update.sessionUpdate == .agentMessageChunk,
-                   let t = update.textContent, !t.isEmpty {
-                    replayed += 1
-                    log("[replay] \(String(describing: update.sessionUpdate)) \(t.prefix(40))")
+            // P2 冒烟(能力门控):session/list 应含当前会话;session/load 回放全部历史(跨重启恢复语义)。
+            if caps.sessionCapabilities.contains(.list) {
+                let page = try await client.listSessions(cwd: projectRoot.path, cursor: nil)
+                log("[list] \(page.sessions.count) sessions, nextCursor=\(page.nextCursor ?? "nil")")
+                for s in page.sessions.prefix(5) {
+                    log("[list]   \(s.sessionId) title=\(s.title ?? "nil") updatedAt=\(s.updatedAt ?? "nil")")
                 }
+            } else {
+                log("[list] skipped( agent 未声明 sessionCapabilities.list)")
             }
-            log("[load] replayed message chunks=\(replayed)(应 ≥ 4:两轮 user+assistant)")
+            if caps.loadSession {
+                var replayed = 0
+                try await client.loadSession(sessionId: sid, cwd: projectRoot.path, mcpServers: mcpServers) { update in
+                    if update.sessionUpdate == .userMessageChunk || update.sessionUpdate == .agentMessageChunk,
+                       let t = update.textContent, !t.isEmpty {
+                        replayed += 1
+                        log("[replay] \(String(describing: update.sessionUpdate)) \(t.prefix(40))")
+                    }
+                }
+                log("[load] replayed message chunks=\(replayed)(应 ≥ 4:两轮 user+assistant)")
+            } else {
+                log("[load] skipped(agent 未声明 loadSession)")
+            }
         } catch {
             log("[err] \(error)")
             failed = true

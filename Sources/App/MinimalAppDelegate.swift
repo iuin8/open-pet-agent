@@ -213,9 +213,9 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// (`DynamicIslandController.mainScreenHasNotch()` 守门)。
     public static let dynamicIslandEnabledKey: String = "dynamic.island.enabled"
 
-    /// N2.3: UserDefaults 控制 Claude Code 工具层开关。默认 `false` (实验
-    /// 特性, 用户需显式打开)。开关 = true + CLI 已安装 时, prompt 走
-    /// `ClaudeCodeEngine` 子进程而非 LLM HTTP。
+    /// N2.3: UserDefaults 控制 Agent 工具层开关。默认 `false` (实验
+    /// 特性, 用户需显式打开)。开关 = true + 适配器 CLI 已安装 时, prompt 走
+    /// ACP engine 子进程而非 LLM HTTP。
     /// **值保留 legacy `tool.mode.enabled`**(符号已改名 agentModeEnabledKey,key 串不改 → 零迁移)。
     /// `nonisolated`:纯 String 常量,任何 actor/线程读 key 均安全(默认会继承 class 的
     /// @MainActor 隔离,但常量无数据竞争,显式放宽供 `replyConfiguration` 等 nonisolated 纯函数复用)。
