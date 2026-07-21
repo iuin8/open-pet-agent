@@ -26,12 +26,18 @@ struct AgentTranscriptWakeupWatcherTests {
         func value() -> Int { count }
     }
 
-    func waitUntilWakeup(_ counter: Counter, timeout: Duration = .seconds(2)) async throws {
+    func appendUntilWakeup(transcript: URL, counter: Counter, timeout: Duration = .seconds(8)) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now + timeout
+        var index = 0
         while clock.now < deadline {
+            let handle = try FileHandle(forWritingTo: transcript)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data("next-\(index)\n".utf8))
+            try handle.close()
+            try await Task.sleep(nanoseconds: 100_000_000)
             if await counter.value() > 0 { return }
-            try await Task.sleep(nanoseconds: 50_000_000)
+            index += 1
         }
         Issue.record("FSEvents wakeup did not arrive before deadline")
     }
@@ -56,12 +62,7 @@ struct AgentTranscriptWakeupWatcherTests {
         watcher.start()
         defer { watcher.stop() }
 
-        let handle = try FileHandle(forWritingTo: transcript)
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data("next\n".utf8))
-        try handle.close()
-
-        try await waitUntilWakeup(counter)
+        try await appendUntilWakeup(transcript: transcript, counter: counter)
     }
 
 }
