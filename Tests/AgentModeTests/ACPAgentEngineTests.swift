@@ -36,6 +36,14 @@ struct ACPAgentEngineTests {
         return .notification(method: "session/update", params: ACPJSON.parse(json))
     }
 
+    /// session/load 回放 chunk(指定 kind + messageId,聚合语义的最小单元)。
+    private func replayChunk(_ kind: String, mid: String, _ text: String) -> ACPInbound {
+        let json = """
+        {"sessionId":"s","update":{"sessionUpdate":"\(kind)","messageId":"\(mid)","content":{"type":"text","text":\(JSONEncoder().encodedString(text)!)}}}
+        """
+        return .notification(method: "session/update", params: ACPJSON.parse(json))
+    }
+
     @Test("ACPAgentEngine.run: 只 yield agent_message_chunk(thought_chunk 不 yield,免 pet 显示思考碎片)")
     func runYieldsDeltas() async throws {
         // send-driven 预置(mock 每次 send 取「到下一个 response 含」组):
@@ -268,6 +276,109 @@ struct ACPAgentEngineTests {
 
         #expect(deltas == ["你好"])
         #expect(usages == [ACPUsage(used: 29_661, size: 200_000, cost: nil)])   // 仅 usage_update 那一次
+    }
+
+    // MARK: - P2 会话管理(list / load / new)
+
+    private func makeEngine(_ mock: MockACPTransport) -> ACPAgentEngine {
+        ACPAgentEngine(command: ["fake", "acp"], binaryPath: "/usr/bin/true", transportFactory: { mock })
+    }
+
+    /// 按解析后 method 统计请求数(JSONEncoder 会转义 `/`,裸字符串匹配翻车,lessons §2.7)。
+    private func sentCount(_ mock: MockACPTransport, method: String) -> Int {
+        mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .filter { $0["method"]?.stringValue == method }
+            .count
+    }
+
+    @Test("ACPAgentEngine.listSessions: 跟随 nextCursor 翻页聚合(上限 5 页内)")
+    func listSessionsPaginates() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessions":[{"sessionId":"s1","cwd":"/tmp","title":"修 bug"}],"nextCursor":"c2"}"#),
+            resp(2, #"{"sessions":[{"sessionId":"s2","cwd":"/tmp"}]}"#),
+        ])
+        let engine = makeEngine(mock)
+
+        let sessions = try await engine.listSessions()
+
+        #expect(sessions.map(\.sessionId) == ["s1", "s2"])
+        #expect(sessions[0].title == "修 bug")
+        let listSends = mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .filter { $0["method"]?.stringValue == "session/list" }
+        #expect(listSends.count == 2)
+        #expect(listSends[1]["params"]?.objectValue?["cursor"]?.stringValue == "c2")
+    }
+
+    @Test("ACPAgentEngine.loadSession: 回放按 messageId 聚合成整消息,置为当前 session,usage 走 onUsage,onSessionIdChanged 触发")
+    func loadSessionReplaysTurns() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}"#),
+            replayChunk("user_message_chunk", mid: "m1", "你"),
+            replayChunk("user_message_chunk", mid: "m1", "好"),
+            replayChunk("agent_message_chunk", mid: "m2", "你好呀"),
+            usageUpdate(used: 100, size: 200_000),
+            resp(1, #"{}"#),
+        ])
+        let engine = makeEngine(mock)
+        var usages: [ACPUsage] = []
+        engine.onUsage = { usages.append($0) }
+        var sids: [String] = []
+        engine.onSessionIdChanged = { sids.append($0) }
+
+        let turns = try await engine.loadSession("sess_old")
+
+        #expect(turns == [
+            ACPReplayedTurn(role: .user, text: "你好"),          // m1 两 chunk 合并
+            ACPReplayedTurn(role: .assistant, text: "你好呀"),
+        ])
+        #expect(engine.currentSessionId == "sess_old")
+        #expect(sids == ["sess_old"])
+        #expect(usages == [ACPUsage(used: 100, size: 200_000)])
+    }
+
+    @Test("ACPAgentEngine.newSession: 立即 session/new 置当前 + 回调,后续 run 复用不再建")
+    func newSessionCreatesAndReuses() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_new"}"#),
+            updateChunk("好"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        let engine = makeEngine(mock)
+        var sids: [String] = []
+        engine.onSessionIdChanged = { sids.append($0) }
+
+        let sid = try await engine.newSession()
+        #expect(sid == "sess_new")
+        #expect(engine.currentSessionId == "sess_new")
+
+        var deltas: [String] = []
+        for try await d in engine.run(prompt: "hi") { deltas.append(d) }
+        #expect(deltas == ["好"])
+        #expect(sentCount(mock, method: "session/new") == 1)   // 仅 newSession 那次
+        #expect(sids == ["sess_new"])                          // 回调只触发一次
+    }
+
+    @Test("ACPAgentEngine: 首个 run 建 session 也触发 onSessionIdChanged(P2 指针持久化起点)")
+    func firstRunNotifiesSessionId() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            updateChunk("好"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        let engine = makeEngine(mock)
+        var sids: [String] = []
+        engine.onSessionIdChanged = { sids.append($0) }
+
+        for try await _ in engine.run(prompt: "hi") {}
+
+        #expect(sids == ["sess_1"])
+        #expect(engine.currentSessionId == "sess_1")
+        #expect(engine.agentCapabilities?.protocolVersion == 1)
     }
 
     @Test("ACPAgentEngine.run: forwards injected mcpServers to session/new")

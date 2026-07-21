@@ -58,6 +58,22 @@ struct ACPSmoke {
                 log("[update2 kind=\(String(describing: update.sessionUpdate)) mid=\(update.messageId ?? "nil") text=\(update.textContent ?? "nil") usage=\(String(describing: update.usage))]")
             }
             log("[stop2] \(result2.stopReason) usage=\(String(describing: result2.usage))")
+
+            // P2 冒烟:session/list 应含当前会话;session/load 回放全部历史(跨重启恢复语义)。
+            let page = try await client.listSessions(cwd: projectRoot.path, cursor: nil)
+            log("[list] \(page.sessions.count) sessions, nextCursor=\(page.nextCursor ?? "nil")")
+            for s in page.sessions.prefix(5) {
+                log("[list]   \(s.sessionId) title=\(s.title ?? "nil") updatedAt=\(s.updatedAt ?? "nil")")
+            }
+            var replayed = 0
+            try await client.loadSession(sessionId: sid, cwd: projectRoot.path, mcpServers: mcpServers) { update in
+                if update.sessionUpdate == .userMessageChunk || update.sessionUpdate == .agentMessageChunk,
+                   let t = update.textContent, !t.isEmpty {
+                    replayed += 1
+                    log("[replay] \(String(describing: update.sessionUpdate)) \(t.prefix(40))")
+                }
+            }
+            log("[load] replayed message chunks=\(replayed)(应 ≥ 4:两轮 user+assistant)")
         } catch {
             log("[err] \(error)")
             failed = true

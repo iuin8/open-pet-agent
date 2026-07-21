@@ -17,6 +17,25 @@ public struct ChatCardRow: Identifiable, Equatable, Sendable {
     }
 }
 
+/// ACP 会话列表项(P2,App 从 `ACPSessionInfo` 映射;Shell 不依赖 AgentMode)。
+public struct ACPSessionItem: Identifiable, Equatable, Sendable {
+    /// ACP sessionId。
+    public let id: String
+    /// 展示标题(agent 未给时 App 兜底为 sessionId 前缀)。
+    public let title: String
+    /// 最近活动时间(解析自 agent 的 ISO 8601;nil = 未报)。
+    public let updatedAt: Date?
+    /// 是否当前会话(列表里打勾)。
+    public let isCurrent: Bool
+
+    public init(id: String, title: String, updatedAt: Date? = nil, isCurrent: Bool = false) {
+        self.id = id
+        self.title = title
+        self.updatedAt = updatedAt
+        self.isCurrent = isCurrent
+    }
+}
+
 /// 对话卡片的 observable 状态。SwiftUI view 经 `@ObservedObject` 读写。
 ///
 /// 用 `ObservableObject + @Published`（沿用历史;target 已升 macOS 15,可换 `@Observable` 但够用未迁）。
@@ -40,6 +59,22 @@ public final class ChatCardState: ObservableObject {
     @Published public var contextSize: Int?
     /// ACP `usage_update` 的累计费用(App 预格式化展示串,如 "$0.0123";nil = agent 未报)。
     @Published public var contextCost: String?
+
+    // MARK: - ACP 会话管理(P2)
+
+    /// ACP 会话列表(session/list 结果,App 映射注入;按 agent 返回序,opencode 最近优先)。
+    /// 空 = 尚未拉取或无会话;`acpSessionUIEnabled` 为 false 时 UI 整体不显示。
+    @Published public var acpSessions: [ACPSessionItem] = []
+    /// ACP 会话 UI 总开关(App 能力探测后注入:loadSession + list 都支持才 true)。
+    @Published public var acpSessionUIEnabled: Bool = false
+    /// 会话列表拉取/切换/恢复在途(popover 里显 spinner)。
+    @Published public var isLoadingACPSessions: Bool = false
+    /// 选中会话回调(App 注入:loadSession 回放重建消息 + 持久化指针 + 刷列表)。
+    public var onSelectACPSession: (@MainActor (String) -> Void)?
+    /// 新会话回调(App 注入:newSession + 清时间线 + 持久化指针 + 刷列表)。
+    public var onRequestNewACPSession: (@MainActor () -> Void)?
+    /// 刷新列表回调(App 注入:popover 打开时重新 session/list)。
+    public var onRefreshACPSessions: (@MainActor () -> Void)?
     /// 进场缩放锚点对应的边（由锚定结果驱动 spring transition）。
     @Published public var entranceEdge: ChatCardEdge = .above
     /// 是否已"放大就位"。controller 每次 show 先置 false 再 `withAnimation` 置 true →

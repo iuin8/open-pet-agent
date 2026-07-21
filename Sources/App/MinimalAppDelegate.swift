@@ -462,6 +462,8 @@ final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
     /// 最近一次天气驱动的归一化温度。切回 `.auto` 时用它恢复，不必等下次刷新。
     var lastWeatherNormalizedTemp: Float?
     let userDefaults: UserDefaults
+    /// ACP 当前会话指针存储(P2;key = engineKind|cwd,transcript 权威在 agent 侧)。
+    let acpSessionStore = ACPSessionStore()
     let llmProviderBox: LLMProviderBox
     /// Optional reference to the shared live-context box. When non-nil,
     /// `applicationDidFinishLaunching` wires the petContextProvider into

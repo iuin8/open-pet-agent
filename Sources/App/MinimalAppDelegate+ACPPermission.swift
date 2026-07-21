@@ -15,6 +15,8 @@ extension MinimalAppDelegate {
     /// 时机:engine 创建后、首次 run 前 → ensureConnected 时透传给 ACPClient。
     @MainActor
     func wireACPPermissionHandler() {
+        // engine 已换实例 → 会话 UI 态随旧 engine 失效(P2;新 engine 待重新能力探测)
+        resetACPSessionUI()
         guard let acp = agentModeRouter?.currentEngine as? ACPAgentEngine else { return }
         // onPermissionRequest 是 @Sendable async 闭包(ACPClient actor 跨边界调)。
         // 直接 `await self?.presentACPPermission`(presentACPPermission 是 @MainActor async,
@@ -36,6 +38,12 @@ extension MinimalAppDelegate {
             Task { @MainActor [weak self] in
                 guard let state = self?.chatCardWindowController?.cardState else { return }
                 Self.applyContextUsage(usage, to: state)
+            }
+        }
+        // 会话指针持久化(P2):首建/恢复/新建 session → ACPSessionStore 落盘(开卡恢复用)。
+        acp.onSessionIdChanged = { [weak self] sid in
+            Task { @MainActor [weak self] in
+                self?.persistACPSessionPointer(sid)
             }
         }
     }

@@ -76,6 +76,10 @@ struct PetChatTabContent: View {
                     if !state.replyOptions.isEmpty {
                         ReplySourceBar(selected: replyTargetBinding, options: state.replyOptions)
                     }
+                    // ACP-4(P2):会话选择器,能力门控(loadSession + list 都支持 App 才置 enabled)
+                    if state.acpSessionUIEnabled {
+                        ACPSessionPicker(state: state)
+                    }
                     if let current = state.currentProject {
                         ProjectMenu(
                             current: current,

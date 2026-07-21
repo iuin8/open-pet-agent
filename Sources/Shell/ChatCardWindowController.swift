@@ -44,6 +44,9 @@ public final class ChatCardWindowController {
     /// App 注入：开卡片时回填外部会话历史到 `sessionStore`（读活跃 transcript 尾部）。
     /// 在卡片**弹出之后**异步调（reader 文件读在后台，store 更新驱动 tab 视图，不阻塞进场）。
     public var sessionHistoryLoader: (@MainActor () async -> Void)?
+    /// App 注入:ACP 会话恢复(P2,agent 模式 + ACP engine 时):能力探测 → 按持久指针
+    /// `session/load` 回放重建消息列表。弹出后异步调(冷启动 ~2-3s + 回放,不阻塞进场)。
+    public var acpSessionRestoreHook: (@MainActor () async -> Void)?
 
     /// App 注入：回复来源配置 provider（当前 target + 可选项）。每次开卡调，从 UserDefaults
     /// 派生最新值刷进 state → 驱动 `ReplySourceBar`（同步设置面板的改动，两处写同一份 UD）。
@@ -188,6 +191,8 @@ public final class ChatCardWindowController {
             self.positionAndPresent()
             // 外部会话历史在弹出后台补（文件读在 loader 内部 off-main，store 更新驱动 tab 视图）。
             await self.sessionHistoryLoader?()
+            // ACP 会话恢复(P2):agent 模式 + ACP engine 时按持久指针回放重建(冷启动+回放异步)。
+            await self.acpSessionRestoreHook?()
         }
     }
 
