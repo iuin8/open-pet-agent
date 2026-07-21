@@ -30,6 +30,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)?
     private let onSetTargetEnabled: ((String, CapabilityTarget, Bool) -> ProjectCapabilityCardState)?
     private let onSetSourceConfirmed: ((String, Bool) -> ProjectCapabilityCardState)?
+    private let onRevokeAllSourceConfirmations: (() -> ProjectCapabilityCardState)?
     private let onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
     private let onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)?
     private let onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
@@ -56,6 +57,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onSetEnabled: ((String, Bool) -> ProjectCapabilityCardState)? = nil,
         onSetTargetEnabled: ((String, CapabilityTarget, Bool) -> ProjectCapabilityCardState)? = nil,
         onSetSourceConfirmed: ((String, Bool) -> ProjectCapabilityCardState)? = nil,
+        onRevokeAllSourceConfirmations: (() -> ProjectCapabilityCardState)? = nil,
         onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)? = nil,
         onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)? = nil,
         onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)? = nil,
@@ -81,6 +83,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         self.onSetEnabled = onSetEnabled
         self.onSetTargetEnabled = onSetTargetEnabled
         self.onSetSourceConfirmed = onSetSourceConfirmed
+        self.onRevokeAllSourceConfirmations = onRevokeAllSourceConfirmations
         self.onCreatePlugin = onCreatePlugin
         self.onAddSkill = onAddSkill
         self.onAddMCP = onAddMCP
@@ -123,6 +126,11 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     public func setSourceConfirmed(pluginID: String, confirmed: Bool) {
         guard let onSetSourceConfirmed else { return }
         refreshPreservingTab(onSetSourceConfirmed(pluginID, confirmed))
+    }
+
+    public func revokeAllSourceConfirmations() {
+        guard let onRevokeAllSourceConfirmations else { return }
+        refreshPreservingTab(onRevokeAllSourceConfirmations())
     }
 
     public func createPlugin(pluginID: String, name: String) {

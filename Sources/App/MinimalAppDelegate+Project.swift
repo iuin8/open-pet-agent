@@ -388,6 +388,16 @@ extension MinimalAppDelegate {
                 }
                 return card(for: project)
             },
+            onRevokeAllSourceConfirmations: { [weak self] in
+                guard let self else { return ProjectCapabilityCardState(selectedTab: .overview, items: []) }
+                do {
+                    guard self.confirmRevokeAllProjectPluginSources(project: project) else { return card(for: project) }
+                    try Self.revokeAllProjectPluginSourceConfirmations(project: project)
+                } catch {
+                    self.showProjectError(title: "撤销项目能力来源确认失败", error: error)
+                }
+                return card(for: project)
+            },
             onCreatePlugin: { [weak self] pluginID, name in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .skills, items: []) }
                 do {
@@ -540,6 +550,18 @@ extension MinimalAppDelegate {
         """
         alert.alertStyle = .warning
         alert.addButton(withTitle: "确认来源")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    @MainActor private func confirmRevokeAllProjectPluginSources(project: AgentProject) -> Bool {
+        let confirmedCount = (try? ProjectCapabilityAuditStore().loadSourceConfirmations(project: project).confirmations.count) ?? 0
+        guard confirmedCount > 0 else { return false }
+        let alert = NSAlert()
+        alert.messageText = "撤销全部项目能力来源确认？"
+        alert.informativeText = "将清除当前项目的 \(confirmedCount) 条本地来源确认。不会删除 plugin、不会修改 manifest，也不会改动已同步的 agent 配置；远端或未知来源下次同步前需要重新确认。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "撤销全部")
         alert.addButton(withTitle: "取消")
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -772,6 +794,10 @@ extension MinimalAppDelegate {
         } else {
             try store.revokeSourceConfirmation(project: project, pluginID: pluginID)
         }
+    }
+
+    static func revokeAllProjectPluginSourceConfirmations(project: AgentProject) throws {
+        try ProjectCapabilityAuditStore().revokeAllSourceConfirmations(project: project)
     }
 
     static func setProjectPluginEnabled(project: AgentProject, pluginID: String, enabled: Bool) throws {

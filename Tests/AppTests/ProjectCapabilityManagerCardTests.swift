@@ -744,6 +744,41 @@ struct ProjectCapabilityManagerCardTests {
         #expect(changedItem.sourceConfirmationAudit == nil)
     }
 
+    @Test("source confirmation：批量撤销清除 root 行确认状态")
+    func revokeAllSourceConfirmationsClearsRootRowState() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "SourceRevokeAll")
+        ProjectConfig.homeDirectoryOverride = fixture.root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
+        )
+        let source = ProjectPluginSourceMetadata(
+            kind: .git,
+            url: "https://example.com/plugin.git",
+            revision: "abc123"
+        )
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            source: source,
+            date: Date(timeIntervalSince1970: 6)
+        )
+        #expect(try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills).visibleItems.first?.isSourceConfirmed == true)
+
+        try MinimalAppDelegate.revokeAllProjectPluginSourceConfirmations(project: fixture.project)
+
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+        let item = try #require(state.visibleItems.first)
+        #expect(item.isSourceConfirmable == true)
+        #expect(item.isSourceConfirmed == false)
+        #expect(item.sourceConfirmationAudit == nil)
+        #expect(try ProjectCapabilityAuditStore().loadSourceConfirmations(project: fixture.project).confirmations.isEmpty)
+    }
+
     @Test("preview：Codex 同步预览列出操作但不 materialize engine 文件")
     func codexPreviewListsOperationsWithoutMaterializing() throws {
         let fixture = try ProjectCapabilityManagerFixture()
