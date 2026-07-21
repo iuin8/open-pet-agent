@@ -139,8 +139,29 @@ public struct ProjectCapabilityCardState: Sendable, Equatable {
             return targetPaths.map { "\(sourcePath) → \($0)" }.joined(separator: "\n")
         }
 
+        public var sourcePathSummary: String { Self.pathLeaf(sourcePath) }
+
+        public var targetPathSummary: String? {
+            switch targetPaths.count {
+            case 0: return nil
+            case 1: return Self.pathLeaf(targetPaths[0])
+            default: return "\(targetPaths.count) targets"
+            }
+        }
+
+        public var pathSummary: String {
+            guard let targetPathSummary else { return sourcePathSummary }
+            return "\(sourcePathSummary) → \(targetPathSummary)"
+        }
+
+        public var hasItemEnabledControl: Bool { false }
+
         public var nextEnabledValue: Bool { !isEnabled }
         public var nextSourceConfirmedValue: Bool { !isSourceConfirmed }
+
+        private static func pathLeaf(_ path: String) -> String {
+            URL(fileURLWithPath: path).lastPathComponent
+        }
     }
 
     public let selectedTab: Tab

@@ -40,7 +40,7 @@ struct ProjectCapabilityManagerView: View {
             if state.visibleItems.isEmpty {
                 emptyState
             } else {
-                ForEach(state.visibleRows, id: \.item.id) { row in
+                ForEach(state.visibleRows, id: \.rowID) { row in
                     itemView(row.item, rowID: row.rowID)
                 }
             }
@@ -268,11 +268,12 @@ struct ProjectCapabilityManagerView: View {
                         .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
                     statusBadge(item.status)
                 }
-                Text(item.sourcePath)
+                Text(item.pathSummary)
                     .font(.system(size: 8.5, design: .monospaced))
                     .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.52))
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(item.copyText)
                 if !item.targets.isEmpty || item.isSourceConfirmable {
                     HStack(spacing: 4) {
                         ForEach(item.targets, id: \.target) { target in
@@ -286,13 +287,6 @@ struct ProjectCapabilityManagerView: View {
                         .font(.system(size: 8.5, weight: .medium, design: .rounded))
                         .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.5))
                         .lineLimit(1)
-                }
-                ForEach(item.targetPaths, id: \.self) { target in
-                    Text("→ \(target)")
-                        .font(.system(size: 8.5, design: .monospaced))
-                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.45))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                 }
                 ForEach(item.diagnostics.indices, id: \.self) { index in
                     let diagnostic = item.diagnostics[index]
@@ -313,13 +307,15 @@ struct ProjectCapabilityManagerView: View {
                     .buttonStyle(.plain)
                     .help("打开详情")
                 }
-                Button {
-                    onSetEnabled(item.pluginID, item.nextEnabledValue)
-                } label: {
-                    Image(systemName: item.isEnabled ? "power.circle.fill" : "power.circle")
+                if item.hasItemEnabledControl {
+                    Button {
+                        onSetEnabled(item.pluginID, item.nextEnabledValue)
+                    } label: {
+                        Image(systemName: item.isEnabled ? "power.circle.fill" : "power.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.isEnabled ? "禁用 item" : "启用 item")
                 }
-                .buttonStyle(.plain)
-                .help(item.isEnabled ? "禁用 plugin" : "启用 plugin")
                 Button {
                     openInFinder(item.sourcePath)
                 } label: {

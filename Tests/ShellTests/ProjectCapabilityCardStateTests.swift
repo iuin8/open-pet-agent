@@ -178,4 +178,73 @@ struct ProjectCapabilityCardStateTests {
         #expect(item.targets.map(\.target) == [.codex, .claudeCode])
         #expect(item.targets.map(\.isEnabled) == [true, false])
     }
+
+    @Test("State：重复 item id 仍保留独立 rowID")
+    func duplicateItemIDsKeepDistinctRowIDs() {
+        let first = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:shared",
+            kind: .skill,
+            name: "lint",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/skills/lint",
+            targetPaths: [],
+            status: .enabled,
+            diagnostics: []
+        )
+        let second = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:shared",
+            kind: .skill,
+            name: "review",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/skills/review",
+            targetPaths: [],
+            status: .enabled,
+            diagnostics: []
+        )
+
+        let state = ProjectCapabilityCardState(selectedTab: .skills, items: [first, second])
+
+        #expect(state.visibleRows.map(\.rowID) == [0, 1])
+        #expect(state.visibleRows.map(\.item.name) == ["lint", "review"])
+    }
+
+    @Test("Item：列表使用紧凑路径摘要，完整路径仍用于复制")
+    func itemUsesCompactPathSummaryForListDensity() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "mcp:dev-toolkit:filesystem",
+            kind: .mcp,
+            name: "filesystem",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/repo/.open-pet-agent/plugins/dev-toolkit/mcp/servers.json#filesystem",
+            targetPaths: [
+                "/tmp/repo/.codex/config.toml",
+                "/tmp/repo/.mcp.json",
+                "/tmp/repo/opencode.json"
+            ],
+            status: .enabled,
+            diagnostics: []
+        )
+
+        #expect(item.sourcePathSummary == "servers.json#filesystem")
+        #expect(item.targetPathSummary == "3 targets")
+        #expect(item.pathSummary == "servers.json#filesystem → 3 targets")
+        #expect(item.copyText.contains("/tmp/repo/.open-pet-agent/plugins/dev-toolkit/mcp/servers.json#filesystem → /tmp/repo/.codex/config.toml"))
+    }
+
+    @Test("Item：skill/MCP 行不暴露共享 plugin 启停为 item 级控制")
+    func itemDoesNotExposePluginEnabledAsRowControl() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "skill:dev-toolkit:lint",
+            kind: .skill,
+            name: "lint",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/skills/lint",
+            targetPaths: [],
+            isEnabled: true,
+            status: .enabled,
+            diagnostics: []
+        )
+
+        #expect(item.hasItemEnabledControl == false)
+    }
 }
