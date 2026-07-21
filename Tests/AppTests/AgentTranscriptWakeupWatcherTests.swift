@@ -26,6 +26,16 @@ struct AgentTranscriptWakeupWatcherTests {
         func value() -> Int { count }
     }
 
+    func waitUntilWakeup(_ counter: Counter, timeout: Duration = .seconds(2)) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while clock.now < deadline {
+            if await counter.value() > 0 { return }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        Issue.record("FSEvents wakeup did not arrive before deadline")
+    }
+
     @Test("nested transcript append triggers wakeup")
     func nestedTranscriptAppendTriggersWakeup() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -51,8 +61,7 @@ struct AgentTranscriptWakeupWatcherTests {
         try handle.write(contentsOf: Data("next\n".utf8))
         try handle.close()
 
-        try await Task.sleep(nanoseconds: 500_000_000)
-        #expect(await counter.value() > 0)
+        try await waitUntilWakeup(counter)
     }
 
 }
