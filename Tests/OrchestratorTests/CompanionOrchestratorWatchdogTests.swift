@@ -93,11 +93,12 @@ struct CompanionOrchestratorWatchdogTests {
             Issue.record("期望 URLError(.timedOut),实际收到: \(error)")
         }
         let elapsed = Date().timeIntervalSince(started)
-        // watchdog 每秒 tick 一次, 1s 阈值下理论上 1~3s 触发。但 parallel
-        // 跑全套(1040+ tests)时 main actor 抢得厉害, Task.sleep + actor hop
-        // 偶尔会延迟到 8s+。放宽到 15s 容忍 race 但仍能 catch 真 hung
-        // (单跑这个 suite < 2s)。
-        #expect(elapsed < 15, "watchdog 应快速触发,实际耗时 \(elapsed)s")
+        // 断言语义(谁触发)不断言速度:watchdog 是真 1s tick 轮询,全套 --parallel
+        // 负载下 main actor + Task.sleep 延迟不可控(实测 22~25s),秒级上限必然 flake
+        // (已三连)。上限只需显著低于 StallingProvider 的 60s 兜底结束 —— 足以证明
+        // 是 watchdog 触发而非 provider 正常结束(后者走上面 Issue.record)。真 hung
+        // 由测试硬超时兜底。
+        #expect(elapsed < 55, "watchdog 应先于 provider 60s 兜底触发,实际耗时 \(elapsed)s")
     }
 
     @Test("replyStream 正常 yield → 不会被 watchdog 误杀")
@@ -163,7 +164,9 @@ struct CompanionOrchestratorWatchdogTests {
         // 失败时 reply(to:) 走 echo fallback
         let expectedEcho = "\u{6211}\u{542C}\u{5230}\u{201C}hello\u{201D}\u{4E86}\u{3002}"
         #expect(result == expectedEcho)
-        #expect(elapsed < 5, "watchdog 应在 ~1s 触发,而非等 60s 卡死,实测 \(elapsed)s")
+        // 同 replyStreamIdleTimeoutFires:断言语义(echo fallback + onThinkingEnded timedOut
+        // 已证明 watchdog 触发),上限只压 provider 60s 兜底,不断言秒级速度(负载相关,必 flake)。
+        #expect(elapsed < 55, "watchdog 应先于 provider 60s 兜底触发,实测 \(elapsed)s")
 
         // onThinkingEnded 收到 URLError(.timedOut)
         if case .failure(let error) = thinkingEndedResult {
