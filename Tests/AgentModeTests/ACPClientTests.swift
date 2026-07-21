@@ -124,6 +124,71 @@ func clientPromptResponseUsage() async throws {
     #expect(result.usage?.contextUsed == 29_661)
 }
 
+@Test("ACPClient.connect: 解析 loadSession + sessionCapabilities 子能力(null 项忽略,P2 能力门控)")
+func clientConnectSessionCapabilities() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"sessionCapabilities":{"list":{},"resume":{},"fork":null}}}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    let caps = try await client.connect()
+    #expect(caps.loadSession)
+    #expect(caps.sessionCapabilities == [.list, .resume])
+}
+
+@Test("ACPClient.connect: loadSession 缺省/ false → 不支持(降级不开恢复入口)")
+func clientConnectNoLoadSession() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    let caps = try await client.connect()
+    #expect(!caps.loadSession)
+    #expect(caps.sessionCapabilities.isEmpty)
+}
+
+@Test("ACPClient.listSessions: 发 session/list 带 cwd,解 sessions(坏项跳过)+ nextCursor")
+func clientListSessions() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+        resp(1, #"{"sessions":[{"sessionId":"s1","cwd":"/tmp","title":"修 bug","updatedAt":"2026-07-20T10:00:00Z"},{"sessionId":"s2","cwd":"/tmp"},{"bad":true}],"nextCursor":"c2"}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    _ = try await client.connect()
+
+    let page = try await client.listSessions(cwd: "/tmp", cursor: nil)
+
+    #expect(page.sessions == [
+        ACPSessionInfo(sessionId: "s1", cwd: "/tmp", title: "修 bug", updatedAt: "2026-07-20T10:00:00Z"),
+        ACPSessionInfo(sessionId: "s2", cwd: "/tmp"),
+    ])
+    #expect(page.nextCursor == "c2")
+    let sent = ACPJSON.parse(mock.sentLines.dropFirst().first ?? "")?.objectValue
+    #expect(sent?["method"]?.stringValue == "session/list")
+    #expect(sent?["params"]?.objectValue?["cwd"]?.stringValue == "/tmp")
+}
+
+@Test("ACPClient.loadSession: 回放通知在响应前经 onUpdate 按序交付(历史重建数据源)")
+func clientLoadSessionReplays() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}"#),
+        update("user_message_chunk", "你好"),
+        update("agent_message_chunk", "你好呀"),
+        resp(1, #"{"modes":null}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    _ = try await client.connect()
+
+    var texts: [String] = []
+    try await client.loadSession(sessionId: "s1", cwd: "/tmp", mcpServers: []) { update in
+        if let t = update.textContent { texts.append(t) }
+    }
+
+    #expect(texts == ["你好", "你好呀"])
+    let sent = ACPJSON.parse(mock.sentLines.dropFirst().first ?? "")?.objectValue
+    #expect(sent?["method"]?.stringValue == "session/load")
+    #expect(sent?["params"]?.objectValue?["sessionId"]?.stringValue == "s1")
+}
+
 @Test("ACPClient: response error 透传")
 func clientResponseError() async throws {
     let mock = MockACPTransport([

@@ -20,6 +20,18 @@ public enum ACPAgentEngineError: Error, Equatable {
     case client(String)
 }
 
+/// `loadSession` 回放聚合出的一条整消息(user/assistant;chunk 已按 messageId 合并)。
+public struct ACPReplayedTurn: Sendable, Equatable {
+    public enum Role: Sendable, Equatable { case user, assistant }
+    public let role: Role
+    public var text: String
+
+    public init(role: Role, text: String) {
+        self.role = role
+        self.text = text
+    }
+}
+
 /// 用 ACP 协议驱动外部 agent 子进程的 `AgentEngine`(class,connection 复用)。
 public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     public static let kind: AgentEngineKind = .openCode
@@ -48,6 +60,10 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     /// 本轮未收 usage_update 但 PromptResponse 带 unstable usage 时合成 fallback(opencode 1.18 路径)。
     public var onUsage: (@Sendable (ACPUsage) -> Void)?
 
+    /// sessionId 变更回调(P2:ensureSession 首建 / loadSession 恢复 / newSession 新建后触发;
+    /// App 用来持久化「当前会话指针」)。@Sendable 同步,App 注入闭包内自行 hop。
+    public var onSessionIdChanged: (@Sendable (String) -> Void)?
+
     /// 复用的 client(首次 run 建,后续复用)。lock 保护(防并发首次建两次)。
     private var client: ACPClient?
     /// 复用的 sessionId(首个 run `session/new` 建,后续 run 复用 —— agent 端上下文连贯;
@@ -56,6 +72,16 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     /// 首次 initialize 协商出的能力(与 client 同生命周期),供 provider 按能力过滤 MCP server。
     private var clientCapabilities: ACPAgentCapabilities?
     private let lock = NSLock()
+
+    /// 当前复用的 sessionId(只读;nil = 尚未建)。P2 会话恢复后也有值。
+    public var currentSessionId: String? {
+        lock.lock(); defer { lock.unlock() }; return cachedSessionId
+    }
+
+    /// initialize 协商出的能力(只读;nil = 尚未连接)。P2 能力门控(loadSession/list)用。
+    public var agentCapabilities: ACPAgentCapabilities? {
+        lock.lock(); defer { lock.unlock() }; return clientCapabilities
+    }
 
     public init(
         command: [String] = ["opencode", "acp"],
@@ -124,6 +150,82 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
         }
         cachedSessionId = sid
         lock.unlock()
+        onSessionIdChanged?(sid)   // P2:首建也通知(App 持久化指针)
+        return sid
+    }
+
+    // MARK: - 会话管理(P2:list / load / new)
+
+    /// 连接就绪 + 返回协商能力(P2 能力门控:loadSession/list 探测)。冷启动首调 ~2-3s。
+    public func ensureReady() async throws -> ACPAgentCapabilities {
+        try await ensureConnected().1
+    }
+
+    /// 列出 agent 侧持久会话(当前 cwd,按 agent 返回顺序,opencode 为最近优先)。
+    /// 跟随 nextCursor 翻页,上限 5 页防失控。能力缺失(agent 不支持 list)错误自然抛上。
+    public func listSessions() async throws -> [ACPSessionInfo] {
+        let (c, _) = try await ensureConnected()
+        let cwdPath = cwd?.path ?? FileManager.default.currentDirectoryPath
+        var all: [ACPSessionInfo] = []
+        var cursor: String? = nil
+        for _ in 0..<5 {
+            let page = try await c.listSessions(cwd: cwdPath, cursor: cursor)
+            all.append(contentsOf: page.sessions)
+            guard let next = page.nextCursor, !next.isEmpty else { break }
+            cursor = next
+        }
+        return all
+    }
+
+    /// 载入已有 session 并回放历史(P2 跨重启/切换恢复):
+    /// agent 回放全部历史为 session/update → 聚合成按序的 user/assistant 整消息返回
+    /// (UI 重填消息列表);回放中的 usage_update 走 onUsage(同 run)。成功后置为当前 session。
+    /// 失败(session 已被 agent 侧清掉等)抛错,client/当前 session 不动 —— 调用方决定回退。
+    public func loadSession(_ sid: String) async throws -> [ACPReplayedTurn] {
+        let (c, caps) = try await ensureConnected()
+        let cwdPath = cwd?.path ?? FileManager.default.currentDirectoryPath
+        let onUsageHandler = onUsage
+        var turns: [ACPReplayedTurn] = []
+        var indexByMessageId: [String: Int] = [:]
+        try await c.loadSession(sessionId: sid, cwd: cwdPath, mcpServers: mcpServersProvider(caps)) { update in
+            // 回放按 messageId 聚合 chunk(同一消息的多 chunk 追加合并);usage 直传。
+            if update.sessionUpdate == .usageUpdate, let usage = update.usage {
+                onUsageHandler?(usage)
+                return
+            }
+            let role: ACPReplayedTurn.Role?
+            switch update.sessionUpdate {
+            case .userMessageChunk: role = .user
+            case .agentMessageChunk: role = .assistant
+            default: role = nil
+            }
+            guard let role, let text = update.textContent, !text.isEmpty else { return }
+            if let mid = update.messageId {
+                if let idx = indexByMessageId[mid] {
+                    turns[idx].text += text
+                } else {
+                    indexByMessageId[mid] = turns.count
+                    turns.append(ACPReplayedTurn(role: role, text: text))
+                }
+            } else {
+                turns.append(ACPReplayedTurn(role: role, text: text))
+            }
+        }
+        await c.setSessionId(sid)
+        lock.lock(); cachedSessionId = sid; lock.unlock()
+        onSessionIdChanged?(sid)
+        return turns
+    }
+
+    /// 显式开新会话(P2「新会话」入口):立即 session/new 并置为当前,返回新 id。
+    /// 立即建(而非等下个 run 懒建)让持久化指针立刻可存、列表立刻可见。
+    public func newSession() async throws -> String {
+        let (c, caps) = try await ensureConnected()
+        let cwdPath = cwd?.path ?? FileManager.default.currentDirectoryPath
+        let sid = try await c.createSession(cwd: cwdPath, mcpServers: mcpServersProvider(caps))
+        await c.setSessionId(sid)
+        lock.lock(); cachedSessionId = sid; lock.unlock()
+        onSessionIdChanged?(sid)
         return sid
     }
 

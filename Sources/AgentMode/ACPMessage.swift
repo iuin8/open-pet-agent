@@ -286,10 +286,61 @@ public struct ACPSessionUpdate: Sendable, Equatable {
 public enum ACPMethod {
     public static let initialize = "initialize"
     public static let sessionNew = "session/new"
+    public static let sessionLoad = "session/load"   // 回放全部历史为 session/update 后响应(loadSession 能力门控)
+    public static let sessionList = "session/list"   // sessionCapabilities.list 能力门控
     public static let sessionPrompt = "session/prompt"
     public static let sessionCancel = "session/cancel"
     public static let sessionUpdate = "session/update"   // notification(agent → client)
     public static let sessionRequestPermission = "session/request_permission"  // agent → client request
+}
+
+// MARK: - session/list(P2)
+
+/// `session/list` 返回的一条会话信息(schema v1.4.0 SessionInfo;title/updatedAt 可空)。
+public struct ACPSessionInfo: Sendable, Equatable {
+    public let sessionId: String
+    public let cwd: String
+    /// 人类可读标题(agent 未给则 nil,UI 兜底显示 sessionId 前缀)。
+    public let title: String?
+    /// ISO 8601 最近活动时间(agent 未给则 nil)。
+    public let updatedAt: String?
+
+    public init(sessionId: String, cwd: String, title: String? = nil, updatedAt: String? = nil) {
+        self.sessionId = sessionId
+        self.cwd = cwd
+        self.title = title
+        self.updatedAt = updatedAt
+    }
+
+    /// 从 sessions 数组单项解出。缺 sessionId/cwd → nil(配合数组 compactMap 容忍坏项,
+    /// 对齐 schema 的 x-deserialize-skip-invalid-items)。
+    static func decode(from json: ACPJSON?) -> ACPSessionInfo? {
+        guard let o = json?.objectValue,
+              let sid = o["sessionId"]?.stringValue,
+              let cwd = o["cwd"]?.stringValue else { return nil }
+        return ACPSessionInfo(
+            sessionId: sid, cwd: cwd,
+            title: o["title"]?.stringValue, updatedAt: o["updatedAt"]?.stringValue
+        )
+    }
+}
+
+/// `session/list` 的响应:sessions + 分页 cursor(无 nextCursor = 没有更多)。
+public struct ACPSessionListResult: Sendable, Equatable {
+    public let sessions: [ACPSessionInfo]
+    public let nextCursor: String?
+
+    public init(sessions: [ACPSessionInfo], nextCursor: String? = nil) {
+        self.sessions = sessions
+        self.nextCursor = nextCursor
+    }
+
+    /// 从 result 整体解出(sessions 必填,坏项跳过)。
+    static func decode(from result: ACPJSON?) -> ACPSessionListResult {
+        let obj = result?.objectValue ?? [:]
+        let sessions = (obj["sessions"]?.arrayValue ?? []).compactMap { ACPSessionInfo.decode(from: $0) }
+        return ACPSessionListResult(sessions: sessions, nextCursor: obj["nextCursor"]?.stringValue)
+    }
 }
 
 // MARK: - session/request_permission(ACP-2)

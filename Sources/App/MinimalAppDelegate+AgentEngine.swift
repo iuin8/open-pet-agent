@@ -30,7 +30,7 @@ extension MinimalAppDelegate {
         if entry.id == AgentEngineKind.openCode.rawValue {
             ProjectStore.ensureDefaultProjectRegistered(defaults: defaults)
             let project = ProjectStore.current(defaults: defaults)
-            let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
+            let projectRoot = currentACPProjectRoot(defaults: defaults)   // 与 P2 会话指针 key 同一解析入口
             let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
             let mcpServersProvider: @Sendable (ACPAgentCapabilities) -> [ACPJSON] = { caps in
                 do {
@@ -59,6 +59,15 @@ extension MinimalAppDelegate {
         }
         // 其他 engine / fallback:registry makeEngine
         router.setEngine(entry.makeEngine())
+    }
+
+    /// ACP engine 的会话 cwd(与 applySelectedAgentEngine 的 openCode 分支同一解析:
+    /// ProjectStore.current + ProjectConfig.ensure,fallback project.rootURL)。
+    /// P2 会话指针 key 用(与 engine 实际 cwd 保持一致是关键,故收敛为一个入口)。
+    nonisolated static func currentACPProjectRoot(defaults: UserDefaults) -> URL {
+        ProjectStore.ensureDefaultProjectRegistered(defaults: defaults)
+        let project = ProjectStore.current(defaults: defaults)
+        return (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
     }
 
     // MARK: - 回复来源 segmented 配置（聊天面板 Composer 上方，直觉可用性）

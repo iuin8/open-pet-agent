@@ -30,11 +30,23 @@ public struct ACPAgentCapabilities: Sendable, Equatable {
     /// ACP v1 用能力门控而非版本号引入 http/sse（见 protocol/initialization）：
     /// 未声明的 transport 不应出现在 `session/new` 的 `mcpServers` 里。
     public let mcpCapabilities: Set<ACPMCPCapability>
+    /// 顶层 `loadSession: true` → 支持 `session/load`(回放全部历史)。
+    public let loadSession: Bool
+    /// `agentCapabilities.sessionCapabilities` 里值非 null 的子能力(list/resume/…)。
+    public let sessionCapabilities: Set<ACPSessionCapability>
 
-    public init(protocolVersion: Int, agentCapabilities: Set<String>, mcpCapabilities: Set<ACPMCPCapability> = []) {
+    public init(
+        protocolVersion: Int,
+        agentCapabilities: Set<String>,
+        mcpCapabilities: Set<ACPMCPCapability> = [],
+        loadSession: Bool = false,
+        sessionCapabilities: Set<ACPSessionCapability> = []
+    ) {
         self.protocolVersion = protocolVersion
         self.agentCapabilities = agentCapabilities
         self.mcpCapabilities = mcpCapabilities
+        self.loadSession = loadSession
+        self.sessionCapabilities = sessionCapabilities
     }
 }
 
@@ -42,6 +54,14 @@ public struct ACPAgentCapabilities: Sendable, Equatable {
 public enum ACPMCPCapability: String, Sendable, Equatable {
     case http
     case sse
+}
+
+/// ACP v1 `sessionCapabilities` 的子能力项(值 `{}` = 支持;未知项丢弃,向前兼容)。
+public enum ACPSessionCapability: String, Sendable, Equatable {
+    case list
+    case resume
+    case fork
+    case delete
 }
 
 /// ACP client:经 transport 跟 agent 子进程通信。
@@ -92,14 +112,25 @@ public actor ACPClient {
             ?? obj["protocolVersion"].flatMap { if case .int(let v) = $0 { return v }; return nil }
             ?? 1
         let capsKeys = obj["agentCapabilities"]?.objectValue?.keys.reduce(into: Set<String>()) { $0.insert($1) } ?? []
-        let mcpCaps = (obj["agentCapabilities"]?.objectValue?["mcpCapabilities"]?.objectValue ?? [:])
+        let agentCaps = obj["agentCapabilities"]?.objectValue
+        let mcpCaps = (agentCaps?["mcpCapabilities"]?.objectValue ?? [:])
             .reduce(into: Set<ACPMCPCapability>()) { caps, entry in
                 guard case .bool(let supported) = entry.value, supported,
                       let capability = ACPMCPCapability(rawValue: entry.key) else { return }
                 caps.insert(capability)
             }
+        // 会话恢复/列表能力(P2):顶层 loadSession bool + sessionCapabilities 子项(值非 null 即支持)。
+        let loadSession = agentCaps?["loadSession"] == .bool(true)
+        let sessionCaps = (agentCaps?["sessionCapabilities"]?.objectValue ?? [:])
+            .reduce(into: Set<ACPSessionCapability>()) { caps, entry in
+                guard entry.value != .null, let capability = ACPSessionCapability(rawValue: entry.key) else { return }
+                caps.insert(capability)
+            }
         didConnect = true
-        return ACPAgentCapabilities(protocolVersion: proto, agentCapabilities: capsKeys, mcpCapabilities: mcpCaps)
+        return ACPAgentCapabilities(
+            protocolVersion: proto, agentCapabilities: capsKeys, mcpCapabilities: mcpCaps,
+            loadSession: loadSession, sessionCapabilities: sessionCaps
+        )
     }
 
     // MARK: - createSession(session/new)
@@ -116,6 +147,45 @@ public actor ACPClient {
             throw ACPClientError.transport("session/new 未返回 sessionId")
         }
         return sid
+    }
+
+    // MARK: - listSessions(session/list,P2)
+
+    /// 列 agent 侧持久会话(cwd 过滤;cursor 分页)。能力门控:`sessionCapabilities.list`
+    /// (调用方负责探测;agent 不支持会回 Method not found 错误,自然抛上)。
+    public func listSessions(cwd: String?, cursor: String? = nil) async throws -> ACPSessionListResult {
+        guard didConnect else { throw ACPClientError.notConnected }
+        let id = nextRequestID()
+        var params: [String: ACPJSON] = [:]
+        if let cwd { params["cwd"] = .string(cwd) }
+        if let cursor { params["cursor"] = .string(cursor) }
+        let result = try await sendRequest(
+            id: id, method: ACPMethod.sessionList, params: .object(params), timeoutNs: Self.shortTimeoutNs)
+        return ACPSessionListResult.decode(from: result)
+    }
+
+    // MARK: - loadSession(session/load,P2)
+
+    /// 载入已有 session:agent **先回放全部历史为 session/update 通知**(经 onUpdate 交付,
+    /// 同 prompt 的流式回调),回放完才响应。能力门控:`loadSession`。
+    /// 成功后调用方负责 setSessionId(engine 层会做)。
+    public func loadSession(
+        sessionId sid: String,
+        cwd: String,
+        mcpServers: [ACPJSON],
+        onUpdate: @escaping @Sendable (ACPSessionUpdate) -> Void
+    ) async throws {
+        guard didConnect else { throw ACPClientError.notConnected }
+        updateHandler = onUpdate
+        defer { updateHandler = nil }
+        let id = nextRequestID()
+        let params: ACPJSON = .object([
+            "sessionId": .string(sid),
+            "cwd": .string(cwd),
+            "mcpServers": .array(mcpServers),
+        ])
+        // 回放可能很长(整个会话历史),用 prompt 级长 timeout。
+        _ = try await sendRequest(id: id, method: ACPMethod.sessionLoad, params: params, timeoutNs: Self.promptTimeoutNs)
     }
 
     // MARK: - prompt(session/prompt + 流式 update)

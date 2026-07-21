@@ -469,9 +469,19 @@ extension MinimalAppDelegate {
         }
         // 项目选择器 Menu(P1b 多项目):current/list 从 ProjectStore 派生;切项目重 apply engine;新建走 NSAlert。
         wireProjectConfiguration(to: cardCtrl)
+        // ACP 会话管理(P2):会话选择器回调 + 开卡恢复 hook + 指针 store 读盘。
+        wireACPSessionUI(to: cardCtrl)
         // 开卡片从 ConversationStore 恢复多轮历史（system 消息不展示）。
         cardCtrl.historyProvider = { [weak self] in
-            guard let store = self?.rootSystem.conversationStore else { return [] }
+            guard let self else { return [] }
+            // ACP(openCode)agent 模式:时间线权威在 agent 侧 —— 由 acpSessionRestoreHook
+            // 按持久指针回放重建(+ 在途 exchange 乐观追加);不从 ConversationStore 恢复,
+            // 避免与回放双显(ConversationStore 仍作灵魂层记忆,不展示)。
+            if self.userDefaults.bool(forKey: Self.agentModeEnabledKey),
+               AgentEngineRegistry.resolve(from: self.userDefaults).id == AgentEngineKind.openCode.rawValue {
+                return []
+            }
+            guard let store = self.rootSystem.conversationStore else { return [] }
             let msgs = await store.messages()
             return msgs.compactMap { m -> ChatCardRow? in
                 switch m.role {

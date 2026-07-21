@@ -67,4 +67,12 @@ struct ChatCardStateTests {
         #expect(s.contextSize == 200_000)
         #expect(s.contextCost == "$0.0123")
     }
+
+    @Test("ACP 会话字段:默认空/关/不在途(能力探测前 popover 不显示,P2)")
+    func acpSessionDefaults() {
+        let s = ChatCardState()
+        #expect(s.acpSessions.isEmpty)
+        #expect(s.acpSessionUIEnabled == false)
+        #expect(s.isLoadingACPSessions == false)
+    }
 }
