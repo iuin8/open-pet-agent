@@ -20,6 +20,8 @@ enum ProjectCapabilityManagerError: Error, Equatable, CustomStringConvertible {
 
 extension MinimalAppDelegate {
 
+    private static let sourceConfirmationLifetime: TimeInterval = 30 * 24 * 60 * 60
+
     /// P3:建前台 project 检测器 + NSWorkspace notification(前台 app 切换 → 检测 cwd → 自动切 project)。
     @MainActor func setupFrontmostProjectDetector() {
         let detector = FrontmostProjectDetector(defaults: userDefaults, router: agentModeRouter)
@@ -613,7 +615,11 @@ extension MinimalAppDelegate {
         (try? Self.projectCapabilityCard(for: ProjectStore.current(defaults: userDefaults), selectedTab: .overview)) ?? ProjectCapabilityCardState(selectedTab: .overview, items: [])
     }
 
-    static func projectCapabilityCard(for project: AgentProject, selectedTab: ProjectCapabilityCardState.Tab) throws -> ProjectCapabilityCardState {
+    static func projectCapabilityCard(
+        for project: AgentProject,
+        selectedTab: ProjectCapabilityCardState.Tab,
+        date: Date = Date()
+    ) throws -> ProjectCapabilityCardState {
         let catalog = ProjectPluginCatalog()
         let plugins = try catalog.listPlugins(for: project)
         let modelDiagnostics = try ProjectCapabilityValidator().validate(project: project, catalog: catalog)
@@ -648,7 +654,8 @@ extension MinimalAppDelegate {
                 projectionDiagnostics: diagnostics,
                 targetsBySource: targetsBySource,
                 mcpTargets: mcpTargets,
-                project: project
+                project: project,
+                date: date
             )
         }
         return ProjectCapabilityCardState(
@@ -789,7 +796,8 @@ extension MinimalAppDelegate {
             try store.confirmSource(
                 project: project,
                 pluginID: pluginID,
-                source: plugin.sourceMetadata
+                source: plugin.sourceMetadata,
+                expiresAfter: sourceConfirmationLifetime
             )
         } else {
             try store.revokeSourceConfirmation(project: project, pluginID: pluginID)
@@ -905,7 +913,8 @@ extension MinimalAppDelegate {
         let sourceConfirmation = sourceConfirmationState(
             pluginID: plugin.id,
             source: plugin.sourceMetadata,
-            project: project
+            project: project,
+            date: Date()
         )
         let skills = plugin.skills.map { skill in
             let source = URL(fileURLWithPath: root)
@@ -996,27 +1005,38 @@ extension MinimalAppDelegate {
 
     private static func sourceConfirmationState(
         plugin: ProjectPluginDescriptor,
-        project: AgentProject
+        project: AgentProject,
+        date: Date
     ) -> (isConfirmable: Bool, isConfirmed: Bool, audit: String?) {
         sourceConfirmationState(
             pluginID: plugin.id,
             source: plugin.sourceMetadata,
-            project: project
+            project: project,
+            date: date
         )
     }
 
     private static func sourceConfirmationState(
         pluginID: String,
         source: ProjectPluginSourceMetadata,
-        project: AgentProject
+        project: AgentProject,
+        date: Date
     ) -> (isConfirmable: Bool, isConfirmed: Bool, audit: String?) {
         guard !source.allowsAutomaticProjection else { return (false, false, nil) }
         let store = ProjectCapabilityAuditStore()
         let contentHash = try? store.sourceContentHash(project: project, pluginID: pluginID)
-        let confirmation = try? store.loadSourceConfirmations(project: project).confirmations.first {
-            $0.pluginID == pluginID && $0.source == source && $0.contentHash == contentHash
+        let confirmations = (try? store.loadSourceConfirmations(project: project).confirmations) ?? []
+        let matchingSource = confirmations.first { $0.pluginID == pluginID && $0.source == source }
+        let confirmation = matchingSource.flatMap { saved in
+            saved.contentHash == contentHash && saved.isActive(at: date) ? saved : nil
         }
-        let audit = confirmation.map { "确认 \($0.confirmedAtDescription) · hash \(shortHash($0.contentHash))" }
+        let audit: String? = if let confirmation {
+            "确认 \(confirmation.confirmedAtDescription) · hash \(shortHash(confirmation.contentHash))"
+        } else if let matchingSource, let contentHash, matchingSource.contentHash != contentHash {
+            "内容已变更 · hash \(shortHash(matchingSource.contentHash)) → \(shortHash(contentHash))"
+        } else {
+            nil
+        }
         return (true, confirmation != nil, audit)
     }
 
@@ -1030,14 +1050,15 @@ extension MinimalAppDelegate {
         projectionDiagnostics: [ProjectCapabilityPanelState.Diagnostic],
         targetsBySource: [String: [String]],
         mcpTargets: [String],
-        project: AgentProject
+        project: AgentProject,
+        date: Date
     ) -> [ProjectCapabilityCardState.Item] {
         let pluginDiagnostics = diagnostics.map { ProjectCapabilityPanelState.Diagnostic(
             severity: $0.severity.rawValue,
             message: $0.message,
             path: $0.path
         ) }
-        let sourceConfirmation = sourceConfirmationState(plugin: plugin, project: project)
+        let sourceConfirmation = sourceConfirmationState(plugin: plugin, project: project, date: date)
         let skillItems = plugin.skills.map { ref in
             let source = plugin.rootURL.appendingPathComponent(ref, isDirectory: true).path
             let name = URL(fileURLWithPath: ref).lastPathComponent

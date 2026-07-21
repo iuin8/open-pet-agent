@@ -353,6 +353,35 @@ struct ProjectCapabilityAuditIntegrationTests {
         #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
     }
 
+    @Test("sync：过期确认自动回到 fail-closed")
+    func syncRejectsRemoteSourceAfterConfirmationExpires() throws {
+        let fixture = try ProjectCapabilityAuditFixture(prefix: "ExpiredRemote")
+        defer { fixture.cleanup() }
+        try fixture.writePlugin(enabled: true, sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#)
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            source: ProjectPluginSourceMetadata(
+                kind: .git,
+                url: "https://example.com/plugin.git",
+                revision: "abc123"
+            ),
+            date: Date(timeIntervalSince1970: 7),
+            expiresAfter: -1
+        )
+        let delegate = MinimalAppDelegate(
+            rootSystem: .testSystem(),
+            userDefaults: fixture.defaults,
+            startFrameLoop: { _ in nil },
+            showShellWindows: { _ in }
+        )
+
+        let message = delegate.syncCodexProjectionForCurrentProject(project: fixture.project)
+
+        #expect(message.contains("来源需确认"))
+        #expect(FileManager.default.fileExists(atPath: fixture.project.rootURL.appendingPathComponent(".codex/config.toml").path) == false)
+    }
+
     @Test("doctor：打开诊断列会记录最近 validation 时间")
     func diagnosticsPanelRecordsLastValidation() throws {
         let fixture = try ProjectCapabilityAuditFixture(prefix: "Validation")

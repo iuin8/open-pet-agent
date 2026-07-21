@@ -181,17 +181,32 @@ public struct CapabilitySourceConfirmation: Sendable, Equatable, Codable {
     public let source: ProjectPluginSourceMetadata
     public let contentHash: String
     public let confirmedAtDescription: String
+    public let expiresAtDescription: String?
 
     public init(
         pluginID: String,
         source: ProjectPluginSourceMetadata,
         contentHash: String,
-        confirmedAtDescription: String
+        confirmedAtDescription: String,
+        expiresAtDescription: String? = nil
     ) {
         self.pluginID = pluginID
         self.source = source
         self.contentHash = contentHash
         self.confirmedAtDescription = confirmedAtDescription
+        self.expiresAtDescription = expiresAtDescription
+    }
+
+    public func isActive(at date: Date = Date()) -> Bool {
+        guard let expiresAtDescription else { return true }
+        guard let expiresAt = Self.isoDate(expiresAtDescription) else { return false }
+        return date < expiresAt
+    }
+
+    private static func isoDate(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }
 

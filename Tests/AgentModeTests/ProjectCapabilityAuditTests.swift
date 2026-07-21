@@ -436,6 +436,40 @@ final class ProjectCapabilityAuditTests: XCTestCase {
         XCTAssertFalse(try store.isSourceConfirmed(project: project, pluginID: "remote-b", source: source))
     }
 
+    func testSourceConfirmationExpiresAfterPolicyWindow() throws {
+        let store = auditStore()
+        let source = ProjectPluginSourceMetadata(kind: .git, revision: "abc123")
+        let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: "remote")
+        try FileManager.default.createDirectory(at: pluginRoot, withIntermediateDirectories: true)
+        try Data(#"{ "schemaVersion": 1, "id": "remote", "name": "Remote", "source": { "kind": "git", "revision": "abc123" }, "enabled": true, "capabilities": [] }"#.utf8)
+            .write(to: pluginRoot.appendingPathComponent("plugin.json"), options: .atomic)
+
+        try store.confirmSource(
+            project: project,
+            pluginID: "remote",
+            source: source,
+            date: Date(timeIntervalSince1970: 6),
+            expiresAfter: 10
+        )
+        let confirmation = try XCTUnwrap(store.loadSourceConfirmations(project: project).confirmations.first)
+
+        XCTAssertEqual(confirmation.expiresAtDescription, "1970-01-01T00:00:16Z")
+        XCTAssertTrue(try store.isSourceConfirmed(project: project, pluginID: "remote", source: source, date: Date(timeIntervalSince1970: 15)))
+        XCTAssertFalse(try store.isSourceConfirmed(project: project, pluginID: "remote", source: source, date: Date(timeIntervalSince1970: 17)))
+    }
+
+    func testMalformedSourceConfirmationExpiryFailsClosed() throws {
+        let confirmation = CapabilitySourceConfirmation(
+            pluginID: "remote",
+            source: ProjectPluginSourceMetadata(kind: .git, revision: "abc123"),
+            contentHash: "abc123",
+            confirmedAtDescription: "1970-01-01T00:00:06Z",
+            expiresAtDescription: "not-a-date"
+        )
+
+        XCTAssertFalse(confirmation.isActive(at: Date(timeIntervalSince1970: 7)))
+    }
+
     func testSourceConfirmationInvalidatesWhenPluginContentChanges() throws {
         let store = auditStore()
         let source = ProjectPluginSourceMetadata(

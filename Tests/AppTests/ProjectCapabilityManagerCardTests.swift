@@ -779,6 +779,76 @@ struct ProjectCapabilityManagerCardTests {
         #expect(try ProjectCapabilityAuditStore().loadSourceConfirmations(project: fixture.project).confirmations.isEmpty)
     }
 
+    @Test("source confirmation：过期确认在 root 行回到未确认")
+    func expiredSourceConfirmationClearsRootRowState() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "SourceExpired")
+        ProjectConfig.homeDirectoryOverride = fixture.root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
+        )
+        let source = ProjectPluginSourceMetadata(
+            kind: .git,
+            url: "https://example.com/plugin.git",
+            revision: "abc123"
+        )
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            source: source,
+            date: Date(timeIntervalSince1970: 6),
+            expiresAfter: 10
+        )
+
+        let state = try MinimalAppDelegate.projectCapabilityCard(
+            for: fixture.project,
+            selectedTab: .skills,
+            date: Date(timeIntervalSince1970: 17)
+        )
+        let item = try #require(state.visibleItems.first)
+        #expect(item.isSourceConfirmable == true)
+        #expect(item.isSourceConfirmed == false)
+        #expect(item.sourceConfirmationAudit == nil)
+    }
+
+    @Test("source confirmation：内容变化时 root 行显示 hash drift 摘要")
+    func changedSourceConfirmationShowsHashDriftSummary() throws {
+        let fixture = try ProjectCapabilityManagerFixture(prefix: "SourceHashDrift")
+        ProjectConfig.homeDirectoryOverride = fixture.root
+        defer {
+            ProjectConfig.homeDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: fixture.root)
+        }
+        try fixture.writePlugin(
+            enabled: true,
+            sourceJSON: #"{ "kind": "git", "url": "https://example.com/plugin.git", "revision": "abc123" }"#
+        )
+        let source = ProjectPluginSourceMetadata(
+            kind: .git,
+            url: "https://example.com/plugin.git",
+            revision: "abc123"
+        )
+        try ProjectCapabilityAuditStore().confirmSource(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            source: source,
+            date: Date(timeIntervalSince1970: 6)
+        )
+        let previousHash = try ProjectCapabilityAuditStore().sourceContentHash(project: fixture.project, pluginID: "dev-toolkit")
+        try Data("changed".utf8)
+            .write(to: fixture.pluginRoot.appendingPathComponent("extra.txt"), options: .atomic)
+        let currentHash = try ProjectCapabilityAuditStore().sourceContentHash(project: fixture.project, pluginID: "dev-toolkit")
+
+        let state = try MinimalAppDelegate.projectCapabilityCard(for: fixture.project, selectedTab: .skills)
+        let item = try #require(state.visibleItems.first)
+        #expect(item.isSourceConfirmed == false)
+        #expect(item.sourceConfirmationAudit == "内容已变更 · hash \(String(previousHash.prefix(12))) → \(String(currentHash.prefix(12)))")
+    }
+
     @Test("preview：Codex 同步预览列出操作但不 materialize engine 文件")
     func codexPreviewListsOperationsWithoutMaterializing() throws {
         let fixture = try ProjectCapabilityManagerFixture()

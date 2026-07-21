@@ -118,7 +118,8 @@ public struct ProjectCapabilityAuditStore: Sendable {
         project: AgentProject,
         pluginID: String,
         source: ProjectPluginSourceMetadata,
-        date: Date = Date()
+        date: Date = Date(),
+        expiresAfter: TimeInterval? = nil
     ) throws {
         let state = try loadSourceConfirmations(project: project)
         let contentHash = try sourceContentHash(project: project, pluginID: pluginID)
@@ -126,7 +127,8 @@ public struct ProjectCapabilityAuditStore: Sendable {
             pluginID: pluginID,
             source: source,
             contentHash: contentHash,
-            confirmedAtDescription: Self.isoString(date)
+            confirmedAtDescription: Self.isoString(date),
+            expiresAtDescription: expiresAfter.map { Self.isoString(date.addingTimeInterval($0)) }
         )
         let confirmations = (state.confirmations.filter { $0.pluginID != pluginID } + [confirmation])
             .sorted { $0.pluginID < $1.pluginID }
@@ -146,11 +148,12 @@ public struct ProjectCapabilityAuditStore: Sendable {
     public func isSourceConfirmed(
         project: AgentProject,
         pluginID: String,
-        source: ProjectPluginSourceMetadata
+        source: ProjectPluginSourceMetadata,
+        date: Date = Date()
     ) throws -> Bool {
         let contentHash = try sourceContentHash(project: project, pluginID: pluginID)
         return try loadSourceConfirmations(project: project).confirmations.contains {
-            $0.pluginID == pluginID && $0.source == source && $0.contentHash == contentHash
+            $0.pluginID == pluginID && $0.source == source && $0.contentHash == contentHash && $0.isActive(at: date)
         }
     }
 
