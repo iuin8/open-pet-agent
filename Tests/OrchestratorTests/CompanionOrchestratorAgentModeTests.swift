@@ -139,4 +139,61 @@ struct CompanionOrchestratorAgentModeTests {
         // yield providerNotConfiguredMessage。
         #expect(collected == CompanionOrchestrator.providerNotConfiguredMessage)
     }
+
+    // MARK: - P4 跨引擎交接
+
+    @Test("agent 模式 + handoff 背景非 nil → engine 收到包装 prompt;store 只记用户原文")
+    @MainActor
+    func agentHandoffWrapsFirstPrompt() async throws {
+        let router = AgentModeRouter()
+        let engine = PromptRecordingEngine()
+        router.setEngine(engine)
+        let box = AgentModeBox { router }
+        let store = ConversationStore()
+        let orchestrator = CompanionOrchestrator(
+            agentModeBox: box,
+            conversationStore: store,
+            agentHandoffContext: { "user: 之前聊过数字42" }
+        )
+
+        for try await _ in orchestrator.replyStream(for: "新消息") {}
+
+        #expect(engine.prompts.count == 1)
+        let sent = engine.prompts[0]
+        #expect(sent.contains("[背景交接]"))
+        #expect(sent.contains("user: 之前聊过数字42"))
+        #expect(sent.contains("新消息"))
+        // store 记的是用户原文,不是交接包装(防摘要滚雪球进记忆)
+        let messages = await store.messages()
+        #expect(messages.first?.content == "新消息")
+    }
+
+    @Test("handoff 背景 nil → prompt 原样直发(无包装)")
+    @MainActor
+    func noHandoffSendsRawPrompt() async throws {
+        let router = AgentModeRouter()
+        let engine = PromptRecordingEngine()
+        router.setEngine(engine)
+        let box = AgentModeBox { router }
+        let orchestrator = CompanionOrchestrator(agentModeBox: box)
+
+        for try await _ in orchestrator.replyStream(for: "原样") {}
+
+        #expect(engine.prompts == ["原样"])
+    }
+}
+
+/// P4 测试 stub:记录收到的 prompt 并回固定文本(验证交接包装进了 engine 的 prompt)。
+private final class PromptRecordingEngine: AgentEngine, @unchecked Sendable {
+    static let kind: AgentEngineKind = .claudeCode
+    var isAvailable: Bool { true }
+    private(set) var prompts: [String] = []
+
+    func run(prompt: String) -> AsyncThrowingStream<String, Error> {
+        prompts.append(prompt)
+        return AsyncThrowingStream { continuation in
+            continuation.yield("ok")
+            continuation.finish()
+        }
+    }
 }

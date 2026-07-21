@@ -475,19 +475,54 @@ public struct AppBootstrap: Sendable {
             case .thirdParty:  return nil
             }
         }
+        // P4 跨引擎/项目交接:会话桶(engineKind|cwd)变化后的首个 agent run,
+        // 把此前会话摘要(最近 6 条,≤2000 字符)包进 prompt。桶不变/首轮/空时间线不交接。
+        let handoffTracker = AgentSessionHandoffTracker()
+        let agentHandoffContext: @Sendable () async -> String? = {
+            let bucket = MinimalAppDelegate.acpSessionPointerKey(defaults: userDefaults)
+            return await handoffTracker.contextIfBucketChanged(bucket: bucket) {
+                let recent = await store.messages().suffix(6)
+                return Self.handoffTranscript(from: Array(recent))
+            }
+        }
         self.orchestrator = CompanionOrchestrator(
             llmProvider: provider,
             agentModeBox: agentModeBox,
             conversationStore: store,
             liveContextBox: box,
             modelName: config.model,
-            personaResolver: personaResolver
+            personaResolver: personaResolver,
+            agentHandoffContext: agentHandoffContext
         )
         self.conversationStore = store
         self.liveContextBox = box
         self.windowGraph = windowGraph
         self.snapshot = snapshot
         self.snapshotSampler = snapshotSampler ?? Self.makeLiveSnapshotSampler()
+    }
+
+    /// P4 交接摘要(纯函数,可单测):最近消息 → `role: text` 行(跳过 system),
+    /// 从最新往回收到 maxChars(保最新弃最旧),返回时间序文本;空 → nil。
+    nonisolated static func handoffTranscript(
+        from messages: [ConversationMessage],
+        maxChars: Int = 2000
+    ) -> String? {
+        var lines: [String] = []
+        var used = 0
+        for m in messages.reversed() {
+            let role: String
+            switch m.role {
+            case .user: role = "user"
+            case .assistant: role = "assistant"
+            default: continue
+            }
+            let line = "\(role): \(m.content)"
+            if used + line.count > maxChars, !lines.isEmpty { break }
+            lines.insert(line, at: 0)   // 保持时间序(旧 → 新)
+            used += line.count
+            if used >= maxChars { break }
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
     /// Re-resolve the LLM provider from current `UserDefaults` state and swap

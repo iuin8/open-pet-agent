@@ -16,6 +16,8 @@ struct ContextUsageBar: View {
     var limit: Int = SessionMetadata.contextWindowLimit
     /// 预格式化费用展示串(ACP cost;nil = 不显示)。
     var cost: String? = nil
+    /// 该轮 token 明细(App 预格式化,如 "in 2.5k · cache 52.1k";非 nil 时挂 tooltip)。
+    var detail: String? = nil
     /// true = limit 是 agent 直报真实窗口(ACP),跳过自适应放大;false = 自适应猜(Claude 扫描)。
     private var isExactLimit = false
 
@@ -59,6 +61,7 @@ struct ContextUsageBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
+        .help(detail ?? "")   // token 明细 tooltip(空串 = 无 tooltip;明细由 ACP PromptResponse.usage 供)
     }
 
     /// 84403 → "84.4k";1230000 → "1.2M";< 1000 原样。
@@ -71,17 +74,20 @@ struct ContextUsageBar: View {
 
 extension ContextUsageBar {
     /// ACP 入口:`usage_update` 直报真实 used/size(跳过自适应猜窗口),cost 为 App 预格式化展示串。
-    init(used: Int, size: Int, cost: String? = nil) {
+    /// detail 为该轮 token 明细(tooltip;nil = agent 未报)。
+    init(used: Int, size: Int, cost: String? = nil, detail: String? = nil) {
         self.tokens = used
         self.limit = max(1, size)   // 防 0 除(fraction 兜底)
         self.cost = cost
+        self.detail = detail
         self.isExactLimit = true
     }
 
     /// ACP fallback 入口:仅知 used(agent 未报窗口,如 opencode PromptResponse.usage),
     /// 走自适应猜窗口(同 Claude 扫描路径)。
-    init(adaptiveUsed used: Int, cost: String? = nil) {
+    init(adaptiveUsed used: Int, cost: String? = nil, detail: String? = nil) {
         self.tokens = used
         self.cost = cost
+        self.detail = detail
     }
 }

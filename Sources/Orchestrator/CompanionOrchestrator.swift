@@ -34,6 +34,9 @@ public struct CompanionOrchestrator: Sendable {
     /// P2a:persona 注入器(返回 SOUL.md 内容;nil → 用 base 硬编码)。App 注入:
     /// 云后端读 SOUL.md;`nativePersona` 后端(openclaw)返回 nil(自管 SOUL,不注入 —— 能力闸自动)。
     private let personaResolver: (@Sendable () -> String?)?
+    /// P4 跨引擎/项目交接背景供给(AppBootstrap 注入;agent 模式下返回非 nil 时,
+    /// 经 `wrapAgentHandoff` 包进首个 prompt —— 一次性,由注入方的 tracker 保证)。
+    private let agentHandoffContext: (@Sendable () async -> String?)?
 
     public init(
         runtimeBridge: RuntimeBridgeService = RuntimeBridgeService(),
@@ -44,7 +47,8 @@ public struct CompanionOrchestrator: Sendable {
         conversationStore: ConversationStore? = nil,
         liveContextBox: LiveContextBox? = nil,
         modelName: String? = nil,
-        personaResolver: (@Sendable () -> String?)? = nil
+        personaResolver: (@Sendable () -> String?)? = nil,
+        agentHandoffContext: (@Sendable () async -> String?)? = nil
     ) {
         self.init(
             runtimeBridge: runtimeBridge,
@@ -55,7 +59,8 @@ public struct CompanionOrchestrator: Sendable {
             conversationStore: conversationStore,
             liveContextBox: liveContextBox,
             modelName: modelName,
-            personaResolver: personaResolver
+            personaResolver: personaResolver,
+            agentHandoffContext: agentHandoffContext
         )
     }
 
@@ -68,7 +73,8 @@ public struct CompanionOrchestrator: Sendable {
         conversationStore: ConversationStore? = nil,
         liveContextBox: LiveContextBox? = nil,
         modelName: String? = nil,
-        personaResolver: (@Sendable () -> String?)? = nil
+        personaResolver: (@Sendable () -> String?)? = nil,
+        agentHandoffContext: (@Sendable () async -> String?)? = nil
     ) {
         self.runtimeBridge = runtimeBridge
         self.presentationMapper = presentationMapper
@@ -79,6 +85,21 @@ public struct CompanionOrchestrator: Sendable {
         self.liveContextBox = liveContextBox
         self.modelName = modelName
         self.personaResolver = personaResolver
+        self.agentHandoffContext = agentHandoffContext
+    }
+
+    /// P4 交接包装:背景块(最近对话摘要)+ 用户新消息。
+    /// 背景明确「只参考不复述」+「以仓库实际状态为准」(防 agent 把交接内容当本轮任务回复,
+    /// 模板措辞借鉴 codux session fork 的 Handoff Instructions,见 docs/reference-library.md)。
+    nonisolated static func wrapAgentHandoff(_ message: String, handoff: String) -> String {
+        """
+        [背景交接]以下是我与另一个 AI 助手的最近对话,仅供你了解上下文,不要复述、不要逐条回复这段内容;涉及代码事实请以直接查看仓库文件为准,不要尽信交接文本:
+        <handoff>
+        \(handoff)
+        </handoff>
+        [背景结束]下面是我的新消息:
+        \(message)
+        """
     }
 
     public func bootstrap(snapshot: DesktopSnapshot = .empty) async throws -> CompanionBootstrap {
@@ -177,9 +198,17 @@ public struct CompanionOrchestrator: Sendable {
                 if await agentModeBox.isAgentModeEnabled {
                     let userMessage = ConversationMessage(role: .user, content: message)
                     await conversationStore?.append(userMessage)
+                    // P4 跨引擎/项目交接:会话桶(engineKind|cwd)变化后的首个 agent run,
+                    // 把此前会话摘要包进 prompt(一次性;store 只记用户原文,不记交接包装)。
+                    let prompt: String
+                    if let handoff = await agentHandoffContext?() {
+                        prompt = Self.wrapAgentHandoff(message, handoff: handoff)
+                    } else {
+                        prompt = message
+                    }
                     var accumulated = ""
                     do {
-                        for try await delta in agentModeBox.runAgent(prompt: message) {
+                        for try await delta in agentModeBox.runAgent(prompt: prompt) {
                             accumulated += delta
                             continuation.yield(delta)
                         }

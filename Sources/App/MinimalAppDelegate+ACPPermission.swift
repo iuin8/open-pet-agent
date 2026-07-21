@@ -52,11 +52,27 @@ extension MinimalAppDelegate {
 
     /// `ACPUsage` → `ChatCardState` 上下文占用字段(usage_update → composer 上方占用条)。
     /// size = nil(fallback 只报 used)不覆盖此前已知窗口 —— 精确值一旦到手就留住。
+    /// prompt 明细同理(nil 不清,只在有新明细时更新 tooltip)。
     @MainActor
     static func applyContextUsage(_ usage: ACPUsage, to state: ChatCardState) {
         state.contextUsed = usage.used
         if let size = usage.size { state.contextSize = size }
         state.contextCost = usage.cost.map(formatUsageCost)
+        if let prompt = usage.prompt { state.contextDetail = formatUsageDetail(prompt) }
+    }
+
+    /// token 明细格式化(tooltip):"in 2.5k · cache 52.1k · out 0.3k · total 54.9k"(有值才列)。
+    nonisolated static func formatUsageDetail(_ usage: ACPPromptUsage) -> String {
+        var parts = ["in \(compactTokenCount(usage.inputTokens))"]
+        if usage.cachedReadTokens > 0 { parts.append("cache \(compactTokenCount(usage.cachedReadTokens))") }
+        if let out = usage.outputTokens { parts.append("out \(compactTokenCount(out))") }
+        if let total = usage.totalTokens { parts.append("total \(compactTokenCount(total))") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// 紧凑 token 计数:≥1000 → "52.1k",否则原数。
+    nonisolated static func compactTokenCount(_ n: Int) -> String {
+        n >= 1000 ? String(format: "%.1fk", Double(n) / 1000) : String(n)
     }
 
     /// cost 展示格式化:USD → "$0.0123";其它币种原样前缀("CNY 0.0123")。

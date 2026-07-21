@@ -174,6 +174,9 @@ public struct ACPUsage: Sendable, Equatable {
     public let size: Int?
     /// 累计费用(agent 未报则 nil)。
     public let cost: Cost?
+    /// 该轮 token 明细(来自 PromptResponse unstable usage;usage_update 源无 → nil)。
+    /// UI 用作 tooltip 明细(in/cache/out/total),不参与占用条数值。
+    public let prompt: ACPPromptUsage?
 
     public struct Cost: Sendable, Equatable {
         public let amount: Double
@@ -186,10 +189,11 @@ public struct ACPUsage: Sendable, Equatable {
         }
     }
 
-    public init(used: Int, size: Int? = nil, cost: Cost? = nil) {
+    public init(used: Int, size: Int? = nil, cost: Cost? = nil, prompt: ACPPromptUsage? = nil) {
         self.used = used
         self.size = size
         self.cost = cost
+        self.prompt = prompt
     }
 
     /// 从 update payload(整体 dict)解出。used 缺失或类型不符 → nil(不崩);size 可缺(宽容)。
@@ -225,22 +229,41 @@ private func acpDoubleValue(_ json: ACPJSON?) -> Double? {
 /// PromptResponse 的 unstable `usage`(RFD end-turn-token-usage 仍 Draft;机会性读取,不依赖)。
 /// opencode 1.18 实测:per-turn 值(非 spec 草案的累计口径),`inputTokens + cachedReadTokens`
 /// ≈ 该轮后上下文占用(与 opencode 自家 usage_update.used 同公式)。无窗口 size。
+/// output/thought/total 为可选明细(tooltip 用;agent 未报则 nil)。
 public struct ACPPromptUsage: Sendable, Equatable {
     public let inputTokens: Int
     public let cachedReadTokens: Int
+    public let outputTokens: Int?
+    public let thoughtTokens: Int?
+    public let totalTokens: Int?
     /// 上下文占用近似(= input + cache.read,同 opencode usage_update.used 公式)。
     public var contextUsed: Int { inputTokens + cachedReadTokens }
 
-    public init(inputTokens: Int, cachedReadTokens: Int = 0) {
+    public init(
+        inputTokens: Int,
+        cachedReadTokens: Int = 0,
+        outputTokens: Int? = nil,
+        thoughtTokens: Int? = nil,
+        totalTokens: Int? = nil
+    ) {
         self.inputTokens = inputTokens
         self.cachedReadTokens = cachedReadTokens
+        self.outputTokens = outputTokens
+        self.thoughtTokens = thoughtTokens
+        self.totalTokens = totalTokens
     }
 
     /// 从 PromptResponse result 整体解 `usage` 字段。缺 inputTokens → nil(agent 未报,不崩)。
     static func decode(fromResult result: ACPJSON?) -> ACPPromptUsage? {
         guard let u = result?.objectValue?["usage"]?.objectValue,
               let input = acpIntValue(u["inputTokens"]) else { return nil }
-        return ACPPromptUsage(inputTokens: input, cachedReadTokens: acpIntValue(u["cachedReadTokens"]) ?? 0)
+        return ACPPromptUsage(
+            inputTokens: input,
+            cachedReadTokens: acpIntValue(u["cachedReadTokens"]) ?? 0,
+            outputTokens: acpIntValue(u["outputTokens"]),
+            thoughtTokens: acpIntValue(u["thoughtTokens"]),
+            totalTokens: acpIntValue(u["totalTokens"])
+        )
     }
 }
 

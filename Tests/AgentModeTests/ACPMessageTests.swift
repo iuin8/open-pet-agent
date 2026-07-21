@@ -218,11 +218,11 @@ func sessionUpdateUsageWithoutSize() throws {
     #expect(usage.cost == nil)
 }
 
-@Test("ACPPromptUsage: 从 PromptResponse result 解 unstable usage(缺 cachedReadTokens → 0)")
+@Test("ACPPromptUsage: 从 PromptResponse result 解 unstable usage(明细 output/total 带上;缺 cachedReadTokens → 0)")
 func promptUsageDecode() throws {
-    let result = try #require(ACPJSON.parse(#"{"stopReason":"end_turn","usage":{"inputTokens":93,"cachedReadTokens":29568,"totalTokens":29727}}"#))
+    let result = try #require(ACPJSON.parse(#"{"stopReason":"end_turn","usage":{"inputTokens":93,"cachedReadTokens":29568,"outputTokens":8,"totalTokens":29727}}"#))
     let usage = try #require(ACPPromptUsage.decode(fromResult: result))
-    #expect(usage == ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568))
+    #expect(usage == ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568, outputTokens: 8, totalTokens: 29_727))
     #expect(usage.contextUsed == 29_661)
 
     let noCache = try #require(ACPJSON.parse(#"{"usage":{"inputTokens":100}}"#))

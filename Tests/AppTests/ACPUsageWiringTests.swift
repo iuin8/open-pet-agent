@@ -50,4 +50,25 @@ struct ACPUsageWiringTests {
         #expect(state.contextUsed == 29_661)
         #expect(state.contextSize == 200_000)
     }
+
+    @Test("applyContextUsage: prompt 明细 → contextDetail;后续 nil 明细不清空(P4)")
+    func applyContextUsageDetail() {
+        let state = ChatCardState()
+        MinimalAppDelegate.applyContextUsage(ACPUsage(
+            used: 29_661,
+            prompt: ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568, outputTokens: 8, totalTokens: 29_727)
+        ), to: state)
+        #expect(state.contextDetail == "in 93 · cache 29.6k · out 8 · total 29.7k")
+        MinimalAppDelegate.applyContextUsage(ACPUsage(used: 30_000), to: state)
+        #expect(state.contextDetail != nil)   // nil 明细不清空已有 tooltip
+    }
+
+    @Test("formatUsageDetail/compactTokenCount: 有值才列,cache 为 0 不列,<1000 原样")
+    func formatUsageDetailCompact() {
+        #expect(MinimalAppDelegate.formatUsageDetail(
+            ACPPromptUsage(inputTokens: 2_034, cachedReadTokens: 0, outputTokens: 49)
+        ) == "in 2.0k · out 49")
+        #expect(MinimalAppDelegate.compactTokenCount(999) == "999")
+        #expect(MinimalAppDelegate.compactTokenCount(52_132) == "52.1k")
+    }
 }
