@@ -33,8 +33,10 @@ public struct ACPReplayedTurn: Sendable, Equatable {
 }
 
 /// 用 ACP 协议驱动外部 agent 子进程的 `AgentEngine`(class,connection 复用)。
-public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
-    public static let kind: AgentEngineKind = .openCode
+/// 非 final + `class var kind`:P3 子类化出 claude/codex 变体(同协议同实现,kind 与默认命令不同)。
+public class ACPAgentEngine: AgentEngine, @unchecked Sendable {
+    /// engine kind(router 经 `type(of:).kind` 反推)。子类覆盖换 kind(opencode 默认)。
+    public class var kind: AgentEngineKind { .openCode }
 
     /// agent 启动命令,如 ["opencode", "acp"]。
     public let command: [String]
@@ -88,15 +90,15 @@ public final class ACPAgentEngine: AgentEngine, @unchecked Sendable {
         binaryPath: String? = nil,
         cwd: URL? = nil,
         mcpServersProvider: @escaping @Sendable (ACPAgentCapabilities) -> [ACPJSON] = { _ in [] },
-        transportFactory: @escaping @Sendable () -> any ACPTransport = {
-            ACPStdioTransport(command: ["opencode", "acp"])
-        }
+        transportFactory: (@Sendable () -> any ACPTransport)? = nil
     ) {
         self.command = command
         self.binaryPath = binaryPath
         self.cwd = cwd
         self.mcpServersProvider = mcpServersProvider
-        self.transportFactory = transportFactory
+        // 默认 transport 跟随 command(P3 子类安全:claude/codex 变体不传 factory 也不会
+        // 错 spawn opencode);测试注入 mock / 生产注入带 env+cwd 的 factory 时覆盖。
+        self.transportFactory = transportFactory ?? { ACPStdioTransport(command: command) }
     }
 
     public var isAvailable: Bool {

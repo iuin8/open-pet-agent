@@ -130,10 +130,10 @@ extension MinimalAppDelegate {
 
     // MARK: - 纯映射(可单测)
 
-    /// 持久化指针 key:engineKind|cwd(同 engine 不同项目 → 各自指针)。
+    /// 持久化指针 key:engineKind|cwd(三 ACP engine × 项目 → 各自指针,P3 起按选中 entry)。
     nonisolated static func acpSessionPointerKey(defaults: UserDefaults) -> String {
         ACPSessionStore.key(
-            engineKind: AgentEngineKind.openCode.rawValue,
+            engineKind: AgentEngineRegistry.resolve(from: defaults).id,
             cwd: currentACPProjectRoot(defaults: defaults).path
         )
     }

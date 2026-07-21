@@ -232,7 +232,7 @@ extension MinimalAppDelegate {
                 )
                 self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
             } else {
-                let none: ClaudeCodeEngine? = nil
+                let none: (any AgentEngine)? = nil
                 self.agentModeRouter?.setEngine(none)
             }
         }

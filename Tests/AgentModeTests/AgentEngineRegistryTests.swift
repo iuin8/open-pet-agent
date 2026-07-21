@@ -45,12 +45,12 @@ struct AgentEngineRegistryTests {
         #expect(Set(AgentEngineRegistry.all.map(\.id)) == Set(AgentEngineKind.allCases.map(\.rawValue)))
     }
 
-    @Test("entry displayName / binaryName 是预期字面值")
+    @Test("entry displayName / binaryName 是预期字面值(P3:claude/codex 探测 ACP 适配器 binary)")
     func entryDisplayAndBinaryNames() {
         #expect(AgentEngineRegistry.claudeCode.displayName == "Claude Code")
-        #expect(AgentEngineRegistry.claudeCode.binaryName == "claude")
+        #expect(AgentEngineRegistry.claudeCode.binaryName == "claude-agent-acp")
         #expect(AgentEngineRegistry.codex.displayName == "Codex")
-        #expect(AgentEngineRegistry.codex.binaryName == "codex")
+        #expect(AgentEngineRegistry.codex.binaryName == "codex-acp")
         #expect(AgentEngineRegistry.openCode.displayName == "opencode (ACP)")
         #expect(AgentEngineRegistry.openCode.binaryName == "opencode")
     }
@@ -115,24 +115,40 @@ struct AgentEngineRegistryTests {
 
     // MARK: - makeEngine → 反推 kind
 
-    @Test("makeEngine: claudeCode entry 造出 .claudeCode engine")
+    @Test("makeEngine: claudeCode entry 造出 .claudeCode ACP engine(P3 统一 ACP)")
     func makeEngineClaudeCode() {
         let engine = AgentEngineRegistry.claudeCode.makeEngine()
         #expect(type(of: engine).kind == .claudeCode)
+        #expect(engine is ClaudeACPAgentEngine)
+        #expect((engine as? ACPAgentEngine)?.command == ["claude-agent-acp"])
     }
 
-    @Test("makeEngine: codex entry 造出 .codex engine")
+    @Test("makeEngine: codex entry 造出 .codex ACP engine(P3 统一 ACP)")
     func makeEngineCodex() {
         let engine = AgentEngineRegistry.codex.makeEngine()
         #expect(type(of: engine).kind == .codex)
+        #expect(engine is CodexACPAgentEngine)
+        #expect((engine as? ACPAgentEngine)?.command == ["codex-acp"])
     }
 
     @Test("makeEngine: openCode entry 造出 .openCode engine(ACP,ACP-1b 接线)")
     func makeEngineOpenCodeIsACP() {
-        // ACP-1b:openCode entry 的 makeEngine 从兜底 ClaudeCodeEngine 换成真 ACPAgentEngine
+        // ACP-1b:openCode entry 的 makeEngine 从兜底换成真 ACPAgentEngine
         // (经 ACP 协议接 opencode 子进程)。ACPAgentEngine.kind = .openCode。
         let engine = AgentEngineRegistry.openCode.makeEngine()
         #expect(type(of: engine).kind == .openCode)
         #expect(engine is ACPAgentEngine)
+    }
+
+    // MARK: - P3 子类 kind 反推(router 经 type(of:).kind 取)
+
+    @Test("ACP 子类 kind:基类 .openCode / Claude .claudeCode / Codex .codex")
+    func acpSubclassKinds() {
+        #expect(ACPAgentEngine.kind == .openCode)
+        #expect(ClaudeACPAgentEngine.kind == .claudeCode)
+        #expect(CodexACPAgentEngine.kind == .codex)
+        // 继承指定 init 造的实例,type(of:) 反推也是子类 kind
+        let claude = ClaudeACPAgentEngine(command: ["claude-agent-acp"])
+        #expect(type(of: claude).kind == .claudeCode)
     }
 }

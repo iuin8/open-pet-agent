@@ -30,8 +30,8 @@ import AgentMode
 /// - 不发 `NotificationCenter` broadcast —— Orchestrator 通过返回的 `Status`
 ///   决定是否注入 provider,callback 显式优于全局通知。
 /// - binary 探测复用 `CLIAvailability.locate(binary:searchPaths:)` +
-///   `CLIProcessEnvironment.augmented()["PATH"]`,与 ClaudeCodeEngine /
-///   CodexEngine 一致,不再单独写 `which openclaw` 兜底逻辑(扩展 PATH 已
+///   `CLIProcessEnvironment.augmented()["PATH"]`,与 ACP engine 的探测一致,
+///   不再单独写 `which openclaw` 兜底逻辑(扩展 PATH 已
 ///   覆盖 Homebrew + npm global + 用户 ~/.local/bin)。
 public actor OpenClawGatewayManager {
 
