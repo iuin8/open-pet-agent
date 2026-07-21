@@ -139,6 +139,10 @@ public struct ProjectCapabilityAuditStore: Sendable {
         try saveSourceConfirmations(CapabilitySourceConfirmationState(confirmations: confirmations), project: project)
     }
 
+    public func revokeAllSourceConfirmations(project: AgentProject) throws {
+        try saveSourceConfirmations(CapabilitySourceConfirmationState(), project: project)
+    }
+
     public func isSourceConfirmed(
         project: AgentProject,
         pluginID: String,

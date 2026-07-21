@@ -417,6 +417,25 @@ final class ProjectCapabilityAuditTests: XCTestCase {
         XCTAssertTrue(try store.loadSourceConfirmations(project: project).confirmations.isEmpty)
     }
 
+    func testRevokeAllSourceConfirmationsClearsEveryPlugin() throws {
+        let store = auditStore()
+        let source = ProjectPluginSourceMetadata(kind: .git, revision: "abc123")
+        for pluginID in ["remote-a", "remote-b"] {
+            let pluginRoot = ProjectConfig.pluginDirectory(for: project, pluginID: pluginID)
+            try FileManager.default.createDirectory(at: pluginRoot, withIntermediateDirectories: true)
+            try Data("""
+            { "schemaVersion": 1, "id": "\(pluginID)", "name": "Remote", "source": { "kind": "git", "revision": "abc123" }, "enabled": true, "capabilities": [] }
+            """.utf8).write(to: pluginRoot.appendingPathComponent("plugin.json"), options: .atomic)
+            try store.confirmSource(project: project, pluginID: pluginID, source: source, date: Date(timeIntervalSince1970: 6))
+        }
+
+        try store.revokeAllSourceConfirmations(project: project)
+
+        XCTAssertTrue(try store.loadSourceConfirmations(project: project).confirmations.isEmpty)
+        XCTAssertFalse(try store.isSourceConfirmed(project: project, pluginID: "remote-a", source: source))
+        XCTAssertFalse(try store.isSourceConfirmed(project: project, pluginID: "remote-b", source: source))
+    }
+
     func testSourceConfirmationInvalidatesWhenPluginContentChanges() throws {
         let store = auditStore()
         let source = ProjectPluginSourceMetadata(

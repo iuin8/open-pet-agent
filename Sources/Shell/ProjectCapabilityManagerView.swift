@@ -9,6 +9,7 @@ struct ProjectCapabilityManagerView: View {
     let onSetEnabled: (String, Bool) -> Void
     var onSetTargetEnabled: (String, CapabilityTarget, Bool) -> Void = { _, _, _ in }
     var onSetSourceConfirmed: (String, Bool) -> Void = { _, _ in }
+    var onRevokeAllSourceConfirmations: () -> Void = {}
     var onOpenItem: (Int, ProjectCapabilityCardState.Item) -> Void = { _, _ in }
     var onOpenAdd: (() -> Void)? = nil
     var onShowDiagnostics: (() -> Void)? = nil
@@ -33,6 +34,7 @@ struct ProjectCapabilityManagerView: View {
             if let preview = state.syncPreview { syncPreview(preview) }
             if let auditSummary = state.auditSummary { auditStatus(auditSummary) }
             if state.auditSummary?.backupCount ?? 0 > 0 { restoreControl }
+            if state.items.contains(where: { $0.isSourceConfirmed }) { revokeAllSourceConfirmationsControl }
             if !syncMessages.isEmpty { syncMessageList }
             tabBar
             if state.visibleItems.isEmpty {
@@ -124,6 +126,10 @@ struct ProjectCapabilityManagerView: View {
 
     private var restoreControl: some View {
         secondaryAction("恢复上次同步", icon: "arrow.uturn.backward.circle.fill", action: onRestoreLatestBackup)
+    }
+
+    private var revokeAllSourceConfirmationsControl: some View {
+        secondaryAction("撤销全部来源确认", icon: "shield.slash.fill", action: onRevokeAllSourceConfirmations)
     }
 
     private func syncPreview(_ preview: ProjectCapabilityCardState.SyncPreview) -> some View {

@@ -232,6 +232,49 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.card.selectedTab == .mcp)
     }
 
+    @Test("source confirmation：撤销全部确认刷新后保留当前 tab")
+    func revokeAllSourceConfirmationsPreservesSelectedTab() {
+        let item = ProjectCapabilityCardState.Item(
+            id: "skill:remote:lint",
+            kind: .skill,
+            name: "lint",
+            pluginID: "remote",
+            sourcePath: "/tmp/plugin/skills/lint",
+            targetPaths: [],
+            isSourceConfirmable: true,
+            isSourceConfirmed: true,
+            status: .enabled,
+            diagnostics: []
+        )
+        var revokeCount = 0
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .mcp, items: [item]),
+            onRevokeAllSourceConfirmations: {
+                revokeCount += 1
+                let revoked = ProjectCapabilityCardState.Item(
+                    id: item.id,
+                    kind: item.kind,
+                    name: item.name,
+                    pluginID: item.pluginID,
+                    sourcePath: item.sourcePath,
+                    targetPaths: item.targetPaths,
+                    sourceTrust: item.sourceTrust,
+                    isSourceConfirmable: item.isSourceConfirmable,
+                    isSourceConfirmed: false,
+                    status: item.status,
+                    diagnostics: item.diagnostics
+                )
+                return ProjectCapabilityCardState(selectedTab: .skills, items: [revoked])
+            }
+        )
+
+        model.revokeAllSourceConfirmations()
+
+        #expect(revokeCount == 1)
+        #expect(model.card.selectedTab == .mcp)
+        #expect(model.card.items.first?.isSourceConfirmed == false)
+    }
+
     @Test("Skill detail：保存成功后刷新 root/detail 并保留 tab")
     func skillDetailSaveRefreshesRootAndDetail() throws {
         let original = capabilitySkill(body: "旧正文")
