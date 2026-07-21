@@ -231,7 +231,7 @@ struct ACPAgentEngineTests {
         #expect(usages == [ACPUsage(used: 12_345, size: 200_000, cost: .init(amount: 0.0123, currency: "USD"))])
     }
 
-    @Test("ACPAgentEngine.onUsage fallback: 无 usage_update 但响应带 unstable usage(opencode 1.18 口径)→ 合成 used=input+cacheRead,size=nil")
+    @Test("ACPAgentEngine.onUsage fallback: 无 usage_update 但响应带 unstable usage(opencode 1.18 口径)→ 合成 used=input+cacheRead,size=nil,prompt 明细附上")
     func usageFallbackFromPromptResponse() async throws {
         let mock = MockACPTransport([
             resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
@@ -251,11 +251,14 @@ struct ACPAgentEngineTests {
         for try await d in engine.run(prompt: "hi") { deltas.append(d) }
 
         #expect(deltas == ["你好"])
-        #expect(usages == [ACPUsage(used: 29_554, size: nil, cost: nil)])
+        #expect(usages == [ACPUsage(
+            used: 29_554, size: nil, cost: nil,
+            prompt: ACPPromptUsage(inputTokens: 2_034, cachedReadTokens: 27_520, outputTokens: 49, totalTokens: 29_630)
+        )])
     }
 
-    @Test("ACPAgentEngine.onUsage: 本轮已收 usage_update → 响应里的 unstable usage 不再重复发(精确值优先)")
-    func noDuplicateUsageWhenUpdateArrived() async throws {
+    @Test("ACPAgentEngine.onUsage: 已收 usage_update → 响应 usage 仅补 prompt 明细(used/size/cost 不变,幂等不重复计数)")
+    func promptResponseUsageOnlyAddsDetail() async throws {
         let mock = MockACPTransport([
             resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
             resp(1, #"{"sessionId":"sess_1"}"#),
@@ -275,7 +278,10 @@ struct ACPAgentEngineTests {
         for try await d in engine.run(prompt: "hi") { deltas.append(d) }
 
         #expect(deltas == ["你好"])
-        #expect(usages == [ACPUsage(used: 29_661, size: 200_000, cost: nil)])   // 仅 usage_update 那一次
+        #expect(usages.count == 2)
+        #expect(usages[0] == ACPUsage(used: 29_661, size: 200_000))                    // usage_update 精确值
+        #expect(usages[1].used == 29_661 && usages[1].size == 200_000)               // 合并后数值不变
+        #expect(usages[1].prompt == ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568, totalTokens: 29_727))
     }
 
     // MARK: - P2 会话管理(list / load / new)

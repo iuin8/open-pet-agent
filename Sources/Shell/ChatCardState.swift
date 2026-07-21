@@ -59,6 +59,9 @@ public final class ChatCardState: ObservableObject {
     @Published public var contextSize: Int?
     /// ACP `usage_update` 的累计费用(App 预格式化展示串,如 "$0.0123";nil = agent 未报)。
     @Published public var contextCost: String?
+    /// 该轮 token 明细(App 预格式化,如 "in 2.5k · cache 52.1k · out 0.3k";占用条 tooltip;
+    /// nil = agent 未报明细 —— codex 路径)。
+    @Published public var contextDetail: String?
 
     // MARK: - ACP 会话管理(P2)
 

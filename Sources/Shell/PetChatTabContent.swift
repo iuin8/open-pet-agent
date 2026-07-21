@@ -66,9 +66,9 @@ struct PetChatTabContent: View {
             // 无数据不占位,免闪进闪出。
             if let used = state.contextUsed {
                 if let size = state.contextSize {
-                    ContextUsageBar(used: used, size: size, cost: state.contextCost)
+                    ContextUsageBar(used: used, size: size, cost: state.contextCost, detail: state.contextDetail)
                 } else {
-                    ContextUsageBar(adaptiveUsed: used, cost: state.contextCost)
+                    ContextUsageBar(adaptiveUsed: used, cost: state.contextCost, detail: state.contextDetail)
                 }
             }
             if !state.replyOptions.isEmpty || state.currentProject != nil {

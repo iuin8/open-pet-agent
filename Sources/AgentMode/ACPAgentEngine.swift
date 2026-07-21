@@ -254,15 +254,22 @@ public class ACPAgentEngine: AgentEngine, @unchecked Sendable {
                             onThoughtHandler?(text)
                         } else if update.sessionUpdate == .usageUpdate,
                                   let usage = update.usage {
-                            sawUsage.mark()
+                            sawUsage.mark(usage)
                             onUsageHandler?(usage)
                         }
                     }
-                    // fallback(ACP-3):usage_update 未达但响应带 unstable usage(opencode 1.18 实测如此)
-                    // → 合成 used = input + cache.read(同 opencode usage_update.used 公式);无窗口 size,
-                    // UI 自适应猜。已收过 usage_update 则不重复发(精确值优先)。
-                    if !sawUsage.value, let promptUsage = result.usage {
-                        onUsageHandler?(ACPUsage(used: promptUsage.contextUsed, size: nil, cost: nil))
+                    // fallback + 明细(ACP-3):usage_update 未达(opencode 1.18)→ 合成
+                    // used = input + cache.read(同 opencode usage_update.used 公式);
+                    // 已达(claude/codex 推 usage_update)→ used/size/cost 不变,仅补 prompt 明细
+                    // (tooltip)。两路幂等(wiring 同值覆写),不重复计数。
+                    if let promptUsage = result.usage {
+                        if let exact = sawUsage.lastUsage {
+                            onUsageHandler?(ACPUsage(
+                                used: exact.used, size: exact.size, cost: exact.cost, prompt: promptUsage))
+                        } else {
+                            onUsageHandler?(ACPUsage(
+                                used: promptUsage.contextUsed, size: nil, cost: nil, prompt: promptUsage))
+                        }
                     }
                     _ = result.stopReason   // ACP-2 按类型做 pet 反应
                     continuation.finish()
@@ -290,11 +297,12 @@ public class ACPAgentEngine: AgentEngine, @unchecked Sendable {
     }
 }
 
-/// run 的 prompt 回调(@Sendable)与主体间共享的「本轮已收 usage_update」标志(NSLock 护;
+/// run 的 prompt 回调(@Sendable)与主体间共享的「本轮 usage」状态(NSLock 护;
 /// box 绕 @Sendable 闭包捕获 var 的限制)。
 private final class ACPUsageArrivalFlag: @unchecked Sendable {
-    private var saw = false
+    private var last: ACPUsage?
     private let lock = NSLock()
-    func mark() { lock.lock(); saw = true; lock.unlock() }
-    var value: Bool { lock.lock(); defer { lock.unlock() }; return saw }
+    func mark(_ usage: ACPUsage) { lock.lock(); last = usage; lock.unlock() }
+    /// 本轮最近一次 usage_update(精确 used/size/cost;nil = 未收到)。
+    var lastUsage: ACPUsage? { lock.lock(); defer { lock.unlock() }; return last }
 }

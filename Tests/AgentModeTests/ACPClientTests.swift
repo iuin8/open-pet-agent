@@ -120,7 +120,10 @@ func clientPromptResponseUsage() async throws {
 
     let result = try await client.prompt(text: "hi") { _ in }
     #expect(result.stopReason == "end_turn")
-    #expect(result.usage == ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568))
+    #expect(result.usage == ACPPromptUsage(
+        inputTokens: 93, cachedReadTokens: 29_568,
+        outputTokens: 8, thoughtTokens: 58, totalTokens: 29_727
+    ))
     #expect(result.usage?.contextUsed == 29_661)
 }
 
