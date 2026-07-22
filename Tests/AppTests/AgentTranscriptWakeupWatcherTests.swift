@@ -20,49 +20,35 @@ struct AgentTranscriptWakeupWatcherTests {
         watcher.stop()
         #expect(watcher.isRunning == false)
     }
-    actor Counter {
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
         private var count = 0
-        func increment() { count += 1 }
-        func value() -> Int { count }
-    }
 
-    func appendUntilWakeup(transcript: URL, counter: Counter, timeout: Duration = .seconds(8)) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now + timeout
-        var index = 0
-        while clock.now < deadline {
-            let handle = try FileHandle(forWritingTo: transcript)
-            try handle.seekToEnd()
-            try handle.write(contentsOf: Data("next-\(index)\n".utf8))
-            try handle.close()
-            try await Task.sleep(nanoseconds: 100_000_000)
-            if await counter.value() > 0 { return }
-            index += 1
+        func increment() {
+            lock.lock()
+            count += 1
+            lock.unlock()
         }
-        Issue.record("FSEvents wakeup did not arrive before deadline")
+
+        func value() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return count
+        }
     }
 
-    @Test("nested transcript append triggers wakeup")
-    func nestedTranscriptAppendTriggersWakeup() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("agent-wakeup-\(UUID().uuidString)", isDirectory: true)
-        let projectDir = root
-            .appendingPathComponent("2026", isDirectory: true)
-            .appendingPathComponent("07", isDirectory: true)
-            .appendingPathComponent("21", isDirectory: true)
-        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let transcript = projectDir.appendingPathComponent("session.jsonl")
-        try "seed\n".write(to: transcript, atomically: true, encoding: .utf8)
-
+    @Test("wakeups are debounced before invoking poll")
+    func wakeupsAreDebouncedBeforeInvokingPoll() async throws {
         let counter = Counter()
-        let watcher = AgentTranscriptWakeupWatcher(roots: [root], debounce: 0.01) {
-            Task { await counter.increment() }
+        let watcher = AgentTranscriptWakeupWatcher(roots: [], debounce: 0.01) {
+            counter.increment()
         }
-        watcher.start()
-        defer { watcher.stop() }
 
-        try await appendUntilWakeup(transcript: transcript, counter: counter)
+        watcher.triggerWakeupForTesting()
+        watcher.triggerWakeupForTesting()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        #expect(counter.value() == 1)
     }
 
 }

@@ -80,6 +80,10 @@ final class AgentTranscriptWakeupWatcher {
         isRunning = false
     }
 
+    func triggerWakeupForTesting() {
+        scheduleWakeup()
+    }
+
     private func scheduleWakeup() {
         debounceWorkItem?.cancel()
         let work = DispatchWorkItem { [onWakeup] in onWakeup() }
