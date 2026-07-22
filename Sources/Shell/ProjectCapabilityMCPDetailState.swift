@@ -211,6 +211,10 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         return refreshed
     }
 
+    public static func validateCreationValue(_ value: ACPJSON) throws {
+        try validate(value)
+    }
+
     private static func validate(_ value: ACPJSON) throws {
         guard let object = value.objectValue else {
             throw ProjectCapabilityMCPDetailError.invalidRawJSON

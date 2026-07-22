@@ -256,7 +256,7 @@ private struct ProjectCapabilityAddView: View {
                 onImportExisting: { model.openImport() },
                 onCreatePlugin: { model.createPlugin(pluginID: $0, name: $1) },
                 onAddSkill: { model.addSkill(pluginID: $0, skillName: $1, skillDescription: $2, body: $3) },
-                onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, command: $2) }
+                onAddMCP: { model.addMCP(pluginID: $0, serverName: $1, value: $2) }
             )
             .padding(10)
         }

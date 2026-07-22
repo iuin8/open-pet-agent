@@ -92,6 +92,33 @@ struct ProjectCapabilityAuthoringTests {
         let manifest = try fixture.manifest()
         #expect(manifest["mcp"] as? [String] == ["mcp/servers.json#filesystem"])
     }
+
+    @Test("addMCP：支持远程 transport、env 与 cwd 草稿")
+    func addMCPSupportsStructuredRemoteDraft() throws {
+        let fixture = try ProjectCapabilityAuthoringFixture()
+        try MinimalAppDelegate.createProjectCapabilityPlugin(project: fixture.project, pluginID: "dev-toolkit", name: "Dev Toolkit")
+
+        try MinimalAppDelegate.addProjectCapabilityMCP(
+            project: fixture.project,
+            pluginID: "dev-toolkit",
+            serverName: "remote-search",
+            value: .object([
+                "type": .string("http"),
+                "url": .string("https://example.com/mcp"),
+                "env": .object(["TOKEN": .string("secret")]),
+                "cwd": .string("/tmp/work")
+            ])
+        )
+
+        let mcpURL = fixture.pluginRoot.appendingPathComponent("mcp/servers.json")
+        let root = try fixture.json(mcpURL)
+        let servers = try #require(root["mcpServers"] as? [String: Any])
+        let server = try #require(servers["remote-search"] as? [String: Any])
+        #expect(server["type"] as? String == "http")
+        #expect(server["url"] as? String == "https://example.com/mcp")
+        #expect((server["env"] as? [String: String])?["TOKEN"] == "secret")
+        #expect(server["cwd"] as? String == "/tmp/work")
+    }
 }
 
 private struct ProjectCapabilityAuthoringFixture {

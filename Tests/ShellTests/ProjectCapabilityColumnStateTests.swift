@@ -87,6 +87,80 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.card.selectedTab == .mcp)
     }
 
+    @Test("addMCP：完整 MCP JSON 草稿传递给写入回调并保留当前 tab")
+    func addMCPPassesStructuredDraftPreservingSelectedTab() throws {
+        let item = ProjectCapabilityCardState.Item(
+            id: "mcp:dev-toolkit:remote-search",
+            kind: .mcp,
+            name: "remote-search",
+            pluginID: "dev-toolkit",
+            sourcePath: "/tmp/mcp/servers.json#remote-search",
+            targetPaths: [],
+            status: .enabled,
+            diagnostics: []
+        )
+        let value = ACPJSON.object([
+            "type": .string("http"),
+            "url": .string("https://example.com/mcp"),
+            "env": .object(["TOKEN": .string("secret")])
+        ])
+        var captured: (pluginID: String, serverName: String, value: ACPJSON)?
+        let model = ProjectCapabilityColumnState(
+            card: ProjectCapabilityCardState(selectedTab: .skills, items: []),
+            onAddMCP: { pluginID, serverName, value in
+                captured = (pluginID, serverName, value)
+                return ProjectCapabilityCardState(selectedTab: .mcp, items: [item])
+            }
+        )
+
+        model.addMCP(pluginID: "dev-toolkit", serverName: "remote-search", value: value)
+
+        #expect(captured?.pluginID == "dev-toolkit")
+        #expect(captured?.serverName == "remote-search")
+        #expect(captured?.value == value)
+        #expect(model.card.selectedTab == .skills)
+    }
+
+    @Test("MCP draft：命令和参数分开建模，不按空格拆 command")
+    func mcpDraftKeepsCommandAndArgumentsSeparate() throws {
+        var draft = ProjectCapabilityMCPDraft()
+        draft.transport = .stdio
+        draft.command = "/Applications/My Tool/bin/server"
+        draft.arguments = "--root\n/Users/fa/My Project"
+        draft.environment = "TOKEN=secret"
+        draft.cwd = "/Users/fa/My Project"
+
+        let object = try #require(try draft.value().objectValue)
+
+        #expect(object["command"] == .string("/Applications/My Tool/bin/server"))
+        #expect(object["args"] == .array([.string("--root"), .string("/Users/fa/My Project")]))
+        #expect(object["env"] == .object(["TOKEN": .string("secret")]))
+        #expect(object["cwd"] == .string("/Users/fa/My Project"))
+    }
+
+    @Test("MCP draft：env 非 KEY=VALUE 时拒绝生成配置")
+    func mcpDraftRejectsMalformedEnvironmentLine() {
+        var draft = ProjectCapabilityMCPDraft()
+        draft.environment = "TOKEN"
+
+        #expect(throws: (any Error).self) {
+            try draft.value()
+        }
+    }
+
+    @Test("Skill draft：模板填充描述、正文并生成 frontmatter 预览")
+    func skillDraftTemplateBuildsPreview() {
+        var draft = ProjectCapabilitySkillDraft(name: "deploy-check")
+
+        draft.apply(.command)
+
+        #expect(draft.canSubmit)
+        #expect(draft.description == "Run a focused project command and summarize the result.")
+        #expect(draft.previewText.contains("name: deploy-check"))
+        #expect(draft.previewText.contains("description: Run a focused project command and summarize the result."))
+        #expect(draft.previewText.contains("# deploy-check"))
+    }
+
     @Test("sync：三路同步结果记录在列状态内")
     func syncActionsRecordMessages() {
         let model = ProjectCapabilityColumnState(

@@ -33,7 +33,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
     private let onRevokeAllSourceConfirmations: (() -> ProjectCapabilityCardState)?
     private let onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
     private let onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)?
-    private let onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
+    private let onAddMCP: ((String, String, ACPJSON) -> ProjectCapabilityCardState)?
     private let onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)?
     private let onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)?
     private let onDeleteMCPServer: ((String, String, String) throws -> ProjectCapabilitySnapshot?)?
@@ -60,7 +60,7 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         onRevokeAllSourceConfirmations: (() -> ProjectCapabilityCardState)? = nil,
         onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)? = nil,
         onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)? = nil,
-        onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)? = nil,
+        onAddMCP: ((String, String, ACPJSON) -> ProjectCapabilityCardState)? = nil,
         onUpdateSkillBody: ((String, String, String) throws -> ProjectCapabilitySnapshot?)? = nil,
         onUpdateMCPServer: ((String, String, String, ACPJSON) throws -> ProjectCapabilitySnapshot?)? = nil,
         onDeleteMCPServer: ((String, String, String) throws -> ProjectCapabilitySnapshot?)? = nil,
@@ -143,9 +143,17 @@ public final class ProjectCapabilityColumnState: ObservableObject {
         refreshPreservingTab(onAddSkill(pluginID, skillName, skillDescription, body))
     }
 
-    public func addMCP(pluginID: String, serverName: String, command: [String]) {
+    public func addMCP(pluginID: String, serverName: String, value: ACPJSON) {
         guard let onAddMCP else { return }
-        refreshPreservingTab(onAddMCP(pluginID, serverName, command))
+        refreshPreservingTab(onAddMCP(pluginID, serverName, value))
+    }
+
+    public func addMCP(pluginID: String, serverName: String, command: [String]) {
+        addMCP(
+            pluginID: pluginID,
+            serverName: serverName,
+            value: ProjectCapabilityMCPDraft.value(command: command)
+        )
     }
 
     public func skillDetail(pluginID: String, skillRef: String) -> ProjectCapabilitySkillDetailState? {

@@ -424,10 +424,10 @@ extension MinimalAppDelegate {
                 }
                 return card(for: project)
             },
-            onAddMCP: { [weak self] pluginID, serverName, command in
+            onAddMCP: { [weak self] pluginID, serverName, value in
                 guard let self else { return ProjectCapabilityCardState(selectedTab: .mcp, items: []) }
                 do {
-                    try Self.addProjectCapabilityMCP(project: project, pluginID: pluginID, serverName: serverName, command: command)
+                    try Self.addProjectCapabilityMCP(project: project, pluginID: pluginID, serverName: serverName, value: value)
                 } catch {
                     self.showProjectError(title: "添加 MCP 失败", error: error)
                 }
@@ -732,19 +732,24 @@ extension MinimalAppDelegate {
     }
 
     static func addProjectCapabilityMCP(project: AgentProject, pluginID: String, serverName: String, command: [String] = ["npx", "-y", "@modelcontextprotocol/server-filesystem"]) throws {
+        try addProjectCapabilityMCP(
+            project: project,
+            pluginID: pluginID,
+            serverName: serverName,
+            value: ProjectCapabilityMCPDraft.value(command: command)
+        )
+    }
+
+    static func addProjectCapabilityMCP(project: AgentProject, pluginID: String, serverName: String, value: ACPJSON) throws {
         try createProjectCapabilityPlugin(project: project, pluginID: pluginID, name: pluginID)
         let safeServer = sanitizedCapabilityName(serverName)
-        let effectiveCommand = command.isEmpty ? ["npx", "-y", "@modelcontextprotocol/server-filesystem"] : command
+        try ProjectCapabilityMCPDetailState.validateCreationValue(value)
         try ProjectCapabilityWriter().upsertMCPServer(
             project: project,
             pluginID: pluginID,
             fileRef: "mcp/servers.json",
             serverName: safeServer,
-            value: .object([
-                "type": .string("local"),
-                "command": .array(effectiveCommand.map(ACPJSON.string)),
-                "enabled": .bool(true)
-            ])
+            value: value
         )
     }
 

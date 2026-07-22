@@ -502,16 +502,14 @@ struct ProjectCapabilityAddFormView: View {
     var onImportExisting: (() -> Void)? = nil
     let onCreatePlugin: (String, String) -> Void
     let onAddSkill: (String, String, String, String) -> Void
-    let onAddMCP: (String, String, [String]) -> Void
+    let onAddMCP: (String, String, ACPJSON) -> Void
 
     @State private var addAction: AddAction = .skill
     @State private var pluginID = "dev-toolkit"
     @State private var pluginName = "Dev Toolkit"
-    @State private var skillName = "code-review"
-    @State private var skillDescription = "Review staged diffs before commit."
-    @State private var skillBody = "Inspect git diff and report correctness issues before committing."
+    @State private var skillDraft = ProjectCapabilitySkillDraft()
     @State private var mcpServerName = "filesystem"
-    @State private var mcpCommand = "npx -y @modelcontextprotocol/server-filesystem"
+    @State private var mcpDraft = ProjectCapabilityMCPDraft()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -528,26 +526,61 @@ struct ProjectCapabilityAddFormView: View {
                     compactField("display name", text: $pluginName)
                 }
             case .skill:
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         compactField("plugin id", text: $pluginID)
-                        compactField("skill name", text: $skillName)
+                        compactField("skill name", text: $skillDraft.name)
                     }
-                    compactField("description", text: $skillDescription)
-                    TextEditor(text: $skillBody)
-                        .font(.system(size: 9, design: .rounded))
-                        .scrollContentBackground(.hidden)
-                        .frame(height: 112)
-                        .padding(5)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
+                    HStack(spacing: 5) {
+                        ForEach(ProjectCapabilitySkillDraft.Template.allCases, id: \.self) { template in
+                            Button(template.title) { skillDraft.apply(template) }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundStyle(ChatCardTheme.accent)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.62)))
+                        }
+                    }
+                    compactField("description", text: $skillDraft.description)
+                    textArea("body", text: $skillDraft.body, height: 92)
+                    Text(skillDraft.previewText)
+                        .font(.system(size: 8.5, design: .monospaced))
+                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.62))
+                        .textSelection(.enabled)
+                        .lineLimit(8)
+                        .padding(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.55)))
                 }
             case .mcp:
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         compactField("plugin id", text: $pluginID)
                         compactField("server", text: $mcpServerName)
                     }
-                    compactField("command", text: $mcpCommand)
+                    Picker("Transport", selection: $mcpDraft.transport) {
+                        Text("stdio").tag(MCPTransport.stdio)
+                        Text("http").tag(MCPTransport.http)
+                        Text("sse").tag(MCPTransport.sse)
+                    }
+                    .pickerStyle(.segmented)
+                    if mcpDraft.transport == .stdio {
+                        compactField("command", text: $mcpDraft.command)
+                        textArea("args（每行一个）", text: $mcpDraft.arguments, height: 54)
+                    } else {
+                        compactField("url", text: $mcpDraft.url)
+                    }
+                    textArea("env（每行 KEY=VALUE，可选）", text: $mcpDraft.environment, height: 54)
+                    compactField("working directory（可选）", text: $mcpDraft.cwd)
+                    Text(mcpDraft.previewText)
+                        .font(.system(size: 8.5, design: .monospaced))
+                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.62))
+                        .textSelection(.enabled)
+                        .lineLimit(8)
+                        .padding(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.55)))
                 }
             case .importExisting:
                 Text("扫描当前项目已有 Claude / Codex Skill 与 MCP 配置，确认后写入 canonical catalog。")
@@ -599,9 +632,11 @@ struct ProjectCapabilityAddFormView: View {
         switch addAction {
         case .plugin: return isValidPluginID(pluginID) && !pluginName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .skill:
-            return isValidPluginID(pluginID) && !skillName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !skillDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !skillBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return isValidPluginID(pluginID) && skillDraft.canSubmit
         case .mcp:
-            return isValidPluginID(pluginID) && !mcpServerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !mcpCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return isValidPluginID(pluginID)
+                && !mcpServerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && (try? mcpDraft.value()) != nil
         case .importExisting: return onImportExisting != nil
         }
     }
@@ -609,8 +644,10 @@ struct ProjectCapabilityAddFormView: View {
     private func submitAddAction() {
         switch addAction {
         case .plugin: onCreatePlugin(pluginID, pluginName)
-        case .skill: onAddSkill(pluginID, skillName, skillDescription, skillBody)
-        case .mcp: onAddMCP(pluginID, mcpServerName, mcpCommand.split(separator: " ").map(String.init))
+        case .skill: onAddSkill(pluginID, skillDraft.name, skillDraft.description, skillDraft.body)
+        case .mcp:
+            guard let value = try? mcpDraft.value() else { return }
+            onAddMCP(pluginID, mcpServerName, value)
         case .importExisting: onImportExisting?()
         }
     }
@@ -627,5 +664,19 @@ struct ProjectCapabilityAddFormView: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
+    }
+
+    private func textArea(_ label: String, text: Binding<String>, height: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.58))
+            TextEditor(text: text)
+                .font(.system(size: 9.5, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .frame(height: height)
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.7)))
+        }
     }
 }

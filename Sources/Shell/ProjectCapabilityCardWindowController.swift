@@ -16,7 +16,7 @@ public final class ProjectCapabilityCardWindowController {
     private var onSetTargetEnabled: ((String, CapabilityTarget, Bool) -> ProjectCapabilityCardState)?
     private var onCreatePlugin: ((String, String) -> ProjectCapabilityCardState)?
     private var onAddSkill: ((String, String, String, String) -> ProjectCapabilityCardState)?
-    private var onAddMCP: ((String, String, [String]) -> ProjectCapabilityCardState)?
+    private var onAddMCP: ((String, String, ACPJSON) -> ProjectCapabilityCardState)?
     private var onSyncCodex: (() -> String)?
     private var onSyncClaudeCode: (() -> String)?
     private var onSyncOpencode: (() -> String)?
@@ -32,7 +32,7 @@ public final class ProjectCapabilityCardWindowController {
         onSetTargetEnabled: @escaping (String, CapabilityTarget, Bool) -> ProjectCapabilityCardState = { _, _, _ in ProjectCapabilityCardState(selectedTab: .overview, items: []) },
         onCreatePlugin: @escaping (String, String) -> ProjectCapabilityCardState,
         onAddSkill: @escaping (String, String, String, String) -> ProjectCapabilityCardState,
-        onAddMCP: @escaping (String, String, [String]) -> ProjectCapabilityCardState,
+        onAddMCP: @escaping (String, String, ACPJSON) -> ProjectCapabilityCardState,
         onSyncCodex: @escaping () -> String,
         onSyncClaudeCode: @escaping () -> String,
         onSyncOpencode: @escaping () -> String
@@ -92,10 +92,10 @@ public final class ProjectCapabilityCardWindowController {
         renderAndPlace()
     }
 
-    private func addMCP(pluginID: String, serverName: String, command: [String]) {
+    private func addMCP(pluginID: String, serverName: String, value: ACPJSON) {
         guard let onAddMCP else { return }
         let tab = currentCard.selectedTab
-        let refreshed = onAddMCP(pluginID, serverName, command)
+        let refreshed = onAddMCP(pluginID, serverName, value)
         currentCard = ProjectCapabilityCardState(selectedTab: tab, items: refreshed.items)
         renderAndPlace()
     }
@@ -137,7 +137,7 @@ public final class ProjectCapabilityCardWindowController {
                 ProjectCapabilityAddFormView(
                     onCreatePlugin: { [weak self] pluginID, name in self?.createPlugin(pluginID: pluginID, name: name) },
                     onAddSkill: { [weak self] pluginID, skillName, skillDescription, body in self?.addSkill(pluginID: pluginID, skillName: skillName, skillDescription: skillDescription, body: body) },
-                    onAddMCP: { [weak self] pluginID, serverName, command in self?.addMCP(pluginID: pluginID, serverName: serverName, command: command) }
+                    onAddMCP: { [weak self] pluginID, serverName, value in self?.addMCP(pluginID: pluginID, serverName: serverName, value: value) }
                 )
                 .frame(width: 360)
                 .padding(6)
