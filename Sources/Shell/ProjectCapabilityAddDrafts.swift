@@ -75,64 +75,18 @@ public struct ProjectCapabilitySkillDraft: Sendable, Equatable {
 }
 
 public struct ProjectCapabilityMCPDraft: Sendable, Equatable {
-    public var transport: MCPTransport
-    public var command: String
-    public var arguments: String
-    public var url: String
-    public var environment: String
-    public var cwd: String
+    public var rawJSON: String
 
-    public init(
-        transport: MCPTransport = .stdio,
-        command: String = "npx",
-        arguments: String = "-y\n@modelcontextprotocol/server-filesystem",
-        url: String = "",
-        environment: String = "",
-        cwd: String = ""
-    ) {
-        self.transport = transport
-        self.command = command
-        self.arguments = arguments
-        self.url = url
-        self.environment = environment
-        self.cwd = cwd
+    public init(rawJSON: String = Self.defaultRawJSON) {
+        self.rawJSON = rawJSON
     }
 
     public func value() throws -> ACPJSON {
-        switch transport {
-        case .stdio:
-            let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !command.isEmpty else {
-                throw ProjectCapabilityMCPDetailError.invalidConfiguration("stdio transport 必须填写 command")
-            }
-            return .object(try Self.withSharedFields(
-                [
-                    "type": .string("local"),
-                    "command": .string(command),
-                    "args": .array(Self.lines(arguments).map(ACPJSON.string)),
-                    "enabled": .bool(true)
-                ],
-                environment: environment,
-                cwd: cwd
-            ))
-        case .http, .sse:
-            let value = url.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let parsed = URL(string: value),
-                  let scheme = parsed.scheme?.lowercased(),
-                  parsed.host?.isEmpty == false,
-                  scheme == "http" || scheme == "https" else {
-                throw ProjectCapabilityMCPDetailError.invalidConfiguration("http/sse transport 必须填写有效的 HTTP URL")
-            }
-            return .object(try Self.withSharedFields(
-                [
-                    "type": .string(transport.rawValue),
-                    "url": .string(value),
-                    "enabled": .bool(true)
-                ],
-                environment: environment,
-                cwd: cwd
-            ))
+        guard let value = ACPJSON.parse(rawJSON), value.objectValue != nil else {
+            throw ProjectCapabilityMCPDetailError.invalidRawJSON
         }
+        try ProjectCapabilityMCPDetailState.validateCreationValue(value)
+        return value
     }
 
     public static func value(command: [String]) -> ACPJSON {
@@ -149,44 +103,29 @@ public struct ProjectCapabilityMCPDraft: Sendable, Equatable {
     }
 
     public var previewText: String {
-        let value = (try? value()) ?? .object([:])
+        guard let value = try? value() else { return rawJSON }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(value),
-              let text = String(data: data, encoding: .utf8) else { return "{}" }
+              let text = String(data: data, encoding: .utf8) else { return rawJSON }
         return text
     }
 
-    private static func withSharedFields(_ object: [String: ACPJSON], environment: String, cwd: String) throws -> [String: ACPJSON] {
-        var result = object.filter { key, value in
-            key != "args" || value != .array([])
+    public var errorMessage: String? {
+        do {
+            _ = try value()
+            return nil
+        } catch {
+            return error.localizedDescription
         }
-        let env = try parseEnvironment(environment)
-        if !env.isEmpty { result["env"] = .object(env.mapValues(ACPJSON.string)) }
-        let cwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !cwd.isEmpty { result["cwd"] = .string(cwd) }
-        return result
     }
 
-    private static func parseEnvironment(_ text: String) throws -> [String: String] {
-        var result: [String: String] = [:]
-        for line in lines(text) {
-            guard let index = line.firstIndex(of: "="), index != line.startIndex else {
-                throw ProjectCapabilityMCPDetailError.invalidConfiguration("env 每行必须使用 KEY=VALUE 格式")
-            }
-            let key = String(line[..<index]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let value = String(line[line.index(after: index)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !key.isEmpty else {
-                throw ProjectCapabilityMCPDetailError.invalidConfiguration("env 每行必须使用 KEY=VALUE 格式")
-            }
-            result[key] = value
-        }
-        return result
+    public static let defaultRawJSON = """
+    {
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+      "enabled": true
     }
-
-    private static func lines(_ text: String) -> [String] {
-        text.split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
+    """
 }

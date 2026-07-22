@@ -559,28 +559,24 @@ struct ProjectCapabilityAddFormView: View {
                         compactField("plugin id", text: $pluginID)
                         compactField("server", text: $mcpServerName)
                     }
-                    Picker("Transport", selection: $mcpDraft.transport) {
-                        Text("stdio").tag(MCPTransport.stdio)
-                        Text("http").tag(MCPTransport.http)
-                        Text("sse").tag(MCPTransport.sse)
-                    }
-                    .pickerStyle(.segmented)
-                    if mcpDraft.transport == .stdio {
-                        compactField("command", text: $mcpDraft.command)
-                        textArea("args（每行一个）", text: $mcpDraft.arguments, height: 54)
+                    textArea("server JSON", text: $mcpDraft.rawJSON, height: 138)
+                    if let error = mcpDraft.errorMessage {
+                        Text(error)
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.red.opacity(0.78))
                     } else {
-                        compactField("url", text: $mcpDraft.url)
+                        Text(mcpDraft.previewText)
+                            .font(.system(size: 8.5, design: .monospaced))
+                            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.62))
+                            .textSelection(.enabled)
+                            .lineLimit(8)
+                            .padding(7)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.55)))
                     }
-                    textArea("env（每行 KEY=VALUE，可选）", text: $mcpDraft.environment, height: 54)
-                    compactField("working directory（可选）", text: $mcpDraft.cwd)
-                    Text(mcpDraft.previewText)
-                        .font(.system(size: 8.5, design: .monospaced))
-                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.62))
-                        .textSelection(.enabled)
-                        .lineLimit(8)
-                        .padding(7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ChatCardTheme.inputFill.opacity(0.55)))
+                    Text("粘贴完整 MCP server JSON；会保留 headers 等扩展字段，只校验 transport / command / url / env / cwd 的基础合法性。")
+                        .font(.system(size: 9, design: .rounded))
+                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.55))
                 }
             case .importExisting:
                 Text("扫描当前项目已有 Claude / Codex Skill 与 MCP 配置，确认后写入 canonical catalog。")

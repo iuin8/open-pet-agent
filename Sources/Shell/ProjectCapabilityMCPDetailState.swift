@@ -211,11 +211,11 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         return refreshed
     }
 
-    public static func validateCreationValue(_ value: ACPJSON) throws {
+    public nonisolated static func validateCreationValue(_ value: ACPJSON) throws {
         try validate(value)
     }
 
-    private static func validate(_ value: ACPJSON) throws {
+    private nonisolated static func validate(_ value: ACPJSON) throws {
         guard let object = value.objectValue else {
             throw ProjectCapabilityMCPDetailError.invalidRawJSON
         }
@@ -234,7 +234,7 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         }
     }
 
-    private static func transport(for object: [String: ACPJSON]) throws -> MCPTransport {
+    private nonisolated static func transport(for object: [String: ACPJSON]) throws -> MCPTransport {
         let raw = object["type"]?.stringValue ?? object["transport"]?.stringValue
         switch raw {
         case "local", "stdio": return .stdio
@@ -245,7 +245,7 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         }
     }
 
-    private static func commandParts(_ object: [String: ACPJSON]) throws -> [String] {
+    private nonisolated static func commandParts(_ object: [String: ACPJSON]) throws -> [String] {
         var command: [String]
         if let value = object["command"]?.stringValue, !value.isEmpty {
             command = [value]
@@ -263,11 +263,13 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
                 throw ProjectCapabilityMCPDetailError.invalidConfiguration("args 必须是字符串数组")
             }
             command.append(contentsOf: args)
+        } else if object["args"] != nil {
+            throw ProjectCapabilityMCPDetailError.invalidConfiguration("args 必须是字符串数组")
         }
         return command
     }
 
-    private static func validRemoteURL(_ raw: String) throws -> String {
+    private nonisolated static func validRemoteURL(_ raw: String) throws -> String {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: value),
               let scheme = url.scheme?.lowercased(),
@@ -290,7 +292,7 @@ public final class ProjectCapabilityMCPDetailState: ObservableObject {
         return result
     }
 
-    private static func environment(_ value: ACPJSON?) throws -> [String: String] {
+    private nonisolated static func environment(_ value: ACPJSON?) throws -> [String: String] {
         guard let value else { return [:] }
         guard let object = value.objectValue else {
             throw ProjectCapabilityMCPDetailError.invalidConfiguration("env 必须是字符串 object")

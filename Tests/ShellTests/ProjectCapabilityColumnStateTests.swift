@@ -121,27 +121,51 @@ struct ProjectCapabilityColumnStateTests {
         #expect(model.card.selectedTab == .skills)
     }
 
-    @Test("MCP draft：命令和参数分开建模，不按空格拆 command")
-    func mcpDraftKeepsCommandAndArgumentsSeparate() throws {
-        var draft = ProjectCapabilityMCPDraft()
-        draft.transport = .stdio
-        draft.command = "/Applications/My Tool/bin/server"
-        draft.arguments = "--root\n/Users/fa/My Project"
-        draft.environment = "TOKEN=secret"
-        draft.cwd = "/Users/fa/My Project"
+    @Test("MCP draft：完整 JSON 输入透传并允许额外字段")
+    func mcpDraftKeepsRawJSONInput() throws {
+        let draft = ProjectCapabilityMCPDraft(rawJSON: """
+        {
+          "type": "http",
+          "url": "https://example.com/mcp",
+          "headers": { "X-Trace": "1" },
+          "env": { "TOKEN": "secret" },
+          "cwd": "/tmp/work",
+          "enabled": true
+        }
+        """)
 
         let object = try #require(try draft.value().objectValue)
 
-        #expect(object["command"] == .string("/Applications/My Tool/bin/server"))
-        #expect(object["args"] == .array([.string("--root"), .string("/Users/fa/My Project")]))
-        #expect(object["env"] == .object(["TOKEN": .string("secret")]))
-        #expect(object["cwd"] == .string("/Users/fa/My Project"))
+        #expect(object["type"] == ACPJSON.string("http"))
+        #expect(object["url"] == ACPJSON.string("https://example.com/mcp"))
+        #expect(object["headers"] == ACPJSON.object(["X-Trace": .string("1")]))
+        #expect(object["env"] == ACPJSON.object(["TOKEN": .string("secret")]))
+        #expect(object["cwd"] == ACPJSON.string("/tmp/work"))
+        #expect(object["enabled"] == ACPJSON.bool(true))
     }
 
-    @Test("MCP draft：env 非 KEY=VALUE 时拒绝生成配置")
-    func mcpDraftRejectsMalformedEnvironmentLine() {
-        var draft = ProjectCapabilityMCPDraft()
-        draft.environment = "TOKEN"
+    @Test("MCP draft：非法 JSON 或非 object 时拒绝生成配置")
+    func mcpDraftRejectsInvalidRawJSON() {
+        let malformed = ProjectCapabilityMCPDraft(rawJSON: "{not json")
+        let array = ProjectCapabilityMCPDraft(rawJSON: "[]")
+
+        #expect(throws: (any Error).self) {
+            try malformed.value()
+        }
+        #expect(throws: (any Error).self) {
+            try array.value()
+        }
+    }
+
+    @Test("MCP draft：args 存在但不是字符串数组时拒绝生成配置")
+    func mcpDraftRejectsMalformedArguments() {
+        let draft = ProjectCapabilityMCPDraft(rawJSON: """
+        {
+          "type": "local",
+          "command": "npx",
+          "args": "--verbose"
+        }
+        """)
 
         #expect(throws: (any Error).self) {
             try draft.value()
