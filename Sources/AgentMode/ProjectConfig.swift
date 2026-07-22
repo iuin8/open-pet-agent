@@ -61,6 +61,12 @@ public enum ProjectConfig {
             .appendingPathComponent("capability-source-confirmations.local.json", isDirectory: false)
     }
 
+    /// 指定项目的用户私有社区源状态路径。社区源链接是用户选择，不随项目提交。
+    public static func communitySourcesURL(for project: AgentProject) -> URL {
+        userPrivateProjectStateRoot(for: project)
+            .appendingPathComponent("community-sources.local.json", isDirectory: false)
+    }
+
     private static func userPrivateProjectStateRoot(for project: AgentProject) -> URL {
         homeRoot
             .appendingPathComponent(".open-pet-agent/state/projects", isDirectory: true)
