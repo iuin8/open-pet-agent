@@ -37,6 +37,11 @@ public final class ColumnContainerState: ObservableObject {
         stack.drillIn(fromColumnIndex: i, rowId: rowId, into: kind)
     }
 
+    /// 会话流同源同 id item 刷新时，同步已打开 detail 列的 item 快照。
+    public func replaceDetailItem(_ item: ConversationItem, sourceKey: String) {
+        stack.replaceDetailItem(item, sourceKey: sourceKey)
+    }
+
     /// 清栈并关闭容器。
     public func close() {
         stack.close()

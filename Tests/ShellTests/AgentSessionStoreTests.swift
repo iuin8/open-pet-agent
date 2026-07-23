@@ -422,6 +422,26 @@ struct AgentSessionStoreTests {
         #expect(!store.isLoadingEarlier(for: .claudeCode))
     }
 
+    @Test("items rebuilt 回调携带 awaiting detail 回填后的最新 item")
+    func itemsRebuiltCallbackCarriesUpdatedAwaitingDetail() {
+        let store = AgentSessionStore()
+        var rebuilt: [ConversationItem] = []
+        store.onItemsRebuilt = { agent, items in
+            if agent == .claudeCode { rebuilt = items }
+        }
+        store.appendLive(AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                                    kind: .awaitingUser(reason: .question(title: "发布策略")),
+                                    timestamp: Date(timeIntervalSince1970: 1),
+                                    detail: "问题：怎么发?", toolUseId: "toolu_q"))
+        store.appendLive(AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                                    kind: .toolResult(name: "", isError: false),
+                                    timestamp: Date(timeIntervalSince1970: 2),
+                                    detail: #"{"answers":{"怎么发?":"先推分支"}}"#, toolUseId: "toolu_q"))
+
+        #expect(rebuilt.count == 1)
+        #expect(rebuilt[0].awaitingDetail?.contains("已选：先推分支") == true)
+    }
+
     // MARK: - 待答队列(权限/问题,pet 旁权限侧卡)
 
     func makePending(id: String = UUID().uuidString, superseded: @escaping () -> Void = {}) -> PendingAction {

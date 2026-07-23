@@ -13,6 +13,15 @@ extension MinimalAppDelegate {
     /// 「在跑什么」气泡节流:tool 事件可能每秒数颗,节流到这个间隔避免闪烁。
     static let agentSensingBubbleThrottle: TimeInterval = 2.5
 
+    /// Detail 根列的来源 key 纳入 agent + session，避免不同会话同 item.id 的 awaiting 回填误刷新已打开侧卡。
+    nonisolated static func detailSourceKey(agent: AgentKind, sessionId: String, itemId: Int) -> String {
+        "detail:\(agent.rawValue):\(sessionId):\(itemId)"
+    }
+
+    nonisolated func detailSourceKey(agent: AgentKind, sessionId: String, itemId: Int) -> String {
+        Self.detailSourceKey(agent: agent, sessionId: sessionId, itemId: itemId)
+    }
+
     /// applicationDidFinishLaunching 末段调(bondedSession 就绪后)。构造感知 service、
     /// 把 transcript 事件接到桌宠气泡 + 一次性反应,起轮询 timer。
     ///
@@ -136,9 +145,18 @@ extension MinimalAppDelegate {
             self?.drillIntoColumn(columnId: columnId, item: item)
         }
 
+        // 会话流 rebuild 后,同步已打开 detail 列里的同 id item 快照(如 AskUserQuestion 已选答案回填)。
+        chatCardWindowController?.agentSessionStore.onItemsRebuilt = { [weak self] agent, items in
+            guard let self,
+                  let sid = self.chatCardWindowController?.agentSessionStore.selectedSession(for: agent) else { return }
+            for item in items {
+                self.columnContainerWindowController.replaceDetailItem(item, sourceKey: self.detailSourceKey(agent: agent, sessionId: sid, itemId: item.id))
+            }
+        }
         // 点大内容 tool 行 / 长消息行 → detail 根列(总结轮转成 .assistant 全文)。
-        chatCardWindowController?.agentSessionStore.onExpandToSide = { [weak self] rawItem in
-            guard let self else { return }
+        chatCardWindowController?.agentSessionStore.onExpandToSide = { [weak self] agent, rawItem in
+            guard let self,
+                  let sid = self.chatCardWindowController?.agentSessionStore.selectedSession(for: agent) else { return }
             var item = rawItem
             if case .assistantTurn(let a) = rawItem.kind {
                 guard !a.finalText.isEmpty else { return }
@@ -146,7 +164,7 @@ extension MinimalAppDelegate {
             }
             self.chatCardWindowController?.agentSessionStore.highlightedItemId = item.id
             self.chatCardWindowController?.agentSessionStore.highlightedRegion = .primary
-            self.columnContainerWindowController.openRoot(.detail(item: item), sourceKey: "detail:\(item.id)",
+            self.columnContainerWindowController.openRoot(.detail(item: item), sourceKey: self.detailSourceKey(agent: agent, sessionId: sid, itemId: item.id),
                 besideMain: self.mainCardFrame(), screen: self.currentScreenFrame())
         }
         // 点元数据栏 → 元数据 steps 根列(思考/工具,不含总结)。

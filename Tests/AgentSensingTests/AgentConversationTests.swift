@@ -88,6 +88,64 @@ struct AgentConversationTests {
         else { Issue.record("应是 .awaiting") }
     }
 
+    @Test("awaitingUser + 同 id toolResult → awaiting detail 追加已选答案")
+    func awaitingCarriesSelectedAnswerFromResult() {
+        let items = AgentConversation.build(from: [
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .awaitingUser(reason: .question(title: "发布策略")),
+                       timestamp: Date(timeIntervalSince1970: 1),
+                       detail: "问题：怎么发?\n选项：\n1. 先推分支 — 推当前分支", toolUseId: "toolu_q"),
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .toolResult(name: "", isError: false),
+                       timestamp: Date(timeIntervalSince1970: 2),
+                       detail: #"{"answers":{"怎么发?":"先推分支"}}"#, toolUseId: "toolu_q"),
+        ])
+        #expect(items.count == 1)
+        guard case .awaiting(let r) = items[0].kind else { Issue.record("应是 .awaiting"); return }
+        #expect(r == .question(title: "发布策略"))
+        #expect(items[0].awaitingDetail?.contains("问题：怎么发?") == true)
+        #expect(items[0].awaitingDetail?.contains("已选：先推分支") == true)
+    }
+
+    @Test("awaitingUser + toolResult 多答案 → awaiting detail 稳定列出所有已选答案")
+    func awaitingCarriesMultipleSelectedAnswersFromResult() {
+        let items = AgentConversation.build(from: [
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .awaitingUser(reason: .question(title: "发布策略")),
+                       timestamp: Date(timeIntervalSince1970: 1),
+                       detail: "问题：怎么发?", toolUseId: "toolu_q"),
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .toolResult(name: "", isError: false),
+                       timestamp: Date(timeIntervalSince1970: 2),
+                       detail: #"{"answers":{"CI授权":"授权后推送","发布策略":"先推分支"}}"#, toolUseId: "toolu_q"),
+        ])
+        #expect(items.count == 1)
+        #expect(items[0].awaitingDetail?.contains("已选：") == true)
+        #expect(items[0].awaitingDetail?.contains("CI授权：授权后推送") == true)
+        #expect(items[0].awaitingDetail?.contains("发布策略：先推分支") == true)
+    }
+
+    @Test("awaiting toolResult 显式 id 不误关无关 running tool")
+    func awaitingResultDoesNotCloseUnrelatedRunningTool() {
+        let items = AgentConversation.build(from: [
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .toolUse(name: "Bash", summary: "sleep"),
+                       timestamp: Date(timeIntervalSince1970: 0), detail: "sleep 10", toolUseId: "toolu_bash"),
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .awaitingUser(reason: .question(title: "发布策略")),
+                       timestamp: Date(timeIntervalSince1970: 1), detail: "问题：怎么发?", toolUseId: "toolu_q"),
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .toolResult(name: "", isError: false),
+                       timestamp: Date(timeIntervalSince1970: 2),
+                       detail: #"{"answers":{"怎么发?":"先推分支"}}"#, toolUseId: "toolu_q"),
+        ])
+        #expect(items.count == 2)
+        guard case .tool(_, _, let toolState, _, let output) = items[0].kind else { Issue.record("第一行应是 tool"); return }
+        #expect(toolState == .running)
+        #expect(output == nil)
+        #expect(items[1].awaitingDetail?.contains("已选：先推分支") == true)
+    }
+
     @Test("systemNotice → 中性系统通知项")
     func systemNoticeVisibleButNotUser() {
         let items = AgentConversation.build(from: [e(.systemNotice(text: "协作会话消息 · reviewer：APPROVE"), 1, detail: "<teammate-message>APPROVE</teammate-message>")])

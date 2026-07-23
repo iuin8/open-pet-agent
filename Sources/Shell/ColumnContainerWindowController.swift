@@ -49,6 +49,11 @@ public final class ColumnContainerWindowController {
         if isVisible, let m = lastMainFrame { repositionBesideMain(m, screen: lastScreen) }
     }
 
+    /// 会话流 rebuild 后，同步已打开 detail 列的 item 快照。
+    public func replaceDetailItem(_ item: ConversationItem, sourceKey: String) {
+        state.replaceDetailItem(item, sourceKey: sourceKey)
+    }
+
     /// 关容器:清栈 + 收窗 + 回调。
     public func close() {
         state.close()

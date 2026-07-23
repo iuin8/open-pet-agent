@@ -123,9 +123,12 @@ public final class AgentSessionStore: ObservableObject {
     /// 参数:agent、sessionId、当前最早字节游标(`endOffset`)。
     public var onLoadEarlier: ((AgentKind, String, UInt64) -> Void)?
 
+    /// 当前选中会话 items rebuild 后回调。App 用它同步已打开 detail 列的 item 快照。
+    public var onItemsRebuilt: ((AgentKind, [ConversationItem]) -> Void)?
+
     /// P3.7-③ 用户点大内容 tool 行(`detailAffordance == .sideCard`)→ App 弹侧宽卡看完整 input/output。
     /// 缺席(未注入)时,`AgentSessionTabView` 回退内联兜底展开(② 行为)。
-    public var onExpandToSide: ((ConversationItem) -> Void)?
+    public var onExpandToSide: ((AgentKind, ConversationItem) -> Void)?
 
     /// D2:点 Task/Agent 工具行的「子 agent」入口 → App 加载子 agent transcript 弹子 agent 侧卡。
     public var onOpenSubagent: ((ConversationItem) -> Void)?
@@ -438,6 +441,7 @@ public final class AgentSessionStore: ObservableObject {
         case .claudeCode: claudeItems = items
         case .codex:      codexItems = items
         }
+        onItemsRebuilt?(agent, items)
         rebuildSummaries(agent)
     }
 

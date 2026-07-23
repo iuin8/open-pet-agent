@@ -31,8 +31,18 @@ struct DetailPaneContent: View {
             textBody(role: "协作通知", glyph: "person.2.fill", text: item.systemNoticeDetail ?? text)
         case .compactBoundary:
             textBody(role: "压缩上下文", glyph: "arrow.triangle.merge", text: item.compactSummary ?? "")
-        case .awaiting:
-            Color.clear
+        case .awaiting(let reason):
+            textBody(role: awaitingRole(reason), glyph: "bell.fill", text: item.awaitingDetail ?? AgentConversationRow.awaitingText(reason))
+        }
+    }
+
+    // MARK: - awaiting 主体
+
+    private func awaitingRole(_ reason: AwaitReason) -> String {
+        switch reason {
+        case .question: return "等待回答"
+        case .permission: return "等待确认"
+        case .notification: return "提醒"
         }
     }
 

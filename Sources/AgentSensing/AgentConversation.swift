@@ -39,8 +39,10 @@ public struct ConversationItem: Sendable, Equatable, Identifiable {
     public let compactSummary: String?
     /// 中性系统通知的原始详情;用于侧卡查看 teammate XML 等结构化内容。
     public let systemNoticeDetail: String?
+    /// 等待回答/权限请求的结构化详情;用于侧卡查看问题、选项描述和已选答案。
+    public let awaitingDetail: String?
 
-    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = [], workflowRunId: String? = nil, compactSummary: String? = nil, systemNoticeDetail: String? = nil) {
+    public init(id: Int, kind: Kind, timestamp: Date, toolUseId: String? = nil, attachments: [ImageAttachment] = [], workflowRunId: String? = nil, compactSummary: String? = nil, systemNoticeDetail: String? = nil, awaitingDetail: String? = nil) {
         self.id = id
         self.kind = kind
         self.timestamp = timestamp
@@ -49,6 +51,7 @@ public struct ConversationItem: Sendable, Equatable, Identifiable {
         self.workflowRunId = workflowRunId
         self.compactSummary = compactSummary
         self.systemNoticeDetail = systemNoticeDetail
+        self.awaitingDetail = awaitingDetail
     }
 }
 
@@ -96,7 +99,7 @@ extension ConversationItem {
             // 有思考/工具(时间线可看)或最终文字很长 → 点开侧卡;纯短文字轮 → 内联直显。
             return (a.toolCount + a.thinkingCount > 0 || Self.textExceedsSideCardBudget(a.finalText)) ? .sideCard : .none
         case .awaiting:
-            return .none
+            return awaitingDetail?.isEmpty == false ? .sideCard : .none
         case .compactBoundary:
             return compactSummary?.isEmpty == false ? .sideCard : .none
         }
@@ -147,10 +150,21 @@ public enum AgentConversation {
                             workflowRunId: n == "Workflow" ? extractWorkflowRunId(event.detail) : old.workflowRunId
                         )
                     }
+                } else if let idx = awaitingIndex(in: items, matching: event.toolUseId) {
+                    let old = items[idx]
+                    if case .awaiting = old.kind {
+                        items[idx] = ConversationItem(
+                            id: old.id,
+                            kind: old.kind,
+                            timestamp: old.timestamp,
+                            toolUseId: old.toolUseId,
+                            awaitingDetail: mergedAwaitingDetail(old.awaitingDetail, result: event.detail)
+                        )
+                    }
                 }
-                // 孤立 toolResult(无匹配 running tool)忽略,不产项。
+                // 孤立 toolResult(无匹配 running tool/awaiting)忽略,不产项。
             case .awaitingUser(let reason):
-                items.append(ConversationItem(id: id, kind: .awaiting(reason), timestamp: event.timestamp))
+                items.append(ConversationItem(id: id, kind: .awaiting(reason), timestamp: event.timestamp, toolUseId: event.toolUseId, awaitingDetail: event.detail))
             case .systemNotice(let text):
                 items.append(ConversationItem(id: id, kind: .systemNotice(text: text), timestamp: event.timestamp, systemNoticeDetail: event.detail))
             case .compactBoundary:
@@ -162,13 +176,48 @@ public enum AgentConversation {
         return items
     }
 
-    /// 一条 running tool 的下标:**优先按 toolUseId 精确配对**(并行多工具 FIFO 回传时不张冠李戴),
-    /// 无 id(Codex / 旧行)或没匹配到 → 退后向扫 LIFO(行为同旧实现)。
+    /// 一条 awaiting 请求的下标:**只按 toolUseId 精确配对**。AskUserQuestion 的回答 tool_result 会带相同 id。
+    private static func awaitingIndex(in items: [ConversationItem], matching toolUseId: String?) -> Int? {
+        guard let toolUseId else { return nil }
+        for idx in items.indices.reversed() {
+            if case .awaiting = items[idx].kind, items[idx].toolUseId == toolUseId { return idx }
+        }
+        return nil
+    }
+
+    /// AskUserQuestion 回答结果 → 追加「已选」行。解析失败保留原详情,不把正常 transcript 变成错误态。
+    static func mergedAwaitingDetail(_ detail: String?, result: String?) -> String? {
+        guard let answer = selectedAnswer(in: result), !answer.isEmpty else { return detail }
+        let selected = "已选：\(answer)"
+        guard let detail, !detail.isEmpty else { return selected }
+        return detail.contains(selected) ? detail : detail + "\n\n" + selected
+    }
+
+    private static func selectedAnswer(in result: String?) -> String? {
+        guard let result, let data = result.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let answers = (obj["answers"] as? [String: Any])
+            ?? ((obj["updatedInput"] as? [String: Any])?["answers"] as? [String: Any])
+        guard let answers, !answers.isEmpty else { return nil }
+        return answers.keys.sorted().compactMap { key in
+            guard let value = answers[key] else { return nil }
+            let text: String?
+            if let string = value as? String { text = string }
+            else if let labels = value as? [String] { text = labels.joined(separator: ", ") }
+            else { text = nil }
+            guard let text, !text.isEmpty else { return nil }
+            return answers.count == 1 ? text : "\(key)：\(text)"
+        }.joined(separator: "\n")
+    }
+
+    /// 一条 running tool 的下标:**有 `toolUseId` 时只精确配对**(并行多工具 FIFO 回传时不张冠李戴),
+    /// 无 id(Codex / 旧行)才退后向扫 LIFO(单 running 工具仍正确)。
     private static func runningToolIndex(in items: [ConversationItem], matching toolUseId: String?) -> Int? {
         if let toolUseId {
             for idx in items.indices.reversed() {
                 if case .tool(_, _, .running, _, _) = items[idx].kind, items[idx].toolUseId == toolUseId { return idx }
             }
+            return nil
         }
         for idx in items.indices.reversed() {
             if case .tool(_, _, .running, _, _) = items[idx].kind { return idx }

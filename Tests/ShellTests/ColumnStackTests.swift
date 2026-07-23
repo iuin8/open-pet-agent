@@ -118,4 +118,69 @@ struct ColumnStackTests {
         s.drillIn(fromColumnIndex: 0, rowId: 1, into: detail(2))
         #expect(s.columns[0].id != s.columns[1].id)
     }
+
+    @Test("replaceDetailItem:更新已打开 awaiting detail 列里的同 id item")
+    func replaceDetailItemUpdatesOpenAwaitingDetailColumn() {
+        var s = ColumnStack()
+        _ = s.openRoot(.detail(item: ConversationItem(
+            id: 7,
+            kind: .awaiting(.question(title: "发布策略")),
+            timestamp: Date(timeIntervalSince1970: 7),
+            awaitingDetail: "问题：怎么发?"
+        )), sourceKey: "detail:7")
+
+        s.replaceDetailItem(ConversationItem(
+            id: 7,
+            kind: .awaiting(.question(title: "发布策略")),
+            timestamp: Date(timeIntervalSince1970: 7),
+            awaitingDetail: "问题：怎么发?\n\n已选：先推分支"
+        ), sourceKey: "detail:7")
+
+        guard case .detail(let updated) = s.columns[0].kind else { Issue.record("应仍是 detail 列"); return }
+        #expect(updated.awaitingDetail?.contains("已选：先推分支") == true)
+    }
+
+    @Test("replaceDetailItem:sourceKey 不同不替换 awaiting detail")
+    func replaceDetailItemRequiresSameSourceKey() {
+        var s = ColumnStack()
+        _ = s.openRoot(.detail(item: ConversationItem(
+            id: 7,
+            kind: .awaiting(.question(title: "发布策略")),
+            timestamp: Date(timeIntervalSince1970: 7),
+            awaitingDetail: "问题：怎么发?"
+        )), sourceKey: "detail:claude:s1:7")
+
+        s.replaceDetailItem(ConversationItem(
+            id: 7,
+            kind: .awaiting(.question(title: "发布策略")),
+            timestamp: Date(timeIntervalSince1970: 7),
+            awaitingDetail: "问题：怎么发?\n\n已选：先推分支"
+        ), sourceKey: "detail:claude:s2:7")
+
+        guard case .detail(let kept) = s.columns[0].kind else { Issue.record("应仍是 detail 列"); return }
+        #expect(kept.awaitingDetail == "问题：怎么发?")
+    }
+
+    @Test("replaceDetailItem:不把同 id 非 awaiting detail 误替换")
+    func replaceDetailItemDoesNotReplaceNonAwaitingDetail() {
+        let tool = ConversationItem(
+            id: 9,
+            kind: .tool(name: "Bash", summary: "sleep", state: .running, input: "sleep 10", output: nil),
+            timestamp: Date(timeIntervalSince1970: 9)
+        )
+        let turn = AssistantTurn(finalText: "done", steps: [], model: nil, contextTokens: nil,
+                                 durationSeconds: nil, toolCount: 0, thinkingCount: 0,
+                                 hasError: false, isRunning: false)
+        var s = ColumnStack()
+        _ = s.openRoot(.detail(item: tool), sourceKey: "detail:9")
+
+        s.replaceDetailItem(ConversationItem(
+            id: 9,
+            kind: .assistantTurn(turn),
+            timestamp: Date(timeIntervalSince1970: 9)
+        ), sourceKey: "detail:9")
+
+        guard case .detail(let kept) = s.columns[0].kind else { Issue.record("应仍是 detail 列"); return }
+        #expect(kept.kind == tool.kind)
+    }
 }

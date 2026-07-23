@@ -21,13 +21,19 @@ public struct ConversationTurn: Sendable, Equatable, Identifiable {
     public let compactSummary: String?
     /// 中性系统通知的原始详情;用于侧卡查看 teammate XML 等结构化内容。
     public let systemNoticeDetail: String?
+    /// 等待回答/权限请求的结构化详情;用于侧卡查看问题、选项描述和已选答案。
+    public let awaitingDetail: String?
+    /// `.awaiting` 对应的 tool_use id,用于后续 tool_result 回填已选答案。
+    public let toolUseId: String?
 
-    public init(id: Int, kind: Kind, timestamp: Date, compactSummary: String? = nil, systemNoticeDetail: String? = nil) {
+    public init(id: Int, kind: Kind, timestamp: Date, compactSummary: String? = nil, systemNoticeDetail: String? = nil, awaitingDetail: String? = nil, toolUseId: String? = nil) {
         self.id = id
         self.kind = kind
         self.timestamp = timestamp
         self.compactSummary = compactSummary
         self.systemNoticeDetail = systemNoticeDetail
+        self.awaitingDetail = awaitingDetail
+        self.toolUseId = toolUseId
     }
 }
 
@@ -209,7 +215,7 @@ extension AgentConversation {
                     flushAssistant(awaitingReply: true)
                 } else {
                     flushAssistant()
-                    turns.append(ConversationTurn(id: id, kind: .awaiting(reason), timestamp: event.timestamp))
+                    turns.append(ConversationTurn(id: id, kind: .awaiting(reason), timestamp: event.timestamp, awaitingDetail: event.detail, toolUseId: event.toolUseId))
                 }
             case .thinking(let text):
                 note(id, event.timestamp, event.usage, event.model)
@@ -223,6 +229,7 @@ extension AgentConversation {
                                    input: event.detail, output: nil, toolUseId: event.toolUseId))
             case .toolResult(_, let isError):
                 lastTs = event.timestamp
+                if closeAwaitingTurn(in: &turns, matching: event.toolUseId, output: event.detail) { break }
                 closeRunningTool(in: &steps, matching: event.toolUseId, isError: isError, output: event.detail)
             case .interrupted:
                 // 用户中断:把**进行中**的轮收尾并标「(已中断)」(不再永远「正在思考…」,P1-6);
@@ -259,7 +266,7 @@ extension AgentConversation {
             case .systemNotice(let t):   kind = .systemNotice(text: t)
             case .compactBoundary:       kind = .compactBoundary
             }
-            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, attachments: attachments, compactSummary: turn.compactSummary, systemNoticeDetail: turn.systemNoticeDetail)
+            return ConversationItem(id: turn.id, kind: kind, timestamp: turn.timestamp, toolUseId: turn.toolUseId, attachments: attachments, compactSummary: turn.compactSummary, systemNoticeDetail: turn.systemNoticeDetail, awaitingDetail: turn.awaitingDetail)
         }
     }
 
@@ -280,9 +287,28 @@ extension AgentConversation {
         return id.hasPrefix("wf_") ? String(id) : nil
     }
 
-    /// 收尾一条 running 工具 → 填 state + output。**优先按 `toolUseId` 精确配对**(并行多工具时 tool_result
-    /// FIFO 回传,纯位置 LIFO 会把 output 挂错工具);无 id(Codex 一行一事件、单 running 工具)或没匹配到
-    /// → 退**后向扫 LIFO** 关最后一条 running(行为同旧实现,Codex 路径正确性不变)。
+    /// tool_result 回填独立 awaiting turn 的已选答案。只按 toolUseId 精确匹配,避免误吃普通工具输出。
+    private static func closeAwaitingTurn(in turns: inout [ConversationTurn], matching toolUseId: String?, output: String?) -> Bool {
+        guard let toolUseId else { return false }
+        for idx in turns.indices.reversed() {
+            guard turns[idx].toolUseId == toolUseId, case .awaiting = turns[idx].kind else { continue }
+            let old = turns[idx]
+            turns[idx] = ConversationTurn(
+                id: old.id,
+                kind: old.kind,
+                timestamp: old.timestamp,
+                compactSummary: old.compactSummary,
+                systemNoticeDetail: old.systemNoticeDetail,
+                awaitingDetail: AgentConversation.mergedAwaitingDetail(old.awaitingDetail, result: output),
+                toolUseId: old.toolUseId
+            )
+            return true
+        }
+        return false
+    }
+
+    /// 收尾一条 running 工具 → 填 state + output。**有 `toolUseId` 时只精确配对**(并行多工具
+    /// FIFO 回传时不张冠李戴);无 id(Codex / 旧行)才退后向扫 LIFO(单 running 工具仍正确)。
     private static func closeRunningTool(in steps: inout [TurnStep], matching toolUseId: String?,
                                          isError: Bool, output: String?) {
         func close(_ i: Int) {
@@ -294,6 +320,7 @@ extension AgentConversation {
             for i in steps.indices.reversed() {
                 if case .tool(_, _, _, .running, _, _, let tid) = steps[i], tid == toolUseId { close(i); return }
             }
+            return
         }
         for i in steps.indices.reversed() {
             if case .tool(_, _, _, .running, _, _, _) = steps[i] { close(i); return }

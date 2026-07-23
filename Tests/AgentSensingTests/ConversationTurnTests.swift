@@ -342,6 +342,47 @@ struct ConversationTurnTests {
         #expect(turns[2].kind == .awaiting(.question(title: "选 A 还是 B?")))
     }
 
+    @Test("Claude AskUserQuestion turn item 保留 detail 并用同 id toolResult 追加已选答案")
+    func claudeAwaitingTurnItemCarriesDetailAndSelectedAnswer() {
+        let items = AgentConversation.buildTurnItems(from: [
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .awaitingUser(reason: .question(title: "发布策略")),
+                       timestamp: Date(timeIntervalSince1970: 1),
+                       detail: "问题：怎么发?\n选项：\n- 先推分支：推当前分支", toolUseId: "toolu_q"),
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .toolResult(name: "", isError: false),
+                       timestamp: Date(timeIntervalSince1970: 2),
+                       detail: #"{"answers":{"怎么发?":"先推分支"}}"#, toolUseId: "toolu_q"),
+        ])
+        #expect(items.count == 1)
+        #expect(items[0].detailAffordance == .sideCard)
+        #expect(items[0].awaitingDetail?.contains("问题：怎么发?") == true)
+        #expect(items[0].awaitingDetail?.contains("已选：先推分支") == true)
+    }
+
+    @Test("Claude turn explicit id result 不误关无关 running tool")
+    func claudeTurnExplicitResultDoesNotCloseUnrelatedRunningTool() {
+        let items = AgentConversation.buildTurnItems(from: [
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .toolUse(name: "Bash", summary: "sleep"),
+                       timestamp: Date(timeIntervalSince1970: 0), detail: "sleep 10", toolUseId: "toolu_bash"),
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .awaitingUser(reason: .question(title: "发布策略")),
+                       timestamp: Date(timeIntervalSince1970: 1), detail: "问题：怎么发?", toolUseId: "toolu_q"),
+            AgentEvent(agent: .claudeCode, sessionId: "s", cwd: nil,
+                       kind: .toolResult(name: "", isError: false),
+                       timestamp: Date(timeIntervalSince1970: 2),
+                       detail: #"{"answers":{"怎么发?":"先推分支"}}"#, toolUseId: "toolu_q"),
+        ])
+        #expect(items.count == 2)
+        guard case .assistantTurn(let turn) = items[0].kind else { Issue.record("第一行应是 assistantTurn"); return }
+        guard case .tool(_, _, _, let state, _, let output, _) = turn.steps.first else { Issue.record("应保留 running tool step"); return }
+        #expect(state == .running)
+        #expect(output == nil)
+        guard case .awaiting = items[1].kind else { Issue.record("第二行应是 awaiting"); return }
+        #expect(items[1].awaitingDetail?.contains("已选：先推分支") == true)
+    }
+
     @Test("Codex awaiting 是 .permission(非收尾问句)→ 不折叠,独立卡")
     func codexPermissionAwaitingNotFolded() {
         let turns = AgentConversation.buildTurns(from: [

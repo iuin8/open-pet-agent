@@ -92,7 +92,7 @@ struct AgentSessionTabView: View {
             isLoadingEarlier: store.isLoadingEarlier(for: agent),
             showCodexHint: agent == .codex && isAwaitingLast,
             sessionId: store.selectedSession(for: agent),   // 协调器据此判「切会话」(整表重建+到底),同会话只增量不跳
-            onExpandToSide: store.onExpandToSide != nil ? { store.onExpandToSide?($0) } : nil,
+            onExpandToSide: store.onExpandToSide != nil ? { store.onExpandToSide?(agent, $0) } : nil,
             onLoadEarlierTap: triggerLoadEarlier,
             onReachTop: triggerLoadEarlier,
             onHighlightedRowMidY: { store.highlightedRowMidY = $0 },   // 协调器算的源行 midY → 供权限卡 beak 对准源行

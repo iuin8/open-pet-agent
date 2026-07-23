@@ -36,7 +36,14 @@ struct AgentConversationRow: View {
         case .tool(let name, let summary, let state, let input, let output):
             toolBlock(name: name, summary: summary, state: state, input: input, output: output)
         case .awaiting(let reason):
-            awaitingRow(reason)
+            if item.detailAffordance == .sideCard {
+                Button { onExpandToSide?() } label: { awaitingRow(reason) }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .expandable(onAccentFill: false)
+            } else {
+                awaitingRow(reason)
+            }
         case .thinking(let text):
             thinkingRow(text)
         case .assistantTurn(let turn):

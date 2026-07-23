@@ -208,7 +208,7 @@ struct TranscriptRow {
         case .assistant(let t), .thinking(let t), .systemNotice(let t): return t.count
         case .tool(let n, let s, let st, let i, let o):
             return n.count &+ s.count &* 31 &+ (i?.count ?? 0) &* 131 &+ (o?.count ?? 0) &* 1301 &+ st.hashValue
-        case .awaiting: return 7
+        case .awaiting: return 7 &+ (it.awaitingDetail?.count ?? 0)
         case .compactBoundary: return 3 &+ (it.compactSummary?.count ?? 0)   // 固定矮分割线;摘要变化需刷新
         case .assistantTurn(let a):   // 行高随:元数据栏(计数/ctx)+ 最终文字长度 + running/error/中断
             return a.finalText.count &+ a.toolCount &* 7 &+ a.thinkingCount &* 13

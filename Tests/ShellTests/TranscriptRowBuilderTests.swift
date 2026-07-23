@@ -147,4 +147,22 @@ struct TranscriptRowBuilderTests {
         let b = TranscriptRow(kind: .item(item(10, .systemNotice(text: "协作会话消息 · a：longer text"))), highlightRegion: nil, loading: false, subagent: nil)
         #expect(a.heightSignature != b.heightSignature)
     }
+
+    @Test("awaiting detail 进入行签名和 equality token")
+    func awaitingDetailAffectsRowSignature() {
+        let a = TranscriptRow(kind: .item(ConversationItem(
+            id: 11,
+            kind: .awaiting(.question(title: "发布策略")),
+            timestamp: Date(timeIntervalSince1970: 11),
+            awaitingDetail: "问题：怎么发?"
+        )), highlightRegion: nil, loading: false, subagent: nil)
+        let b = TranscriptRow(kind: .item(ConversationItem(
+            id: 11,
+            kind: .awaiting(.question(title: "发布策略")),
+            timestamp: Date(timeIntervalSince1970: 11),
+            awaitingDetail: "问题：怎么发?\n\n已选：先推分支"
+        )), highlightRegion: nil, loading: false, subagent: nil)
+        #expect(a.heightSignature != b.heightSignature)
+        #expect(a != b)
+    }
 }

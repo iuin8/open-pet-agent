@@ -35,9 +35,16 @@ struct ConversationItemDetailTests {
     let t = Date(timeIntervalSince1970: 1)
     func text(_ kind: ConversationItem.Kind) -> ConversationItem { ConversationItem(id: 0, kind: kind, timestamp: t) }
 
-    @Test("awaiting → 一律 .none")
-    func awaitingNone() {
+    @Test("awaiting 无 detail → .none；有 detail → .sideCard")
+    func awaitingDetailAffordance() {
         #expect(text(.awaiting(.question(title: "q"))).detailAffordance == .none)
+        let detailed = ConversationItem(
+            id: 0,
+            kind: .awaiting(.question(title: "q")),
+            timestamp: t,
+            awaitingDetail: "问题\n- A: 描述"
+        )
+        #expect(detailed.detailAffordance == .sideCard)
     }
 
     @Test("短 user/assistant 文本(≤3 行 + ≤180 字)→ .none(直显,无需展开)")

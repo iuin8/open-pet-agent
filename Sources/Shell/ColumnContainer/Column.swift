@@ -68,6 +68,17 @@ public struct ColumnStack {
         columns.append(Column(id: bump(), kind: kind))
     }
 
+    /// 已打开的 awaiting detail 列持有 item 快照；会话流 rebuild 后用同 id 新 awaiting item 替换，保证回答结果回填可见。
+    public mutating func replaceDetailItem(_ item: ConversationItem, sourceKey: String) {
+        guard rootSourceKey == sourceKey, case .awaiting = item.kind else { return }
+        for idx in columns.indices {
+            if case .detail(let old) = columns[idx].kind, old.id == item.id,
+               case .awaiting = old.kind {
+                columns[idx].kind = .detail(item: item)
+            }
+        }
+    }
+
     public mutating func close() { columns = []; rootSourceKey = nil }
 
     private mutating func bump() -> Int { defer { nextId += 1 }; return nextId }

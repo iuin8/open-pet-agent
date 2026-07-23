@@ -96,10 +96,17 @@ struct ClaudeTranscriptParserTests {
         #expect(parser.parse(line: line)?.kind == .toolUse(name: "Edit", summary: "Foo.swift"))
     }
 
-    @Test("AskUserQuestion → awaitingUser(.question),标题取 header")
-    func askUserQuestion() {
-        let line = #"{"type":"assistant","sessionId":"s","message":{"content":[{"type":"tool_use","name":"AskUserQuestion","input":{"questions":[{"header":"发布范围","question":"怎么发?","options":[]}]}}]}}"#
-        #expect(parser.parse(line: line)?.kind == .awaitingUser(reason: .question(title: "发布范围")))
+    @Test("AskUserQuestion → awaitingUser(.question),标题取 header + detail 保留选项描述")
+    func askUserQuestion() throws {
+        let line = #"{"type":"assistant","sessionId":"s","message":{"content":[{"type":"tool_use","id":"toolu_q","name":"AskUserQuestion","input":{"questions":[{"header":"发布范围","question":"怎么发?","multiSelect":false,"options":[{"label":"先推分支","description":"推当前分支再打 tag"},{"label":"暂停 release","description":"先处理上游合并"}]}]}}]}}"#
+        let event = try #require(parser.parse(line: line))
+        #expect(event.kind == .awaitingUser(reason: .question(title: "发布范围")))
+        #expect(event.toolUseId == "toolu_q")
+        #expect(event.detail?.contains("怎么发?") == true)
+        #expect(event.detail?.contains("先推分支") == true)
+        #expect(event.detail?.contains("推当前分支再打 tag") == true)
+        #expect(event.detail?.contains("暂停 release") == true)
+        #expect(event.detail?.contains("先处理上游合并") == true)
     }
 
     @Test("assistant 纯 text → assistantText(P3.8 G2:存全文,保留换行)")

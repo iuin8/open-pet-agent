@@ -219,7 +219,8 @@ public struct ClaudeTranscriptParser: TranscriptParser {
         let input = block["input"] as? [String: Any] ?? [:]
         let toolUseId = (block["id"] as? String).flatMap { $0.isEmpty ? nil : $0 }   // Task/Agent 行据此关联子 agent
         if name == "AskUserQuestion" {
-            return (.awaitingUser(reason: .question(title: Self.firstQuestionTitle(input))), nil, toolUseId)
+            return (.awaitingUser(reason: .question(title: Self.firstQuestionTitle(input))),
+                    ParserHelpers.capped(Self.askUserQuestionDetail(input)), toolUseId)
         }
         return (.toolUse(name: name, summary: Self.toolSummary(name: name, input: input)),
                 ParserHelpers.capped(Self.toolInputDetail(name: name, input: input)), toolUseId)
@@ -280,6 +281,33 @@ public struct ClaudeTranscriptParser: TranscriptParser {
         default:
             return name
         }
+    }
+
+    /// AskUserQuestion 完整详情:问题、选项、描述。用于 awaiting 行侧卡,不走通用 JSON 噪声。
+    static func askUserQuestionDetail(_ input: [String: Any]) -> String? {
+        guard let questions = input["questions"] as? [[String: Any]], !questions.isEmpty else { return nil }
+        let parts = questions.enumerated().compactMap { idx, q -> String? in
+            guard let text = (q["question"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) else { return nil }
+            var lines: [String] = []
+            if let header = (q["header"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) {
+                lines.append("标题：\(header)")
+            }
+            lines.append("问题：\(text)")
+            if (q["multiSelect"] as? Bool) == true { lines.append("可多选：是") }
+            let options = (q["options"] as? [[String: Any]] ?? []).compactMap { opt -> String? in
+                guard let label = (opt["label"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) else { return nil }
+                if let desc = (opt["description"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) {
+                    return "- \(label)：\(desc)"
+                }
+                return "- \(label)"
+            }
+            if !options.isEmpty {
+                lines.append("选项：")
+                lines.append(contentsOf: options)
+            }
+            return (questions.count > 1 ? "# 问题 \(idx + 1)\n" : "") + lines.joined(separator: "\n")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
 
     /// AskUserQuestion 的标题 = 第一个问题的 header / question。
