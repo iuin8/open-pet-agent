@@ -36,7 +36,8 @@ public struct CompanionOrchestrator: Sendable {
     private let personaResolver: (@Sendable () -> String?)?
     /// P4 跨引擎/项目交接背景供给(AppBootstrap 注入;agent 模式下返回非 nil 时,
     /// 经 `wrapAgentHandoff` 包进首个 prompt —— 一次性,由注入方的 tracker 保证)。
-    private let agentHandoffContext: (@Sendable () async -> String?)?
+    /// P5:入参 = @mention 目标 kind(nil = 默认引擎),交接桶按实际跑的 engine 计算。
+    private let agentHandoffContext: (@Sendable (AgentEngineKind?) async -> String?)?
 
     public init(
         runtimeBridge: RuntimeBridgeService = RuntimeBridgeService(),
@@ -48,7 +49,7 @@ public struct CompanionOrchestrator: Sendable {
         liveContextBox: LiveContextBox? = nil,
         modelName: String? = nil,
         personaResolver: (@Sendable () -> String?)? = nil,
-        agentHandoffContext: (@Sendable () async -> String?)? = nil
+        agentHandoffContext: (@Sendable (AgentEngineKind?) async -> String?)? = nil
     ) {
         self.init(
             runtimeBridge: runtimeBridge,
@@ -74,7 +75,7 @@ public struct CompanionOrchestrator: Sendable {
         liveContextBox: LiveContextBox? = nil,
         modelName: String? = nil,
         personaResolver: (@Sendable () -> String?)? = nil,
-        agentHandoffContext: (@Sendable () async -> String?)? = nil
+        agentHandoffContext: (@Sendable (AgentEngineKind?) async -> String?)? = nil
     ) {
         self.runtimeBridge = runtimeBridge
         self.presentationMapper = presentationMapper
@@ -100,6 +101,13 @@ public struct CompanionOrchestrator: Sendable {
         [背景结束]下面是我的新消息:
         \(message)
         """
+    }
+
+    /// P5:@mention 的 engine 不可用时的友好文案(CLI 未装 / 工厂无法构建)。
+    /// 展示名走 registry(与设置面板一致),拿不到兜底 rawValue。
+    nonisolated static func mentionUnavailableMessage(kind: AgentEngineKind) -> String {
+        let name = AgentEngineRegistry.lookup(id: kind.rawValue)?.displayName ?? kind.rawValue
+        return "想帮你呼叫 \(name),但它现在不可用(对应 CLI 未安装或尚未接入)。可以换个引擎,或先安装后再试。"
     }
 
     public func bootstrap(snapshot: DesktopSnapshot = .empty) async throws -> CompanionBootstrap {
@@ -196,26 +204,45 @@ public struct CompanionOrchestrator: Sendable {
                 // 工具层启用 + engine 注册 → 整条 prompt 走子进程, 跳过 LLM,
                 // **完全不启动 watchdog**(子进程时长无关 SSE idle 语义)。
                 if await agentModeBox.isAgentModeEnabled {
+                    // P5 @mention:行首 @opencode/@claude/@codex → 路由到对应 engine
+                    // (引擎池,各自私有 session);store 记**用户原文**(带 @,时间线可见),
+                    // engine 收剥离 mention 后的 prompt。
+                    let mention = AgentMention.parse(message)
                     let userMessage = ConversationMessage(role: .user, content: message)
                     await conversationStore?.append(userMessage)
-                    // P4 跨引擎/项目交接:会话桶(engineKind|cwd)变化后的首个 agent run,
-                    // 把此前会话摘要包进 prompt(一次性;store 只记用户原文,不记交接包装)。
+                    // mention 引擎不可用(CLI 未装 / 工厂无法构建)→ 友好文案 finish,
+                    // 不抛错打断卡片(用户可换引擎重发)。
+                    if let kind = mention.kind, await !agentModeBox.canRunAgent(kind: kind) {
+                        let hint = Self.mentionUnavailableMessage(kind: kind)
+                        continuation.yield(hint)
+                        await conversationStore?.append(ConversationMessage(
+                            role: .assistant, content: hint, source: kind.rawValue))
+                        continuation.finish()
+                        return
+                    }
+                    // P4 跨引擎/项目交接:会话桶(engineKind|cwd)首次进入时,把此前会话摘要
+                    // 包进 prompt(一次性;store 只记用户原文,不记交接包装)。
+                    // P5:桶按实际跑的 engine(mention 目标或默认)计算。
                     let prompt: String
-                    if let handoff = await agentHandoffContext?() {
-                        prompt = Self.wrapAgentHandoff(message, handoff: handoff)
+                    if let handoff = await agentHandoffContext?(mention.kind) {
+                        prompt = Self.wrapAgentHandoff(mention.prompt, handoff: handoff)
                     } else {
-                        prompt = message
+                        prompt = mention.prompt
                     }
                     var accumulated = ""
                     do {
-                        for try await delta in agentModeBox.runAgent(prompt: prompt) {
+                        for try await delta in agentModeBox.runAgent(prompt: prompt, kind: mention.kind) {
                             accumulated += delta
                             continuation.yield(delta)
                         }
                         if !accumulated.isEmpty {
+                            // P5 署名:assistant 消息记实际跑的 engine kind(时间线 chip)。
+                            let defaultKind = await agentModeBox.currentEngineKind
+                            let ranKind = mention.kind ?? defaultKind
                             let assistantMessage = ConversationMessage(
                                 role: .assistant,
-                                content: accumulated
+                                content: accumulated,
+                                source: ranKind?.rawValue
                             )
                             await conversationStore?.append(assistantMessage)
                         }

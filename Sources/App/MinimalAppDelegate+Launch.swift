@@ -94,6 +94,30 @@ extension MinimalAppDelegate {
     func setupAgentModeRouter() {
         let agentModeEnabled = userDefaults.bool(forKey: Self.agentModeEnabledKey)
         let router = AgentModeRouter()
+        // P5 @mention 引擎池:per-kind 懒建(与 apply 同一份 `makeACPEngine` 组装)+
+        // 回调 wiring(权限/思考/用量/会话指针,桶按实际 kind)。懒建 = 没被 @ 过的引擎
+        // 不起子进程。
+        router.engineFactory = { [weak self] kind in
+            guard let self,
+                  let engine = Self.makeACPEngine(kind: kind, defaults: self.userDefaults) else { return nil }
+            if let acp = engine as? ACPAgentEngine {
+                self.wireACPEngineCallbacks(acp, kind: kind)
+            }
+            return engine
+        }
+        // P5:池引擎首跑前一次性恢复 —— 按该 kind|cwd 的持久指针 loadSession(回放丢弃,
+        // 只要把 session 置为当前,让首个 prompt 落在旧会话上);指针失效 → 清除,开新会话。
+        router.preparePooledEngine = { [weak self] kind, engine in
+            guard let self, let acp = engine as? ACPAgentEngine else { return }
+            let key = Self.acpSessionPointerKey(engineKind: kind.rawValue, defaults: self.userDefaults)
+            guard let sid = await self.acpSessionStore.sessionId(forKey: key),
+                  sid != acp.currentSessionId else { return }
+            do {
+                _ = try await acp.loadSession(sid)
+            } catch {
+                await self.acpSessionStore.remove(forKey: key)
+            }
+        }
         if agentModeEnabled {
             Self.applySelectedAgentEngine(to: router, defaults: userDefaults)
         }
@@ -474,11 +498,13 @@ extension MinimalAppDelegate {
         // 开卡片从 ConversationStore 恢复多轮历史（system 消息不展示）。
         cardCtrl.historyProvider = { [weak self] in
             guard let self else { return [] }
-            // ACP(openCode)agent 模式:时间线权威在 agent 侧 —— 由 acpSessionRestoreHook
+            // ACP agent 模式(P3 三引擎统一):时间线权威在 agent 侧 —— 由 acpSessionRestoreHook
             // 按持久指针回放重建(+ 在途 exchange 乐观追加);不从 ConversationStore 恢复,
             // 避免与回放双显(ConversationStore 仍作灵魂层记忆,不展示)。
+            // P5 前只排除 openCode → claude/codex 走 store 路径导致引擎侧 session 不恢复
+            // (重启即断档),P5 收敛三引擎同路。
             if self.userDefaults.bool(forKey: Self.agentModeEnabledKey),
-               AgentEngineRegistry.resolve(from: self.userDefaults).id == AgentEngineKind.openCode.rawValue {
+               Self.acpCommand(for: AgentEngineRegistry.resolve(from: self.userDefaults).id) != nil {
                 return []
             }
             guard let store = self.rootSystem.conversationStore else { return [] }
@@ -486,10 +512,19 @@ extension MinimalAppDelegate {
             return msgs.compactMap { m -> ChatCardRow? in
                 switch m.role {
                 case .user:      return ChatCardRow(role: .user, text: m.content, timestamp: m.timestamp)
-                case .assistant: return ChatCardRow(role: .assistant, text: m.content, timestamp: m.timestamp)
+                case .assistant: return ChatCardRow(
+                    role: .assistant, text: m.content, timestamp: m.timestamp,
+                    source: m.source.map { Self.engineShortLabel(forId: $0) })   // P5 署名 chip
                 case .system:    return nil
                 }
             }
+        }
+        // P5 @mention 署名:发送时按原文解析目标引擎(mention ?? 当前默认),assistant
+        // 占位行带来源 chip;灵魂层(未启用工具层)→ nil 不显示。
+        cardCtrl.assistantSourceProvider = { [weak self] text in
+            guard let self, self.userDefaults.bool(forKey: Self.agentModeEnabledKey) else { return nil }
+            let kind = AgentMention.parse(text).kind ?? self.agentModeRouter?.currentKind
+            return kind.map { Self.engineShortLabel(forId: $0.rawValue) }
         }
         self.chatCardWindowController = cardCtrl
 

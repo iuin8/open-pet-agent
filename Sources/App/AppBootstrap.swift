@@ -475,12 +475,14 @@ public struct AppBootstrap: Sendable {
             case .thirdParty:  return nil
             }
         }
-        // P4 跨引擎/项目交接:会话桶(engineKind|cwd)变化后的首个 agent run,
-        // 把此前会话摘要(最近 6 条,≤2000 字符)包进 prompt。桶不变/首轮/空时间线不交接。
+        // P4 跨引擎/项目交接:会话桶(engineKind|cwd)首次进入的 agent run,
+        // 把此前会话摘要(最近 6 条,≤2000 字符)包进 prompt。已见过的桶/首轮/空时间线不交接。
+        // P5:桶按实际跑的 engine 算 —— @mention 目标(入参)或 UD 选中默认引擎。
         let handoffTracker = AgentSessionHandoffTracker()
-        let agentHandoffContext: @Sendable () async -> String? = {
-            let bucket = MinimalAppDelegate.acpSessionPointerKey(defaults: userDefaults)
-            return await handoffTracker.contextIfBucketChanged(bucket: bucket) {
+        let agentHandoffContext: @Sendable (AgentEngineKind?) async -> String? = { mentionKind in
+            let bucket = MinimalAppDelegate.acpSessionPointerKey(
+                engineKind: mentionKind?.rawValue, defaults: userDefaults)
+            return await handoffTracker.contextIfFirstSeen(bucket: bucket) {
                 let recent = await store.messages().suffix(6)
                 return Self.handoffTranscript(from: Array(recent))
             }

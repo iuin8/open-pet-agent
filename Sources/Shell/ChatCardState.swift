@@ -8,12 +8,15 @@ public struct ChatCardRow: Identifiable, Equatable, Sendable {
     public let role: Role
     public var text: String
     public let timestamp: Date
+    /// P5:assistant 消息的来源 engine 短标签(@mention 多引擎署名 chip;nil = 不显示)。
+    public let source: String?
 
-    public init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date()) {
+    public init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date(), source: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.timestamp = timestamp
+        self.source = source
     }
 }
 
@@ -171,9 +174,10 @@ public final class ChatCardState: ObservableObject {
     public init() {}
 
     /// 乐观追加：一条 user + 一条空 assistant（占位，供流式覆写）。返回 assistant row 的 id。
-    public func appendExchangePlaceholder(userText: String, now: Date = Date()) -> UUID {
+    /// P5:`assistantSource` = 目标 engine 短标签(@mention 署名 chip,App 注入解析;nil 无 chip)。
+    public func appendExchangePlaceholder(userText: String, now: Date = Date(), assistantSource: String? = nil) -> UUID {
         messages.append(ChatCardRow(role: .user, text: userText, timestamp: now))
-        let assistant = ChatCardRow(role: .assistant, text: "", timestamp: now)
+        let assistant = ChatCardRow(role: .assistant, text: "", timestamp: now, source: assistantSource)
         messages.append(assistant)
         return assistant.id
     }
