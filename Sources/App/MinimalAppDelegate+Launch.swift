@@ -490,6 +490,12 @@ extension MinimalAppDelegate {
                 Self.applySelectedAgentEngine(to: self.agentModeRouter, defaults: self.userDefaults)
                 self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
             }
+            // @mention 补全配置随启用态即时刷新(卡片开着切来源也生效)。
+            Task { @MainActor in
+                let cfg = await self.refreshMentionConfiguration()
+                self.chatCardWindowController?.cardState.mentionEnabled = cfg.enabled
+                self.chatCardWindowController?.cardState.mentionOptions = cfg.options
+            }
         }
         // 项目选择器 Menu(P1b 多项目):current/list 从 ProjectStore 派生;切项目重 apply engine;新建走 NSAlert。
         wireProjectConfiguration(to: cardCtrl)
@@ -525,6 +531,10 @@ extension MinimalAppDelegate {
             guard let self, self.userDefaults.bool(forKey: Self.agentModeEnabledKey) else { return nil }
             let kind = AgentMention.parse(text).kind ?? self.agentModeRouter?.currentKind
             return kind.map { Self.engineShortLabel(forId: $0.rawValue) }
+        }
+        // P5 follow-up @mention 补全:开卡时同步候选(含 CLI 可用性探测,异步)。
+        cardCtrl.mentionConfigurationProvider = { [weak self] in
+            await self?.refreshMentionConfiguration() ?? (enabled: false, options: [])
         }
         self.chatCardWindowController = cardCtrl
 

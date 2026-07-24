@@ -11,12 +11,18 @@ import Foundation
 /// - v1 只认三个全名,无别名(避免别名漂移;要加往 `table` 加一行)。
 public enum AgentMention {
 
-    /// mention 名(小写)→ engine kind。
-    private static let table: [String: AgentEngineKind] = [
-        "opencode": .openCode,
-        "claude": .claudeCode,
-        "codex": .codex,
+    /// mention 候选(与解析同一份表,防漂移):(trigger 小写, kind)。顺序即补全弹层展示序。
+    /// v1 只三个全名,无别名(要加往这里加一行,解析与 UI 同时生效)。
+    public static let candidates: [(trigger: String, kind: AgentEngineKind)] = [
+        (trigger: "opencode", kind: .openCode),
+        (trigger: "claude", kind: .claudeCode),
+        (trigger: "codex", kind: .codex),
     ]
+
+    /// mention 名(小写)→ engine kind(由 `candidates` 派生)。
+    private static let table: [String: AgentEngineKind] = Dictionary(
+        uniqueKeysWithValues: candidates.map { ($0.trigger, $0.kind) }
+    )
 
     /// 解析结果。`kind` = mention 目标(nil = 无 mention);`prompt` = 剥离 mention 后
     /// 的实际内容(无 mention 时 = 原文)。

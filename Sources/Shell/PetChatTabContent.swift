@@ -103,7 +103,12 @@ struct PetChatTabContent: View {
                 .foregroundColor(syncMessage.contains("失败") ? .red.opacity(0.75) : ChatCardTheme.accent.opacity(0.8))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            ChatCardComposer(draft: $state.draft, isSending: state.isSending) {
+            ChatCardComposer(
+                draft: $state.draft,
+                isSending: state.isSending,
+                mentionOptions: state.mentionOptions,
+                mentionEnabled: state.mentionEnabled
+            ) {
                 onSend(state.draft)
             }
         }

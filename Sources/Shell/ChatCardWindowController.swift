@@ -57,6 +57,9 @@ public final class ChatCardWindowController {
     /// App 注入:P5 @mention 署名 —— 发送时按用户原文解析目标引擎,返回 assistant 行的
     /// 来源短标签(nil = 不显示 chip)。Shell 不 import AgentMode,纯字符串透传。
     public var assistantSourceProvider: (@MainActor (String) -> String?)?
+    /// App 注入:P5 follow-up @mention 补全配置(候选 + 启用态,含 CLI 可用性;异步因
+    /// 可用性探测)。开卡时在弹出后的 Task 里同步进 state;切回复来源由 App 直接刷。
+    public var mentionConfigurationProvider: (@MainActor () async -> (enabled: Bool, options: [MentionOption]))?
 
     /// App 注入:项目配置 provider(当前 project + 可选项)。每次开卡调,从 `ProjectStore` 派生
     /// 最新值刷进 state → 驱动 `ProjectMenu`。nil → 不显示项目选择器。mirror `replyConfigurationProvider`。
@@ -194,6 +197,12 @@ public final class ChatCardWindowController {
             guard let self else { return }
             if self.state.messages.isEmpty, let historyProvider = self.historyProvider {
                 self.state.load(history: await historyProvider())
+            }
+            // @mention 补全配置(P5 follow-up):可用性探测是 async,弹出前就绪(毫秒级)。
+            if let mentionProvider = self.mentionConfigurationProvider {
+                let cfg = await mentionProvider()
+                self.state.mentionEnabled = cfg.enabled
+                self.state.mentionOptions = cfg.options
             }
             self.positionAndPresent()
             // 外部会话历史在弹出后台补（文件读在 loader 内部 off-main，store 更新驱动 tab 视图）。
