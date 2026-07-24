@@ -102,6 +102,29 @@ extension MinimalAppDelegate {
         return entry.displayName.split(separator: " ").first.map(String.init) ?? entry.displayName
     }
 
+    /// P5 follow-up:组 @mention 补全候选(开卡/切回复来源时刷新)。
+    /// 工具层开启时:`AgentMention.candidates`(与解析同一份表)× registry 展示数据 ×
+    /// CLI 可用性(适配器未装 → 置灰「未安装」,仍可选,发送后走友好不可用文案)。
+    /// 关闭 → (false, []),composer 不弹补全。
+    @MainActor
+    func refreshMentionConfiguration() async -> (enabled: Bool, options: [MentionOption]) {
+        guard userDefaults.bool(forKey: Self.agentModeEnabledKey) else { return (false, []) }
+        let cli = CLIAvailability()
+        var options: [MentionOption] = []
+        for (trigger, kind) in AgentMention.candidates {
+            let binary = AgentEngineRegistry.lookup(id: kind.rawValue)?.binaryName ?? trigger
+            let available = await cli.locate(binary: binary) != nil
+            options.append(MentionOption(
+                trigger: trigger,
+                label: Self.engineShortLabel(forId: kind.rawValue),
+                systemImage: Self.replyIcon(for: kind.rawValue),
+                brandLogo: Self.replyBrandLogo(for: kind.rawValue),
+                available: available
+            ))
+        }
+        return (true, options)
+    }
+
     /// entry id → ACP 适配器 spawn 命令(P3 三引擎统一 ACP;非 ACP entry → nil 走 makeEngine)。
     nonisolated static func acpCommand(for entryId: String) -> [String]? {
         switch entryId {
@@ -144,9 +167,9 @@ extension MinimalAppDelegate {
         return (target, options)
     }
 
-    /// engine id → SF Symbol 图标（segmented 紧凑展示用）。
+    /// engine id → SF Symbol 图标（segmented 紧凑展示用;P5 follow-up 补全弹层复用）。
     /// 写死 id 映射（图标本就是 per-engine 定制）；未来 entry 加 iconSymbol 字段可去除此处 switch。
-    nonisolated private static func replyIcon(for engineId: String) -> String {
+    nonisolated static func replyIcon(for engineId: String) -> String {
         switch engineId {
         case AgentEngineKind.claudeCode.rawValue: return "bolt.fill"
         case AgentEngineKind.codex.rawValue:      return "chevron.left.forwardslash.chevron.right"
@@ -155,8 +178,8 @@ extension MinimalAppDelegate {
         }
     }
 
-    /// engine id → 品牌 logo（segmented 真品牌图标;无匹配时 nil 走 `systemImage`）。
-    nonisolated private static func replyBrandLogo(for engineId: String) -> BrandLogo? {
+    /// engine id → 品牌 logo（segmented / 补全弹层真品牌图标;无匹配时 nil 走 `systemImage`）。
+    nonisolated static func replyBrandLogo(for engineId: String) -> BrandLogo? {
         switch engineId {
         case AgentEngineKind.claudeCode.rawValue: return .claude
         case AgentEngineKind.codex.rawValue:      return .codex

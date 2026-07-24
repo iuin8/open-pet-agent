@@ -171,6 +171,14 @@ public final class ChatCardState: ObservableObject {
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
     public var streamTask: Task<Void, Never>?
 
+    // MARK: - @mention 补全弹层(P5 follow-up)
+
+    /// 补全候选(App 开卡时注入:`AgentMention.candidates` × registry 展示/logo × CLI 可用性)。
+    /// 空 → 不弹补全(灵魂层 / 工具层关闭)。
+    @Published public var mentionOptions: [MentionOption] = []
+    /// @mention 是否启用(= 工具层开启;App 注入)。false → composer 不弹补全、占位文案不带 @ 提示。
+    @Published public var mentionEnabled: Bool = false
+
     public init() {}
 
     /// 乐观追加：一条 user + 一条空 assistant（占位，供流式覆写）。返回 assistant row 的 id。

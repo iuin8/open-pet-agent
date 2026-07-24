@@ -75,3 +75,18 @@ struct AgentMentionTests {
         #expect(r.prompt == "第一行\n第二行")
     }
 }
+
+// MARK: - candidates 表一致性(P5 follow-up)
+
+@Suite("AgentMention candidates(P5 follow-up)")
+struct AgentMentionCandidatesTests {
+    @Test("candidates 与解析同一份表:每个 trigger 都能解析出对应 kind(防 UI/解析漂移)")
+    func candidatesConsistentWithParse() {
+        for (trigger, kind) in AgentMention.candidates {
+            let r = AgentMention.parse("@\(trigger) 内容")
+            #expect(r.kind == kind)
+            #expect(r.prompt == "内容")
+        }
+        #expect(AgentMention.candidates.map(\.trigger) == ["opencode", "claude", "codex"])
+    }
+}

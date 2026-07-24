@@ -100,3 +100,17 @@ struct ChatCardStateSourceTests {
         #expect(s.messages[1].source == nil)
     }
 }
+
+
+// MARK: - P5 follow-up @mention 补全
+
+@MainActor
+@Suite("ChatCardState @mention 补全配置")
+struct ChatCardStateMentionTests {
+    @Test("默认关闭:候选空 + mentionEnabled false(灵魂层不弹补全)")
+    func mentionDefaultsOff() {
+        let s = ChatCardState()
+        #expect(s.mentionOptions.isEmpty)
+        #expect(s.mentionEnabled == false)
+    }
+}
