@@ -13,6 +13,12 @@ import AgentMode
 struct ACPSmoke {
     static func main() async {
         let prompt = CommandLine.arguments.dropFirst().first ?? "用一句话说你好"
+        // P5:ACP_SMOKE_MODE=pool → @mention 引擎池冒烟(router + 真适配器双引擎);
+        // 默认 single = 单引擎 ACP 协议冒烟(原路径)。
+        if ProcessInfo.processInfo.environment["ACP_SMOKE_MODE"] == "pool" {
+            await poolSmoke(prompt: prompt)
+            return
+        }
         let command = ProcessInfo.processInfo.environment["ACP_SMOKE_CMD"]
             .map { $0.split(separator: " ").map(String.init) } ?? ["opencode", "acp"]
         let isOpencode = command.first == "opencode"
@@ -149,4 +155,88 @@ private func describe(_ msg: ACPInbound) -> String {
     case let .notification(method, params):
         return "notification(method=\(method) params=\(String(describing: params)))"
     }
+}
+
+
+// MARK: - P5 @mention 引擎池冒烟(ACP_SMOKE_MODE=pool)
+
+/// router + 真适配器双引擎(opencode 默认 + codex-acp 池,env `ACP_SMOKE_MENTION_CMD` 可换
+/// claude-agent-acp)。验证 P5 核心语义的**真互操作**版本(单测是 stub):
+/// 1. `AgentMention.parse` 行首 @codex → kind + 剥离 prompt
+/// 2. `runAgent(kind:)` 路由到懒建池引擎,默认引擎不受影响
+/// 3. 双引擎并发各自私有 session(sessionId 不同)
+/// 4. 池引擎 session 复用(两轮同 sessionId)+ prepare 钩子只跑一次
+@MainActor
+func poolSmoke(prompt: String) async {
+    var failed = false
+    ProjectStore.ensureDefaultProjectRegistered()
+    let project = ProjectStore.current()
+    let projectRoot = (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
+    let mentionCmd = ProcessInfo.processInfo.environment["ACP_SMOKE_MENTION_CMD"]
+        .map { $0.split(separator: " ").map(String.init) } ?? ["codex-acp"]
+    log("[pool] default=opencode mention=\(mentionCmd) root=\(projectRoot.path)")
+
+    // opencode 默认引擎:与单引擎冒烟同款 env(OPENCODE_CONFIG 指项目 projection)。
+    var env = CLIProcessEnvironment.augmented()
+    let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
+    env = env.merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new }
+    let defaultEngine = ACPAgentEngine(
+        command: ["opencode", "acp"],
+        cwd: projectRoot,
+        transportFactory: {
+            ACPStdioTransport(command: ["opencode", "acp"], processEnvironment: env, currentDirectoryURL: projectRoot)
+        }
+    )
+
+    let router = AgentModeRouter()
+    var prepared: [String] = []
+    router.engineFactory = { kind in
+        guard kind == .codex else { return nil }
+        return CodexACPAgentEngine(command: mentionCmd, cwd: projectRoot)
+    }
+    router.preparePooledEngine = { kind, _ in prepared.append(kind.rawValue) }
+    router.setEngine(defaultEngine)
+
+    // 1) 无 mention → 默认引擎(opencode)
+    do {
+        log("[pool] run default: \(prompt)")
+        var text = ""
+        for try await d in router.runAgent(prompt: prompt) { text += d }
+        log("[pool] default replied \(text.count) chars: \(text.prefix(60))")
+    } catch { log("[pool][err] default run: \(error)"); failed = true }
+    let defaultSid = defaultEngine.currentSessionId
+    if defaultSid == nil { log("[pool][err] 默认引擎无 session"); failed = true }
+
+    // 2) @codex → AgentMention 解析 + 池路由
+    let mention = AgentMention.parse("@codex \(prompt)")
+    log("[pool] mention parse: kind=\(String(describing: mention.kind)) prompt=\(mention.prompt)")
+    if mention.kind != .codex { log("[pool][err] mention 解析失败"); failed = true }
+    do {
+        var text = ""
+        for try await d in router.runAgent(prompt: mention.prompt, kind: mention.kind) { text += d }
+        log("[pool] codex replied \(text.count) chars: \(text.prefix(60))")
+    } catch { log("[pool][err] codex run: \(error)"); failed = true }
+
+    let pooled = router.existingPooledEngine(for: .codex) as? ACPAgentEngine
+    let codexSid1 = pooled?.currentSessionId
+    log("[pool] sessions: default=\(defaultSid ?? "nil") codex=\(codexSid1 ?? "nil")")
+    if pooled == nil { log("[pool][err] 池引擎未懒建"); failed = true }
+    if codexSid1 == nil || codexSid1 == defaultSid { log("[pool][err] session 未独立"); failed = true }
+    if prepared != ["codex"] { log("[pool][err] prepare 次数异常: \(prepared)"); failed = true }
+
+    // 3) 第二个 @codex → 同 session 复用,prepare 不重复
+    do {
+        var text = ""
+        for try await d in router.runAgent(prompt: "用一个字回答:2+2=?", kind: .codex) { text += d }
+        log("[pool] codex 2nd replied \(text.count) chars: \(text.prefix(60))")
+    } catch { log("[pool][err] codex 2nd run: \(error)"); failed = true }
+    let codexSid2 = pooled?.currentSessionId
+    if codexSid2 != codexSid1 {
+        log("[pool][err] 池引擎 session 未复用: \(codexSid1 ?? "nil") → \(codexSid2 ?? "nil")")
+        failed = true
+    }
+    if prepared != ["codex"] { log("[pool][err] prepare 重复: \(prepared)"); failed = true }
+
+    log(failed ? "[pool] FAILED" : "[pool] OK")
+    if failed { Darwin.exit(1) }
 }
