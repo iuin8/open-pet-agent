@@ -34,7 +34,7 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.messages.isEmpty)
     }
 
-    @Test("handleSend：流式抛错 → assistant row 显示错误，isSending 复位")
+    @Test("handleSend：流式抛错 → assistant row 显示友好文案，isSending 复位")
     func streamErrorShown() async {
         struct Boom: Error {}
         let ctrl = ChatCardWindowController(streamProvider: { _ in
@@ -42,7 +42,9 @@ struct ChatCardWindowControllerTests {
         })
         ctrl.handleSend("x")
         await ctrl.cardState.streamTask?.value
-        #expect(ctrl.cardState.messages.last?.text.hasPrefix("❌") == true)
+        // 与 BondedSession 同一份 LLMErrorMessages 映射:⚠️ 友好文案,不再裸 ❌ + 错误码
+        #expect(ctrl.cardState.messages.last?.text.hasPrefix("⚠️") == true)
+        #expect(ctrl.cardState.messages.last?.text.contains("回复失败") == true)
         #expect(ctrl.cardState.isSending == false)
     }
 

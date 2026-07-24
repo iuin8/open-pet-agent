@@ -209,7 +209,9 @@ public actor AnthropicProvider: LLMProvider {
                     let (byteStream, response) = try await capturedStreamClient(request)
 
                     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                        continuation.finish(throwing: LLMProviderError.httpError(status: http.statusCode, body: ""))
+                        // 带上服务商错误体(有界)—— 同 OpenAIProvider,错误 message 是定位线索。
+                        let body = await LLMErrorBodyDrain.drain(byteStream)
+                        continuation.finish(throwing: LLMProviderError.httpError(status: http.statusCode, body: body))
                         return
                     }
 

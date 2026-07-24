@@ -192,7 +192,10 @@ public actor OpenAIProvider: LLMProvider {
                     let (byteStream, response) = try await capturedStreamClient(request)
 
                     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                        continuation.finish(throwing: LLMProviderError.httpError(status: http.statusCode, body: ""))
+                        // 带上服务商错误体(有界)—— "Incorrect API key provided" 这类信息
+                        // 是用户定位的第一线索(此前丢空体,只剩状态码)。
+                        let body = await LLMErrorBodyDrain.drain(byteStream)
+                        continuation.finish(throwing: LLMProviderError.httpError(status: http.statusCode, body: body))
                         return
                     }
 

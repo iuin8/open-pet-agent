@@ -204,3 +204,35 @@ struct AnthropicProviderStreamTests {
         #expect(capturedBody?["stream"] as? Bool == true)
     }
 }
+
+
+// MARK: - 错误响应体携带(stream 非 2xx 带上服务商 message)
+
+@Suite("AnthropicProvider streaming 错误体携带")
+struct AnthropicProviderStreamErrorBodyTests {
+
+    @Test("非 2xx → httpError 携带服务商错误体(此前丢空体)")
+    func errorBodyCarried() async throws {
+        let provider = AnthropicProvider(
+            apiKey: "sk-ant-bad",
+            httpStreamClient: { _ in
+                (makeByteStream(from: "{\"error\":{\"message\":\"invalid x-api-key\"}}"),
+                 makeAnthropicHTTPResponse(statusCode: 401))
+            }
+        )
+
+        var caught: LLMProviderError?
+        do {
+            for try await _ in provider.streamChat([LLMMessage(role: .user, content: "hi")]) {}
+        } catch let e as LLMProviderError {
+            caught = e
+        }
+
+        guard case .httpError(let status, let body) = caught else {
+            Issue.record("expected httpError, got \(String(describing: caught))")
+            return
+        }
+        #expect(status == 401)
+        #expect(body.contains("invalid x-api-key"))
+    }
+}
