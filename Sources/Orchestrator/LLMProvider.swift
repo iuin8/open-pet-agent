@@ -1,3 +1,5 @@
+import Foundation
+
 public protocol LLMProvider: Sendable {
     func chat(_ messages: [LLMMessage]) async throws -> String
 
@@ -69,4 +71,69 @@ public enum LLMProviderError: Error, Equatable {
     case decodingFailed(String)
     case emptyResponse
     case transportError(String)
+}
+
+
+// MARK: - 用户可读错误描述(LocalizedError)
+
+extension LLMProviderError: LocalizedError {
+    /// NSError 桥接 `localizedDescription` 走这里 —— 卡片 / 气泡 / 日志共用同一份文案。
+    /// httpError 按状态码给行动指引(401/403 换 key、429 降频、400 查模型名),并附服务商
+    /// 错误体摘录(有界),避免只显示「Orchestrator.LLMProviderError错误0」这种不可读信息。
+    public var errorDescription: String? {
+        switch self {
+        case .missingAPIKey:
+            return "未配置 API key —— 请打开菜单栏 → ⚙️ 设置 填写后重试。"
+        case .httpError(let status, let body):
+            let detail = Self.httpDetail(body)
+            switch status {
+            case 401, 403:
+                return "API key 无效或已过期(HTTP \(status))—— 请到 ⚙️ 设置 检查并更新 key。\(detail)"
+            case 429:
+                return "请求太频繁或额度不足(HTTP 429)—— 稍后重试,或检查服务商套餐额度。\(detail)"
+            case 400:
+                return "请求被拒绝(HTTP 400,常见于模型名写错或该模型不可用)。\(detail)"
+            case 500...599:
+                return "AI 服务端错误(HTTP \(status))—— 稍后重试。\(detail)"
+            default:
+                return "AI 服务返回错误(HTTP \(status))。\(detail)"
+            }
+        case .decodingFailed:
+            return "响应解析失败 —— 模型返回了非预期格式,可重试或换模型。"
+        case .emptyResponse:
+            return "模型返回空内容 —— 可重试或换个模型。"
+        case .transportError(let message):
+            return "网络请求失败 —— \(message)"
+        }
+    }
+
+    /// 服务商错误体摘录:首个非空行 ≤120 字符;空体 → 空串(不残留噪音)。
+    private static func httpDetail(_ body: String) -> String {
+        guard let line = body.split(separator: "\n")
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return "" }
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let clipped = trimmed.count > 120 ? String(trimmed.prefix(120)) + "…" : trimmed
+        return "服务商信息:\(clipped)"
+    }
+}
+
+// MARK: - 错误响应体读取(stream 路径)
+
+/// 读取 HTTP 错误响应体(有界 ≤ `limit` 字节):streamChat 非 2xx 时把服务商的错误
+/// JSON 带上(如 "Incorrect API key provided"),供 `LLMProviderError.httpError.body`
+/// 展示。读体失败不掩盖主错误 —— 返回已读到的部分(可能为空)。
+enum LLMErrorBodyDrain {
+    static func drain(_ stream: AsyncThrowingStream<UInt8, Error>, limit: Int = 4096) async -> String {
+        var data = Data()
+        data.reserveCapacity(1024)
+        do {
+            for try await byte in stream {
+                data.append(byte)
+                if data.count >= limit { break }
+            }
+        } catch {
+            // 读体失败(连接中断等)忽略:主错误是 HTTP 状态码,体只是附加上下文。
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
 }

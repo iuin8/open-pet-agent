@@ -173,7 +173,9 @@ public final class ChatCardWindowController {
             } catch is CancellationError {
                 // 用户主动取消 — silent
             } catch {
-                self.state.updateAssistant(id: assistantID, text: "❌ \(error.localizedDescription)")
+                // 统一走友好文案(与 BondedSession 同一份映射)—— LLMProviderError 经
+                // LocalizedError 给可行动描述(换 key / 查模型名),不再只显示「错误0」。
+                self.state.updateAssistant(id: assistantID, text: LLMErrorMessages.friendly(for: error))
             }
             self.state.isSending = false
         }

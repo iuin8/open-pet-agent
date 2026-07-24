@@ -152,3 +152,59 @@ struct OpenAIProviderStreamTests {
         #expect(capturedBody?["stream"] as? Bool == true)
     }
 }
+
+
+// MARK: - 错误响应体携带(stream 非 2xx 带上服务商 message)
+
+@Suite("OpenAIProvider streaming 错误体携带")
+struct OpenAIProviderStreamErrorBodyTests {
+
+    @Test("非 2xx → httpError 携带服务商错误体(此前丢空体)")
+    func errorBodyCarried() async throws {
+        let provider = OpenAIProvider(
+            apiKey: "sk-bad",
+            httpStreamClient: { _ in
+                (makeByteStream(from: "{\"error\":{\"message\":\"Incorrect API key provided\"}}"),
+                 makeHTTPResponse(statusCode: 401))
+            }
+        )
+
+        var caught: LLMProviderError?
+        do {
+            for try await _ in provider.streamChat([LLMMessage(role: .user, content: "hi")]) {}
+        } catch let e as LLMProviderError {
+            caught = e
+        }
+
+        guard case .httpError(let status, let body) = caught else {
+            Issue.record("expected httpError, got \(String(describing: caught))")
+            return
+        }
+        #expect(status == 401)
+        #expect(body.contains("Incorrect API key provided"))
+    }
+
+    @Test("错误体有界:超 4KB 截断(防异常大响应撑内存)")
+    func errorBodyBounded() async throws {
+        let big = String(repeating: "e", count: 10_000)
+        let provider = OpenAIProvider(
+            apiKey: "sk-bad",
+            httpStreamClient: { _ in
+                (makeByteStream(from: big), makeHTTPResponse(statusCode: 500))
+            }
+        )
+
+        var caught: LLMProviderError?
+        do {
+            for try await _ in provider.streamChat([LLMMessage(role: .user, content: "hi")]) {}
+        } catch let e as LLMProviderError {
+            caught = e
+        }
+
+        guard case .httpError(_, let body) = caught else {
+            Issue.record("expected httpError, got \(String(describing: caught))")
+            return
+        }
+        #expect(body.utf8.count <= 4096)
+    }
+}
