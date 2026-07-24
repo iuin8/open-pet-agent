@@ -54,6 +54,9 @@ public final class ChatCardWindowController {
     public var replyConfigurationProvider: (@MainActor () -> (target: ReplyTarget, options: [ReplyOption]))?
     /// App 注入：用户切回复来源 → 写 UserDefaults + `router.setEngine` 即时生效。
     public var onCommitReplyTarget: (@MainActor (ReplyTarget) -> Void)?
+    /// App 注入:P5 @mention 署名 —— 发送时按用户原文解析目标引擎,返回 assistant 行的
+    /// 来源短标签(nil = 不显示 chip)。Shell 不 import AgentMode,纯字符串透传。
+    public var assistantSourceProvider: (@MainActor (String) -> String?)?
 
     /// App 注入:项目配置 provider(当前 project + 可选项)。每次开卡调,从 `ProjectStore` 派生
     /// 最新值刷进 state → 驱动 `ProjectMenu`。nil → 不显示项目选择器。mirror `replyConfigurationProvider`。
@@ -142,7 +145,9 @@ public final class ChatCardWindowController {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !state.isSending else { return }
         state.draft = ""
-        let assistantID = state.appendExchangePlaceholder(userText: trimmed)
+        // P5 @mention 署名:发送时(App 注入解析)定下 assistant 行来源 chip。
+        let source = assistantSourceProvider?(trimmed)
+        let assistantID = state.appendExchangePlaceholder(userText: trimmed, assistantSource: source)
         state.isSending = true
         let provider = streamProvider
         state.streamTask = Task { @MainActor [weak self] in

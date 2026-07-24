@@ -18,6 +18,14 @@ extension MinimalAppDelegate {
         // engine 已换实例 → 会话 UI 态随旧 engine 失效(P2;新 engine 待重新能力探测)
         resetACPSessionUI()
         guard let acp = agentModeRouter?.currentEngine as? ACPAgentEngine else { return }
+        wireACPEngineCallbacks(acp, kind: type(of: acp).kind)
+    }
+
+    /// 给任一 ACP engine 实例接回调(P5 抽出:当前 engine 与 @mention 池引擎同一份逻辑,
+    /// 池工厂懒建时也走这里)。`kind` 显式传 —— 池引擎 ≠ UD 选中引擎,会话指针桶必须按
+    /// **实际跑的** engine 存,否则 @codex 的 sessionId 会错写进 opencode 桶。
+    @MainActor
+    func wireACPEngineCallbacks(_ acp: ACPAgentEngine, kind: AgentEngineKind) {
         // onPermissionRequest 是 @Sendable async 闭包(ACPClient actor 跨边界调)。
         // 直接 `await self?.presentACPPermission`(presentACPPermission 是 @MainActor async,
         // await 跨 actor hop 回主 actor)。@Sendable 闭包 [weak self] 在 Swift 5 是 warning
@@ -41,9 +49,10 @@ extension MinimalAppDelegate {
             }
         }
         // 会话指针持久化(P2):首建/恢复/新建 session → ACPSessionStore 落盘(开卡恢复用)。
+        // P5:桶 kind 按该实例实际 kind(池引擎与 UD 选中引擎可能不同)。
         acp.onSessionIdChanged = { [weak self] sid in
             Task { @MainActor [weak self] in
-                self?.persistACPSessionPointer(sid)
+                self?.persistACPSessionPointer(sid, engineKind: kind.rawValue)
             }
         }
     }

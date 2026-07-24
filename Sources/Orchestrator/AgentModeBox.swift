@@ -56,6 +56,16 @@ public final class AgentModeBox: @unchecked Sendable {
         }
     }
 
+    /// P5:某 kind 的 engine 是否可跑(@mention 预检):router 能拿到(当前/池/工厂懒建)
+    /// 且 CLI 可用。注意 `engine(for:)` 有懒建副作用 —— 预检通过即完成池化,后续
+    /// `runAgent(kind:)` 直接用同一实例。
+    public func canRunAgent(kind: AgentEngineKind) async -> Bool {
+        guard let engine = await MainActor.run(body: { self.routerProvider()?.engine(for: kind) }) else {
+            return false
+        }
+        return await engine.isAvailable
+    }
+
     /// 跑一次工具任务, 返回流式 delta token 的 stream。
     ///
     /// 无 router / 无 engine 时 stream 立即 finish 抛 `AgentEngineError
@@ -63,20 +73,22 @@ public final class AgentModeBox: @unchecked Sendable {
     /// .replyStream`) 看到 throw 应当走 LLM fallback 而非把错误透传给
     /// 用户 (`isAgentModeEnabled` 应该先判, 这里只是 belt-and-suspenders)。
     ///
+    /// P5:`kind` 显式指定(@mention)→ 透传 router 路由到该 kind 的 engine。
+    ///
     /// 内部用 outer-stream 包了一层 inner-stream 是为了:
     /// 1. 跨 actor 把 MainActor 的 router stream 桥到非 actor 的调用方
     /// 2. 调用方取消 outer stream 时也能传播到 router 的子进程 (router
     ///    的 onTermination 会 SIGTERM 子进程)
-    public func runAgent(prompt: String) -> AsyncThrowingStream<String, Error> {
+    public func runAgent(prompt: String, kind: AgentEngineKind? = nil) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task { @MainActor in
                 guard let router = self.routerProvider(),
-                      router.currentEngine != nil else {
-                    continuation.finish(throwing: AgentEngineError.notImplemented(.claudeCode))
+                      kind != nil || router.currentEngine != nil else {
+                    continuation.finish(throwing: AgentEngineError.notImplemented(kind ?? .claudeCode))
                     return
                 }
                 do {
-                    for try await delta in router.runAgent(prompt: prompt) {
+                    for try await delta in router.runAgent(prompt: prompt, kind: kind) {
                         continuation.yield(delta)
                     }
                     continuation.finish()

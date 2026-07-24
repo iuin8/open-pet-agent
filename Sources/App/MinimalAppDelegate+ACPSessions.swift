@@ -48,9 +48,11 @@ extension MinimalAppDelegate {
     // MARK: - 指针持久化(onSessionIdChanged → store)
 
     /// engine 报新 sessionId → 持久化当前会话指针(@MainActor hop 后 async 落盘)。
+    /// P5:`engineKind` 显式传(回调闭包知道实例归属)—— @mention 池引擎 ≠ UD 选中引擎,
+    /// 按 UD 解析会把池引擎的 sessionId 错写进默认引擎的桶。nil → 兼容旧调用(按 UD 解析)。
     @MainActor
-    func persistACPSessionPointer(_ sid: String) {
-        let key = Self.acpSessionPointerKey(defaults: userDefaults)
+    func persistACPSessionPointer(_ sid: String, engineKind: String? = nil) {
+        let key = Self.acpSessionPointerKey(engineKind: engineKind, defaults: userDefaults)
         Task { await acpSessionStore.set(sessionId: sid, forKey: key) }
     }
 
@@ -66,14 +68,18 @@ extension MinimalAppDelegate {
         state.acpSessionUIEnabled = caps.loadSession && caps.sessionCapabilities.contains(.list)
         guard caps.loadSession else { return }
 
-        let key = Self.acpSessionPointerKey(defaults: userDefaults)
+        let kind = type(of: engine).kind
+        let key = Self.acpSessionPointerKey(engineKind: kind.rawValue, defaults: userDefaults)
         if state.messages.isEmpty,
            let sid = await acpSessionStore.sessionId(forKey: key),
            sid != engine.currentSessionId {
             state.isLoadingACPSessions = true
             do {
                 let turns = try await engine.loadSession(sid)
-                if !turns.isEmpty { state.load(history: Self.rows(from: turns)) }
+                // P5 署名:回放的 session 属于当前 engine,assistant 行统一打它的 chip。
+                if !turns.isEmpty {
+                    state.load(history: Self.rows(from: turns, source: Self.engineShortLabel(forId: kind.rawValue)))
+                }
             } catch {
                 // 指针失效(agent 侧已清 session)→ 清除回退,下次 run 开新会话
                 await acpSessionStore.remove(forKey: key)
@@ -130,17 +136,26 @@ extension MinimalAppDelegate {
 
     // MARK: - 纯映射(可单测)
 
-    /// 持久化指针 key:engineKind|cwd(三 ACP engine × 项目 → 各自指针,P3 起按选中 entry)。
-    nonisolated static func acpSessionPointerKey(defaults: UserDefaults) -> String {
+    /// 持久化指针 key:engineKind|cwd(三 ACP engine × 项目 → 各自指针)。
+    /// `engineKind` nil → 按 UD 选中 engine 解析(默认路径);显式传 = @mention 池引擎
+    /// 路径(P5,指针桶按**实际跑的** engine 存)。
+    nonisolated static func acpSessionPointerKey(engineKind: String? = nil, defaults: UserDefaults) -> String {
         ACPSessionStore.key(
-            engineKind: AgentEngineRegistry.resolve(from: defaults).id,
+            engineKind: engineKind ?? AgentEngineRegistry.resolve(from: defaults).id,
             cwd: currentACPProjectRoot(defaults: defaults).path
         )
     }
 
-    /// 回放消息 → 卡片消息行。
-    nonisolated static func rows(from turns: [ACPReplayedTurn]) -> [ChatCardRow] {
-        turns.map { ChatCardRow(role: $0.role == .user ? .user : .assistant, text: $0.text) }
+    /// 回放消息 → 卡片消息行。P5:`source` = 回放所属 engine 短标签(assistant 行署名 chip;
+    /// 一个 session 属于一个引擎,全部 assistant 行同一署名;nil = 无 chip)。
+    nonisolated static func rows(from turns: [ACPReplayedTurn], source: String? = nil) -> [ChatCardRow] {
+        turns.map {
+            ChatCardRow(
+                role: $0.role == .user ? .user : .assistant,
+                text: $0.text,
+                source: $0.role == .assistant ? source : nil
+            )
+        }
     }
 
     /// session/list 项 → 卡片会话列表项(标题兜底 sessionId 前缀;ISO 8601 解析容错)。

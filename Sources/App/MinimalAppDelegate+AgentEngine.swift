@@ -9,9 +9,8 @@ extension MinimalAppDelegate {
     ///
     /// 不再写死 `switch kind`:经 `AgentEngineRegistry.resolve(from:)` 选中 entry
     /// (UD 没设 / 值不识别 → fallback `all[0]` = claudeCode,5417612 起的默认行为)。
-    /// P3 起三个引擎统一 ACP:`acpCommand(for:)` 命中的 entry 在此按项目 cwd 组装
-    /// 适配器子进程(opencode 另注 OPENCODE_CONFIG + 项目 MCP projection);
-    /// 未命中走 `entry.makeEngine()`。
+    /// P3 起三个引擎统一 ACP:`makeACPEngine(kind:)` 按项目 cwd 组装适配器子进程。
+    /// P5:@mention 池已有同 kind engine → 直接收养为当前(单实例/单会话,不双开子进程)。
     ///
     /// 两个调用方:
     /// - `didFinishLaunching` 启动时初始化 router
@@ -23,61 +22,84 @@ extension MinimalAppDelegate {
     ) {
         guard let router else { return }
         let entry = AgentEngineRegistry.resolve(from: defaults)
-        // 三个 ACP engine(P3 起统一:opencode / claude-agent-acp / codex-acp):
-        // 用 ProjectStore.current() 选中的项目做 cwd,长驻适配器子进程(P1a 多项目数据地基;
-        // 详见 docs/project-config-architecture-design.md)。opencode 额外注入 OPENCODE_CONFIG
-        // + 项目 MCP projection;claude/codex 适配器读各自生态配置(.mcp.json / ~/.codex),
-        // ACP mcpServers 传空。
-        if let acpCommand = acpCommand(for: entry.id) {
-            ProjectStore.ensureDefaultProjectRegistered(defaults: defaults)
-            let project = ProjectStore.current(defaults: defaults)
-            let projectRoot = currentACPProjectRoot(defaults: defaults)
-            var env = CLIProcessEnvironment.augmented()
-            let mcpServersProvider: @Sendable (ACPAgentCapabilities) -> [ACPJSON]
-            if entry.id == AgentEngineKind.openCode.rawValue {
-                let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
-                env = env.merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new }
-                mcpServersProvider = { caps in
-                    do {
-                        let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
-                        // ACP v1 的 http/sse 是能力门控:agent 未声明的 transport 不下发。
-                        return ACPMCPServerProjection.supported(servers, capabilities: caps.mcpCapabilities)
-                    } catch {
-                        fputs("[ProjectConfig] opencode MCP projection failed: \(error)\n", stderr)
-                        return []
-                    }
-                }
-            } else {
-                mcpServersProvider = { _ in [] }
-            }
-            let transportFactory: @Sendable () -> any ACPTransport = {
-                ACPStdioTransport(
-                    command: acpCommand,
-                    processEnvironment: env,
-                    currentDirectoryURL: projectRoot
-                )
-            }
-            switch entry.id {
-            case AgentEngineKind.claudeCode.rawValue:
-                router.setEngine(ClaudeACPAgentEngine(
-                    command: acpCommand, cwd: projectRoot,
-                    mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
-                ))
-            case AgentEngineKind.codex.rawValue:
-                router.setEngine(CodexACPAgentEngine(
-                    command: acpCommand, cwd: projectRoot,
-                    mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
-                ))
-            default:
-                router.setEngine(ACPAgentEngine(
-                    command: acpCommand, cwd: projectRoot,
-                    mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
-                ))
-            }
+        // P5:@mention 池里已有同 kind engine → 收养为当前(池在 `clearPooledEngines`
+        // 前一直持有,直接 setEngine 避免同 kind 双开子进程 / 双会话)。
+        if let kind = AgentEngineKind(rawValue: entry.id),
+           let pooled = router.existingPooledEngine(for: kind) {
+            router.setEngine(pooled)
+            return
+        }
+        // 三个 ACP engine(P3 起统一:opencode / claude-agent-acp / codex-acp):per-kind 构建。
+        if let kind = AgentEngineKind(rawValue: entry.id),
+           let engine = makeACPEngine(kind: kind, defaults: defaults) {
+            router.setEngine(engine)
             return
         }
         // 其他 engine / fallback:registry makeEngine
         router.setEngine(entry.makeEngine())
+    }
+
+    /// P3 三引擎统一 ACP 的 per-kind 构建(P5 抽出:`applySelectedAgentEngine` 与
+    /// @mention 池 `engineFactory` 共用同一份组装逻辑,行为不漂移)。
+    ///
+    /// 用 ProjectStore.current() 选中的项目做 cwd,长驻适配器子进程(P1a 多项目数据地基;
+    /// 详见 docs/project-config-architecture-design.md)。opencode 额外注入 OPENCODE_CONFIG
+    /// + 项目 MCP projection;claude/codex 适配器读各自生态配置(.mcp.json / ~/.codex),
+    /// ACP mcpServers 传空。非 ACP kind → nil(调用方走 registry makeEngine)。
+    static func makeACPEngine(kind: AgentEngineKind, defaults: UserDefaults) -> (any AgentEngine)? {
+        guard let acpCommand = acpCommand(for: kind.rawValue) else { return nil }
+        ProjectStore.ensureDefaultProjectRegistered(defaults: defaults)
+        let project = ProjectStore.current(defaults: defaults)
+        let projectRoot = currentACPProjectRoot(defaults: defaults)
+        var env = CLIProcessEnvironment.augmented()
+        let mcpServersProvider: @Sendable (ACPAgentCapabilities) -> [ACPJSON]
+        if kind == .openCode {
+            let opencodeConfigPath = ProjectConfig.opencodeConfig(for: project).path
+            env = env.merging(["OPENCODE_CONFIG": opencodeConfigPath]) { _, new in new }
+            mcpServersProvider = { caps in
+                do {
+                    let servers = try OpencodeProjectAdapter().loadMCPServers(for: project)
+                    // ACP v1 的 http/sse 是能力门控:agent 未声明的 transport 不下发。
+                    return ACPMCPServerProjection.supported(servers, capabilities: caps.mcpCapabilities)
+                } catch {
+                    fputs("[ProjectConfig] opencode MCP projection failed: \(error)\n", stderr)
+                    return []
+                }
+            }
+        } else {
+            mcpServersProvider = { _ in [] }
+        }
+        let transportFactory: @Sendable () -> any ACPTransport = {
+            ACPStdioTransport(
+                command: acpCommand,
+                processEnvironment: env,
+                currentDirectoryURL: projectRoot
+            )
+        }
+        switch kind {
+        case .claudeCode:
+            return ClaudeACPAgentEngine(
+                command: acpCommand, cwd: projectRoot,
+                mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
+            )
+        case .codex:
+            return CodexACPAgentEngine(
+                command: acpCommand, cwd: projectRoot,
+                mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
+            )
+        case .openCode:
+            return ACPAgentEngine(
+                command: acpCommand, cwd: projectRoot,
+                mcpServersProvider: mcpServersProvider, transportFactory: transportFactory
+            )
+        }
+    }
+
+    /// engine id → 短标签(displayName 首词:"Claude Code"→"Claude","opencode (ACP)"→"opencode")。
+    /// 未知 id → 原样返回(不吞信息)。P5 @mention 署名 chip / ACP 回放行署名用。
+    nonisolated static func engineShortLabel(forId engineId: String) -> String {
+        guard let entry = AgentEngineRegistry.lookup(id: engineId) else { return engineId }
+        return entry.displayName.split(separator: " ").first.map(String.init) ?? entry.displayName
     }
 
     /// entry id → ACP 适配器 spawn 命令(P3 三引擎统一 ACP;非 ACP entry → nil 走 makeEngine)。

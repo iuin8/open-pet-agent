@@ -76,3 +76,27 @@ struct ChatCardStateTests {
         #expect(s.isLoadingACPSessions == false)
     }
 }
+
+
+// MARK: - P5 @mention 署名
+
+@MainActor
+@Suite("ChatCardState P5 来源署名")
+struct ChatCardStateSourceTests {
+    @Test("appendExchangePlaceholder 带 assistantSource → assistant 行 source;user 行无")
+    func appendPlaceholderWithSource() {
+        let s = ChatCardState()
+        let aid = s.appendExchangePlaceholder(userText: "@codex 看下", assistantSource: "Codex")
+        #expect(s.messages[0].source == nil)
+        #expect(s.messages[1].source == "Codex")
+        #expect(s.messages[1].id == aid)
+    }
+
+    @Test("ChatCardRow 默认 source nil(无 chip,旧行为不变)")
+    func rowSourceDefaultsNil() {
+        #expect(ChatCardRow(role: .assistant, text: "x").source == nil)
+        let s = ChatCardState()
+        _ = s.appendExchangePlaceholder(userText: "普通")
+        #expect(s.messages[1].source == nil)
+    }
+}

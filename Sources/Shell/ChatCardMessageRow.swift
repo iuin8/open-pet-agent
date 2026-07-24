@@ -78,10 +78,21 @@ struct ChatCardMessageRow: View {
     }
 
     private var timeLabel: some View {
-        Text(Self.timeFormatter.string(from: row.timestamp))
-            .font(ChatCardTheme.timestamp)
-            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.34))
-            .padding(.horizontal, 4)
+        HStack(spacing: 4) {
+            // P5 @mention 署名:assistant 行带来源(engine 短标签)→ 小 chip;nil 不显示。
+            if let source = row.source, !isUser {
+                Text(source)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(ChatCardTheme.accent.opacity(0.75))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(Capsule().fill(ChatCardTheme.accent.opacity(0.10)))
+            }
+            Text(Self.timeFormatter.string(from: row.timestamp))
+                .font(ChatCardTheme.timestamp)
+                .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.34))
+        }
+        .padding(.horizontal, 4)
     }
 
     private static let timeFormatter: DateFormatter = {

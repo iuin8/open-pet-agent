@@ -26,6 +26,7 @@ final class FrontmostProjectDetector {
               matched.id != lastDetectedID else { return }
         lastDetectedID = matched.id
         ProjectStore.setCurrent(matched.id, defaults: defaults)
+        router?.clearPooledEngines()   // P5:cwd 变 → 池内旧 cwd 子进程失效
         MinimalAppDelegate.applySelectedAgentEngine(to: router, defaults: defaults)
     }
 

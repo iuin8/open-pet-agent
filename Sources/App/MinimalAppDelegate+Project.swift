@@ -52,6 +52,7 @@ extension MinimalAppDelegate {
         cardCtrl.onCommitProject = { [weak self] id in
             guard let self else { return }
             ProjectStore.setCurrent(id, defaults: self.userDefaults)
+            self.agentModeRouter?.clearPooledEngines()   // P5:cwd 变 → 池内旧 cwd 子进程失效
             Self.applySelectedAgentEngine(to: self.agentModeRouter, defaults: self.userDefaults)
             self.wireACPPermissionHandler()
             self.frontmostProjectDetector?.reset()  // P3:手动切后 reset,避免 detector 切回
@@ -156,6 +157,7 @@ extension MinimalAppDelegate {
         do {
             try ProjectStore.delete(id: current.id)
             ProjectStore.setCurrent(ProjectConfig.defaultProject.id, defaults: userDefaults)
+            agentModeRouter?.clearPooledEngines()   // P5:cwd 变 → 池内旧 cwd 子进程失效
             Self.applySelectedAgentEngine(to: agentModeRouter, defaults: userDefaults)
             refresh()
         } catch {

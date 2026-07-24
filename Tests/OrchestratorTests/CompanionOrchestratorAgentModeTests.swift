@@ -153,7 +153,7 @@ struct CompanionOrchestratorAgentModeTests {
         let orchestrator = CompanionOrchestrator(
             agentModeBox: box,
             conversationStore: store,
-            agentHandoffContext: { "user: 之前聊过数字42" }
+            agentHandoffContext: { _ in "user: 之前聊过数字42" }
         )
 
         for try await _ in orchestrator.replyStream(for: "新消息") {}
@@ -195,5 +195,158 @@ private final class PromptRecordingEngine: AgentEngine, @unchecked Sendable {
             continuation.yield("ok")
             continuation.finish()
         }
+    }
+}
+
+
+// MARK: - P5 @mention 路由
+
+/// P5 stub:codex 版记录引擎(池路由验证;`available` 可控,测不可用文案)。
+private final class CodexRecordingEngine: AgentEngine, @unchecked Sendable {
+    static let kind: AgentEngineKind = .codex
+    var available = true
+    var isAvailable: Bool { available }
+    private(set) var prompts: [String] = []
+
+    func run(prompt: String) -> AsyncThrowingStream<String, Error> {
+        prompts.append(prompt)
+        return AsyncThrowingStream { c in
+            c.yield("codex-ok")
+            c.finish()
+        }
+    }
+}
+
+/// P5 stub:@Sendable 交接闭包捕获用的 kind 记录盒。
+private final class MentionKindBox: @unchecked Sendable {
+    var kinds: [AgentEngineKind?] = []
+}
+
+@Suite("CompanionOrchestrator P5 @mention 路由")
+struct CompanionOrchestratorMentionTests {
+
+    @Test("@codex → 路由到池化 codex engine;prompt 剥离 mention;store 记原文 + 署名 codex")
+    @MainActor
+    func mentionRoutesToPooledEngine() async throws {
+        let router = AgentModeRouter()
+        let defaultEngine = PromptRecordingEngine()   // claudeCode 当前默认
+        router.setEngine(defaultEngine)
+        let codex = CodexRecordingEngine()
+        router.engineFactory = { kind in kind == .codex ? codex : nil }
+        let box = AgentModeBox { router }
+        let store = ConversationStore()
+        let orchestrator = CompanionOrchestrator(agentModeBox: box, conversationStore: store)
+
+        var collected = ""
+        for try await delta in orchestrator.replyStream(for: "@codex 查一下构建") {
+            collected += delta
+        }
+
+        #expect(collected == "codex-ok")
+        #expect(codex.prompts == ["查一下构建"])   // engine 收剥离 mention 后的 prompt
+        #expect(defaultEngine.prompts.isEmpty)     // 默认引擎没收到
+        let messages = await store.messages()
+        #expect(messages.count == 2)
+        #expect(messages[0].role == .user)
+        #expect(messages[0].content == "@codex 查一下构建")   // store 记用户原文(带 @)
+        #expect(messages[1].role == .assistant)
+        #expect(messages[1].content == "codex-ok")
+        #expect(messages[1].source == AgentEngineKind.codex.rawValue)   // 署名 = 实际跑的引擎
+    }
+
+    @Test("无 mention → 默认 engine;assistant 署名当前 kind")
+    @MainActor
+    func noMentionUsesDefaultEngine() async throws {
+        let router = AgentModeRouter()
+        let defaultEngine = PromptRecordingEngine()
+        router.setEngine(defaultEngine)
+        let codex = CodexRecordingEngine()
+        router.engineFactory = { _ in codex }
+        let box = AgentModeBox { router }
+        let store = ConversationStore()
+        let orchestrator = CompanionOrchestrator(agentModeBox: box, conversationStore: store)
+
+        for try await _ in orchestrator.replyStream(for: "普通一句") {}
+
+        #expect(defaultEngine.prompts == ["普通一句"])
+        #expect(codex.prompts.isEmpty)
+        let messages = await store.messages()
+        #expect(messages.last?.source == AgentEngineKind.claudeCode.rawValue)
+    }
+
+    @Test("@codex 不可用(CLI 缺)→ 友好文案 finish 不抛错;engine 没跑;LLM 没被误调")
+    @MainActor
+    func mentionUnavailableYieldsFriendlyHint() async throws {
+        let router = AgentModeRouter()
+        router.setEngine(PromptRecordingEngine())
+        let codex = CodexRecordingEngine()
+        codex.available = false   // CLI 未装
+        router.engineFactory = { _ in codex }
+        let box = AgentModeBox { router }
+        let llm = TrackingStreamingProvider()
+        let store = ConversationStore()
+        let orchestrator = CompanionOrchestrator(
+            llmProvider: llm, agentModeBox: box, conversationStore: store)
+
+        var collected = ""
+        for try await delta in orchestrator.replyStream(for: "@codex 干活") {
+            collected += delta
+        }
+
+        #expect(collected == CompanionOrchestrator.mentionUnavailableMessage(kind: .codex))
+        #expect(codex.prompts.isEmpty)   // 不可用引擎没收到 prompt
+        #expect(llm.callCount == 0)      // agent 模式不掉灵魂层
+        let messages = await store.messages()
+        #expect(messages.count == 2)
+        #expect(messages[1].content == collected)
+        #expect(messages[1].source == AgentEngineKind.codex.rawValue)
+    }
+
+    @Test("@mention → handoff 闭包收到 mention kind;无 mention → 收到 nil(交接桶按实际 engine 算)")
+    @MainActor
+    func mentionKindFlowsToHandoffContext() async throws {
+        let router = AgentModeRouter()
+        router.setEngine(PromptRecordingEngine())
+        let codex = CodexRecordingEngine()
+        router.engineFactory = { _ in codex }
+        let box = AgentModeBox { router }
+        let kindBox = MentionKindBox()
+        let orchestrator = CompanionOrchestrator(
+            agentModeBox: box,
+            agentHandoffContext: { kind in
+                kindBox.kinds.append(kind)
+                return nil   // 不注入包装,只验证 kind 传递
+            }
+        )
+
+        for try await _ in orchestrator.replyStream(for: "@codex 第一句") {}
+        for try await _ in orchestrator.replyStream(for: "第二句") {}
+
+        #expect(kindBox.kinds.count == 2)
+        #expect(kindBox.kinds[0] == .codex)
+        #expect(kindBox.kinds[1] == nil)
+    }
+
+    @Test("@mention + 交接背景非 nil → 包装进 mention 目标的 prompt(剥离 mention 后包装)")
+    @MainActor
+    func mentionHandoffWrapsStrippedPrompt() async throws {
+        let router = AgentModeRouter()
+        router.setEngine(PromptRecordingEngine())
+        let codex = CodexRecordingEngine()
+        router.engineFactory = { _ in codex }
+        let box = AgentModeBox { router }
+        let orchestrator = CompanionOrchestrator(
+            agentModeBox: box,
+            agentHandoffContext: { _ in "user: 之前聊过数字42" }
+        )
+
+        for try await _ in orchestrator.replyStream(for: "@codex 新任务") {}
+
+        #expect(codex.prompts.count == 1)
+        let sent = codex.prompts[0]
+        #expect(sent.contains("[背景交接]"))
+        #expect(sent.contains("user: 之前聊过数字42"))
+        #expect(sent.contains("新任务"))
+        #expect(!sent.contains("@codex"))   // 包装的是剥离后的 prompt
     }
 }
