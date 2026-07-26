@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Composer 输入框上方的「项目」选择器 —— Menu 下拉(项目多时 scalable,vs segmented 横向挤)。
 ///
-/// 选当前 agent 工作项目(ACP engine 的 cwd + opencode config 来源)。跟 `ReplySourceBar`(engine)
-/// 横排:engine 选「用什么 brain」,project 选「在哪个项目工作」。两者独立。
+/// 选当前 agent 工作项目(ACP engine 的 cwd + opencode config 来源)。引擎路由走
+/// @mention / pin(P6),project 选「在哪个项目工作」。两者独立。
 ///
 /// Menu 入口:项目列表(切换)+ 新建项目(托管)+ 添加外部项目(NSOpenPanel)+ 重命名/删除当前
 /// (default 不可删改,disabled)。创建/重命名走 App 原生 NSAlert,外部走 NSOpenPanel —— **Shell 不碰

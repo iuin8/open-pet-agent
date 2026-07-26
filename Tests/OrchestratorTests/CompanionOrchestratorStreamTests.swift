@@ -3,6 +3,15 @@ import Testing
 import Context
 import Rendering
 import RuntimeBridge
+import Foundation
+
+/// 测试用 hermetic ConversationStore:绝不碰默认 Application Support 路径 ——
+/// 那里是用户真实数据(默认 init 会造成真实历史被测试覆盖,且 macOS provenance
+/// 会跨 app 触发内核级 rename 阻塞,2026-07-26 实测卡死六个测试)。
+private func makeHermeticStore() -> ConversationStore {
+    ConversationStore(storeURL: FileManager.default.temporaryDirectory
+        .appendingPathComponent("test-conversations-\(UUID().uuidString).json"))
+}
 
 // MARK: - Streaming Provider Stubs
 
@@ -101,7 +110,7 @@ struct CompanionOrchestratorStreamTests {
 
     @Test("reply with onPartialReply appends only the final complete message to ConversationStore")
     func replyWithOnPartialReplyAppendsOnlyFinalMessageToStore() async throws {
-        let store = ConversationStore()
+        let store = makeHermeticStore()
         let provider = StubStreamingProvider(chunks: ["first", " second", " third"])
         let orchestrator = CompanionOrchestrator(
             llmProvider: provider,
@@ -180,7 +189,7 @@ struct CompanionOrchestratorStreamTests {
 
     @Test("replyStream yields delta tokens and store has full reply after stream finishes")
     func replyStreamYieldsDeltaTokensAndStoreHasFullReplyAfterFinish() async throws {
-        let store = ConversationStore()
+        let store = makeHermeticStore()
         let provider = StubStreamingProvider(chunks: ["Hello", " World"])
         let orchestrator = CompanionOrchestrator(llmProvider: provider, conversationStore: store)
 

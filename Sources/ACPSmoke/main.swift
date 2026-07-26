@@ -209,11 +209,13 @@ func poolSmoke(prompt: String) async {
 
     // 2) @codex → AgentMention 解析 + 池路由
     let mention = AgentMention.parse("@codex \(prompt)")
-    log("[pool] mention parse: kind=\(String(describing: mention.kind)) prompt=\(mention.prompt)")
-    if mention.kind != .codex { log("[pool][err] mention 解析失败"); failed = true }
+    let mentionedKind: AgentEngineKind?
+    if case .engine(let kind) = mention.target { mentionedKind = kind } else { mentionedKind = nil }
+    log("[pool] mention parse: target=\(String(describing: mention.target)) prompt=\(mention.prompt)")
+    if mentionedKind != .codex { log("[pool][err] mention 解析失败"); failed = true }
     do {
         var text = ""
-        for try await d in router.runAgent(prompt: mention.prompt, kind: mention.kind) { text += d }
+        for try await d in router.runAgent(prompt: mention.prompt, kind: mentionedKind) { text += d }
         log("[pool] codex replied \(text.count) chars: \(text.prefix(60))")
     } catch { log("[pool][err] codex run: \(error)"); failed = true }
 

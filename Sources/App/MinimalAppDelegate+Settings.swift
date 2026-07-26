@@ -235,6 +235,8 @@ extension MinimalAppDelegate {
                 let none: (any AgentEngine)? = nil
                 self.agentModeRouter?.setEngine(none)
             }
+            // P6:设置面板改动同步 composer pin 态(卡片开着时也即时生效)
+            Task { @MainActor in await self.syncMentionConfigurationToState() }
         }
 
         // Task E: 工具 engine kind picker callback —— 写 UserDefaults。
@@ -250,6 +252,8 @@ extension MinimalAppDelegate {
                 )
                 self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
             }
+            // P6:picker 改 kind = 改钉住目标 → 同步 composer pin 态
+            Task { @MainActor in await self.syncMentionConfigurationToState() }
         }
 
         // Task E: OpenClaw autoStart toggle —— 写 UserDefaults, 下次启动生效。

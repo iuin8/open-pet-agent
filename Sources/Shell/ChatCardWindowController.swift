@@ -48,21 +48,16 @@ public final class ChatCardWindowController {
     /// `session/load` 回放重建消息列表。弹出后异步调(冷启动 ~2-3s + 回放,不阻塞进场)。
     public var acpSessionRestoreHook: (@MainActor () async -> Void)?
 
-    /// App 注入：回复来源配置 provider（当前 target + 可选项）。每次开卡调，从 UserDefaults
-    /// 派生最新值刷进 state → 驱动 `ReplySourceBar`（同步设置面板的改动，两处写同一份 UD）。
-    /// nil → 不显示回复来源选择器。
-    public var replyConfigurationProvider: (@MainActor () -> (target: ReplyTarget, options: [ReplyOption]))?
-    /// App 注入：用户切回复来源 → 写 UserDefaults + `router.setEngine` 即时生效。
-    public var onCommitReplyTarget: (@MainActor (ReplyTarget) -> Void)?
     /// App 注入:P5 @mention 署名 —— 发送时按用户原文解析目标引擎,返回 assistant 行的
     /// 来源短标签(nil = 不显示 chip)。Shell 不 import AgentMode,纯字符串透传。
     public var assistantSourceProvider: (@MainActor (String) -> String?)?
-    /// App 注入:P5 follow-up @mention 补全配置(候选 + 启用态,含 CLI 可用性;异步因
-    /// 可用性探测)。开卡时在弹出后的 Task 里同步进 state;切回复来源由 App 直接刷。
-    public var mentionConfigurationProvider: (@MainActor () async -> (enabled: Bool, options: [MentionOption]))?
+    /// App 注入:@mention 补全 + P6 pin 配置(候选恒含 soul 行 + 三引擎,含 CLI 可用性;
+    /// pinnedTrigger = 当前钉住引擎,nil = 未钉;异步因可用性探测)。开卡时在弹出后的
+    /// Task 里同步进 state;pin/unpin 由 App 经 `syncMentionConfigurationToState` 直接刷。
+    public var mentionConfigurationProvider: (@MainActor () async -> (options: [MentionOption], pinnedTrigger: String?))?
 
     /// App 注入:项目配置 provider(当前 project + 可选项)。每次开卡调,从 `ProjectStore` 派生
-    /// 最新值刷进 state → 驱动 `ProjectMenu`。nil → 不显示项目选择器。mirror `replyConfigurationProvider`。
+    /// 最新值刷进 state → 驱动 `ProjectMenu`。nil → 不显示项目选择器。
     public var projectProvider: (@MainActor () -> (current: ProjectOption, projects: [ProjectOption]))?
     /// App 注入:用户切项目 → 写 UD `tool.project.id` + `applySelectedAgentEngine` 重 apply 即时生效。
     public var onCommitProject: (@MainActor (String) -> Void)?
@@ -188,7 +183,6 @@ public final class ChatCardWindowController {
 
     private func show(prefill: String?) {
         if panel == nil { createPanel() }
-        syncReplyConfiguration()   // 开卡时从 UD 刷回复来源 segmented（同步设置面板的改动）
         syncProjectConfiguration()  // 开卡时从 ProjectStore 刷项目 Menu（同步外部改动）
         if let prefill, !prefill.isEmpty { state.draft = prefill }
         // 先从 store 恢复历史（仅本会话尚无消息时），再定位 + spring 进场 → 卡片弹出即满载，
@@ -198,11 +192,11 @@ public final class ChatCardWindowController {
             if self.state.messages.isEmpty, let historyProvider = self.historyProvider {
                 self.state.load(history: await historyProvider())
             }
-            // @mention 补全配置(P5 follow-up):可用性探测是 async,弹出前就绪(毫秒级)。
+            // @mention 补全 + pin 配置:可用性探测是 async,弹出前就绪(毫秒级)。
             if let mentionProvider = self.mentionConfigurationProvider {
                 let cfg = await mentionProvider()
-                self.state.mentionEnabled = cfg.enabled
                 self.state.mentionOptions = cfg.options
+                self.state.pinnedMentionTrigger = cfg.pinnedTrigger
             }
             self.positionAndPresent()
             // 外部会话历史在弹出后台补（文件读在 loader 内部 off-main，store 更新驱动 tab 视图）。
@@ -212,17 +206,7 @@ public final class ChatCardWindowController {
         }
     }
 
-    /// 从 App 注入的 provider 刷新回复来源配置到 state（开卡时同步设置面板改动）+ 透传 onCommit。
-    private func syncReplyConfiguration() {
-        if let cfg = replyConfigurationProvider?() {
-            state.replyTarget = cfg.target
-            state.replyOptions = cfg.options
-        }
-        state.onCommitReplyTarget = onCommitReplyTarget
-    }
-
     /// 从 App 注入的 provider 刷新项目配置到 state(开卡时 + 创建项目后调)+ 透传回调。
-    /// mirror `syncReplyConfiguration`。
     private func syncProjectConfiguration() {
         if let cfg = projectProvider?() {
             if state.currentProject?.id != cfg.current.id {

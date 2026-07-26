@@ -11,10 +11,14 @@ import SwiftUI
 struct ChatCardComposer: View {
     @Binding var draft: String
     let isSending: Bool
-    /// @mention 补全候选(App 注入;空 → 不弹)。
+    /// @mention 补全候选(App 注入;空 → 不弹)。P6 起恒含 soul 行 + 三引擎。
     var mentionOptions: [MentionOption] = []
-    /// @mention 是否启用(= 工具层开启)。
-    var mentionEnabled: Bool = false
+    /// P6:当前钉住的引擎 trigger(nil = 未钉,默认灵魂层)。
+    var pinnedMentionTrigger: String? = nil
+    /// P6:钉住回调(预览态点图标 → 钉住该引擎)。
+    var onPinMention: ((String) -> Void)? = nil
+    /// P6:取消钉住回调(pinned 态点图标 → 回灵魂层)。
+    var onUnpinMention: (() -> Void)? = nil
     let onSend: () -> Void
 
     @FocusState private var focused: Bool
@@ -29,7 +33,7 @@ struct ChatCardComposer: View {
 
     /// 当前过滤出的补全候选(不处于行首 mention 输入 → 空)。
     private var mentionMatches: [MentionOption] {
-        guard mentionEnabled, let query = MentionAutocomplete.query(in: draft) else { return [] }
+        guard let query = MentionAutocomplete.query(in: draft) else { return [] }
         return MentionAutocomplete.filter(mentionOptions, query: query)
     }
 
@@ -37,9 +41,13 @@ struct ChatCardComposer: View {
         !mentionMatches.isEmpty && !mentionDismissed
     }
 
-    private var placeholder: String {
-        mentionEnabled ? "问点什么，@ 可点名引擎…" : "问点什么，或聊聊你在忙啥…"
+    /// 有效目标(P6 图标状态机):@ 预览 > pinned > soul。
+    private var composerTarget: ComposerTarget {
+        ComposerTargetResolver.resolve(
+            draft: draft, options: mentionOptions, pinnedTrigger: pinnedMentionTrigger)
     }
+
+    private let placeholder = "问点什么，@ 可点名引擎…"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -57,6 +65,10 @@ struct ChatCardComposer: View {
 
     private var inputPill: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            targetIcon
+                .padding(.leading, 6)
+                .padding(.bottom, 3)
+
             TextField(placeholder, text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(ChatCardTheme.body)
@@ -159,7 +171,7 @@ struct ChatCardComposer: View {
         )
     }
 
-    /// 品牌 logo 优先(与 `ReplySourceBar` 同款渲染),否则 SF Symbol。
+    /// 品牌 logo 优先(与目标图标同款渲染),否则 SF Symbol。
     @ViewBuilder
     private func mentionIcon(_ option: MentionOption) -> some View {
         if let logo = option.brandLogo {
@@ -171,6 +183,76 @@ struct ChatCardComposer: View {
             Image(systemName: option.systemImage)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(ChatCardTheme.accent)
+        }
+    }
+
+    // MARK: - P6 目标图标(pin 模型)
+
+    /// pill 前置目标图标:soul 爪印 / pinned 引擎(实色 + pin badge)/ @ 预览引擎(降透明)。
+    /// 点击:soul → 插入 `@` 触发补全;预览 → 钉住;pinned → 取消钉住。
+    private var targetIcon: some View {
+        let target = composerTarget
+        return Button {
+            tapTargetIcon(target)
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                targetIconContent(target)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        Circle().fill(
+                            target.isPinnedEngine
+                                ? ChatCardTheme.accent.opacity(0.14)
+                                : ChatCardTheme.inputFill
+                        )
+                    )
+                if target.isPinnedEngine {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(ChatCardTheme.accent)
+                        .offset(x: 2, y: -2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .help(target.helpText)
+    }
+
+    @ViewBuilder
+    private func targetIconContent(_ target: ComposerTarget) -> some View {
+        switch target {
+        case .soul:
+            Image(systemName: "pawprint.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(ChatCardTheme.accent)
+        case .engine(let option, let pinned):
+            Group {
+                if let logo = option.brandLogo {
+                    BrandLogoShape(logo: logo)
+                        .fill(logo.defaultColor, style: logo.fillRule)
+                        .frame(width: 14, height: 14)
+                        .clipped()
+                } else {
+                    Image(systemName: option.systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(ChatCardTheme.accent)
+                }
+            }
+            .opacity(pinned ? 1 : 0.55)   // 预览态降透明,与 pinned 区分
+        }
+    }
+
+    private func tapTargetIcon(_ target: ComposerTarget) {
+        switch target {
+        case .soul:
+            // soul 态点击 = 触发补全(发现性闭环);有正文时不打扰。
+            if draft.isEmpty { draft = "@" }
+            focused = true
+        case .engine(let option, let pinned):
+            if pinned {
+                onUnpinMention?()
+            } else {
+                onPinMention?(option.trigger)
+            }
         }
     }
 

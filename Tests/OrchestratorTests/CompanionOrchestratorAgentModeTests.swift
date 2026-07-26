@@ -3,6 +3,14 @@ import Testing
 import AgentMode
 @testable import Orchestrator
 
+/// 测试用 hermetic ConversationStore:绝不碰默认 Application Support 路径 ——
+/// 那里是用户真实数据(默认 init 会造成真实历史被测试覆盖,且 macOS provenance
+/// 会跨 app 触发内核级 rename 阻塞,2026-07-26 实测卡死六个测试)。
+private func makeHermeticStore() -> ConversationStore {
+    ConversationStore(storeURL: FileManager.default.temporaryDirectory
+        .appendingPathComponent("test-conversations-\(UUID().uuidString).json"))
+}
+
 // MARK: - CompanionOrchestrator + Tool Mode 集成测试
 //
 // 验证 `replyStream(for:)` 在 Tool Mode 开关切换时正确路由 ——
@@ -107,7 +115,7 @@ struct CompanionOrchestratorAgentModeTests {
         let router = AgentModeRouter()
         router.setEngine(StubClaudeCodeEngine())
         let box = AgentModeBox { router }
-        let store = ConversationStore()
+        let store = makeHermeticStore()
         let orchestrator = CompanionOrchestrator(
             agentModeBox: box,
             conversationStore: store
@@ -149,7 +157,7 @@ struct CompanionOrchestratorAgentModeTests {
         let engine = PromptRecordingEngine()
         router.setEngine(engine)
         let box = AgentModeBox { router }
-        let store = ConversationStore()
+        let store = makeHermeticStore()
         let orchestrator = CompanionOrchestrator(
             agentModeBox: box,
             conversationStore: store,
@@ -234,7 +242,7 @@ struct CompanionOrchestratorMentionTests {
         let codex = CodexRecordingEngine()
         router.engineFactory = { kind in kind == .codex ? codex : nil }
         let box = AgentModeBox { router }
-        let store = ConversationStore()
+        let store = makeHermeticStore()
         let orchestrator = CompanionOrchestrator(agentModeBox: box, conversationStore: store)
 
         var collected = ""
@@ -263,7 +271,7 @@ struct CompanionOrchestratorMentionTests {
         let codex = CodexRecordingEngine()
         router.engineFactory = { _ in codex }
         let box = AgentModeBox { router }
-        let store = ConversationStore()
+        let store = makeHermeticStore()
         let orchestrator = CompanionOrchestrator(agentModeBox: box, conversationStore: store)
 
         for try await _ in orchestrator.replyStream(for: "普通一句") {}
@@ -284,7 +292,7 @@ struct CompanionOrchestratorMentionTests {
         router.engineFactory = { _ in codex }
         let box = AgentModeBox { router }
         let llm = TrackingStreamingProvider()
-        let store = ConversationStore()
+        let store = makeHermeticStore()
         let orchestrator = CompanionOrchestrator(
             llmProvider: llm, agentModeBox: box, conversationStore: store)
 
@@ -348,5 +356,90 @@ struct CompanionOrchestratorMentionTests {
         #expect(sent.contains("user: 之前聊过数字42"))
         #expect(sent.contains("新任务"))
         #expect(!sent.contains("@codex"))   // 包装的是剥离后的 prompt
+    }
+}
+
+
+// MARK: - P6 模式无关路由 + @pet 逃逸
+
+@Suite("CompanionOrchestrator P6 pin 模型路由")
+struct CompanionOrchestratorPinModelTests {
+
+    @Test("P6:灵魂层默认态(未钉,engine=nil)下 @codex 也能唤起池引擎")
+    @MainActor
+    func mentionWorksWithoutAgentMode() async throws {
+        let router = AgentModeRouter()   // 故意不 setEngine —— 工具层关闭(未钉)
+        let codex = CodexRecordingEngine()
+        router.engineFactory = { kind in kind == .codex ? codex : nil }
+        let box = AgentModeBox { router }
+        let llm = TrackingStreamingProvider()
+        let store = makeHermeticStore()
+        let orchestrator = CompanionOrchestrator(
+            llmProvider: llm, agentModeBox: box, conversationStore: store)
+
+        var collected = ""
+        for try await delta in orchestrator.replyStream(for: "@codex 查一下") {
+            collected += delta
+        }
+
+        #expect(collected == "codex-ok")
+        #expect(codex.prompts == ["查一下"])
+        #expect(llm.callCount == 0)   // 没掉灵魂层
+        let messages = await store.messages()
+        #expect(messages.last?.source == AgentEngineKind.codex.rawValue)
+    }
+
+    @Test("P6:钉住引擎时 @pet 强制本条灵魂层(engine 不调,LLM 收剥离后 prompt)")
+    @MainActor
+    func petMentionForcesSoulWhilePinned() async throws {
+        let router = AgentModeRouter()
+        let engine = PromptRecordingEngine()   // 钉住 claudeCode
+        router.setEngine(engine)
+        let box = AgentModeBox { router }
+        let llm = TrackingStreamingProvider()
+        let store = makeHermeticStore()
+        let orchestrator = CompanionOrchestrator(
+            llmProvider: llm, agentModeBox: box, conversationStore: store)
+
+        var collected = ""
+        for try await delta in orchestrator.replyStream(for: "@pet 今天怎么样") {
+            collected += delta
+        }
+
+        #expect(collected == "LLM-FALLBACK")
+        #expect(llm.callCount == 1)
+        #expect(engine.prompts.isEmpty)   // 钉住的引擎没收到
+        // LLM 收到的 user 消息是剥离 @pet 后的内容
+        let lastUser = llm.lastMessages.last(where: { $0.role == .user })?.content
+        #expect(lastUser == "今天怎么样")
+        // store 记原文(带 @pet);assistant 无署名(灵魂层)
+        let messages = await store.messages()
+        #expect(messages.first?.content == "@pet 今天怎么样")
+        #expect(messages.last?.source == nil)
+    }
+
+    @Test("P6:无 mention + 未钉 → 灵魂层(原行为);无 mention + 钉住 → 默认引擎(原行为)")
+    @MainActor
+    func noMentionKeepsOldBranches() async throws {
+        // 未钉
+        do {
+            let router = AgentModeRouter()
+            let box = AgentModeBox { router }
+            let llm = TrackingStreamingProvider()
+            let orchestrator = CompanionOrchestrator(llmProvider: llm, agentModeBox: box)
+            var collected = ""
+            for try await delta in orchestrator.replyStream(for: "普通") { collected += delta }
+            #expect(collected == "LLM-FALLBACK")
+        }
+        // 钉住
+        do {
+            let router = AgentModeRouter()
+            let engine = PromptRecordingEngine()
+            router.setEngine(engine)
+            let box = AgentModeBox { router }
+            let orchestrator = CompanionOrchestrator(agentModeBox: box)
+            for try await _ in orchestrator.replyStream(for: "普通") {}
+            #expect(engine.prompts == ["普通"])
+        }
     }
 }
