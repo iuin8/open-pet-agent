@@ -472,30 +472,17 @@ extension MinimalAppDelegate {
         }
         // 「清空对话」：卡片 trash 按钮 → app 确认弹窗 → 清 ConversationStore + 重置卡片。
         cardCtrl.onClearConversation = { [weak self] in self?.confirmAndClearConversation() }
-        // 回复来源 segmented（直觉可用性）：Composer 上方一眼可切灵魂层/Agent engine，
-        // 不必去设置深处找开关。provider 从 UD 派生当前 target + 可选项；onCommit 写 UD +
-        // router.setEngine 即时生效（同设置面板 onSaveAgentModeEnabled/EngineKind 机制）。
-        cardCtrl.replyConfigurationProvider = { [weak self] in
-            Self.replyConfiguration(for: self?.userDefaults ?? .standard)
+        // P6 pin 模型:composer 目标图标的钉住/取消回调(替代原 segmented 回复来源选择器)。
+        // pin → UD(enabled+kind) + 装 engine + wiring;unpin → 回灵魂层。副作用经
+        // `syncMentionConfigurationToState` 刷回卡片(候选 + pinnedTrigger)。
+        cardCtrl.cardState.onPinMentionTrigger = { [weak self] trigger in
+            guard let self,
+                  let kind = AgentMention.engineCandidates.first(where: { $0.trigger == trigger })?.kind
+            else { return }
+            self.pinAgentEngine(kind)
         }
-        cardCtrl.onCommitReplyTarget = { [weak self] target in
-            guard let self else { return }
-            switch target {
-            case .soul:
-                self.userDefaults.set(false, forKey: Self.agentModeEnabledKey)
-                self.agentModeRouter?.setEngine(nil)
-            case .agent(let engineId):
-                self.userDefaults.set(true, forKey: Self.agentModeEnabledKey)
-                self.userDefaults.set(engineId, forKey: AgentEngineKind.userDefaultsKey)
-                Self.applySelectedAgentEngine(to: self.agentModeRouter, defaults: self.userDefaults)
-                self.wireACPPermissionHandler()   // ACP-2:engine 是 ACP 时注入 onPermissionRequest
-            }
-            // @mention 补全配置随启用态即时刷新(卡片开着切来源也生效)。
-            Task { @MainActor in
-                let cfg = await self.refreshMentionConfiguration()
-                self.chatCardWindowController?.cardState.mentionEnabled = cfg.enabled
-                self.chatCardWindowController?.cardState.mentionOptions = cfg.options
-            }
+        cardCtrl.cardState.onUnpinMention = { [weak self] in
+            self?.unpinAgentEngine()
         }
         // 项目选择器 Menu(P1b 多项目):current/list 从 ProjectStore 派生;切项目重 apply engine;新建走 NSAlert。
         wireProjectConfiguration(to: cardCtrl)
@@ -525,16 +512,24 @@ extension MinimalAppDelegate {
                 }
             }
         }
-        // P5 @mention 署名:发送时按原文解析目标引擎(mention ?? 当前默认),assistant
-        // 占位行带来源 chip;灵魂层(未启用工具层)→ nil 不显示。
+        // P5/P6 @mention 署名:发送时按原文解析目标 —— `.engine` → 该引擎 chip;
+        // `.soul`(@pet)→ nil(灵魂层不署名);无 mention → 钉住引擎 chip,未钉 nil。
         cardCtrl.assistantSourceProvider = { [weak self] text in
-            guard let self, self.userDefaults.bool(forKey: Self.agentModeEnabledKey) else { return nil }
-            let kind = AgentMention.parse(text).kind ?? self.agentModeRouter?.currentKind
-            return kind.map { Self.engineShortLabel(forId: $0.rawValue) }
+            guard let self else { return nil }
+            switch AgentMention.parse(text).target {
+            case .engine(let kind):
+                return Self.engineShortLabel(forId: kind.rawValue)
+            case .soul:
+                return nil
+            case nil:
+                guard self.userDefaults.bool(forKey: Self.agentModeEnabledKey),
+                      let kind = self.agentModeRouter?.currentKind else { return nil }
+                return Self.engineShortLabel(forId: kind.rawValue)
+            }
         }
-        // P5 follow-up @mention 补全:开卡时同步候选(含 CLI 可用性探测,异步)。
+        // @mention 补全 + pin 配置:开卡时同步(含 CLI 可用性探测,异步)。
         cardCtrl.mentionConfigurationProvider = { [weak self] in
-            await self?.refreshMentionConfiguration() ?? (enabled: false, options: [])
+            await self?.refreshMentionConfiguration() ?? (options: [], pinnedTrigger: nil)
         }
         self.chatCardWindowController = cardCtrl
 

@@ -102,16 +102,24 @@ extension MinimalAppDelegate {
         return entry.displayName.split(separator: " ").first.map(String.init) ?? entry.displayName
     }
 
-    /// P5 follow-up:组 @mention 补全候选(开卡/切回复来源时刷新)。
-    /// 工具层开启时:`AgentMention.candidates`(与解析同一份表)× registry 展示数据 ×
-    /// CLI 可用性(适配器未装 → 置灰「未安装」,仍可选,发送后走友好不可用文案)。
-    /// 关闭 → (false, []),composer 不弹补全。
+    /// P6:组 @mention 补全候选 + pin 态(开卡 / pin 动作 / 设置保存后刷新)。
+    /// 候选 = soul 行(恒在,弹层教会模型;pinned 时是单条逃逸口)+ 三引擎 × registry
+    /// 展示数据 × CLI 可用性(未装 → 置灰「未安装」,仍可选,发送后走友好不可用文案)。
+    /// `pinnedTrigger` = UD enabled 时的当前引擎 trigger(nil = 未钉,默认灵魂层)。
     @MainActor
-    func refreshMentionConfiguration() async -> (enabled: Bool, options: [MentionOption]) {
-        guard userDefaults.bool(forKey: Self.agentModeEnabledKey) else { return (false, []) }
+    func refreshMentionConfiguration() async -> (options: [MentionOption], pinnedTrigger: String?) {
+        var options: [MentionOption] = [
+            MentionOption(
+                trigger: AgentMention.soulCanonicalTrigger,
+                label: "Pet",
+                systemImage: "pawprint.fill",
+                brandLogo: nil,
+                available: true,
+                isSoul: true
+            )
+        ]
         let cli = CLIAvailability()
-        var options: [MentionOption] = []
-        for (trigger, kind) in AgentMention.candidates {
+        for (trigger, kind) in AgentMention.engineCandidates {
             let binary = AgentEngineRegistry.lookup(id: kind.rawValue)?.binaryName ?? trigger
             let available = await cli.locate(binary: binary) != nil
             options.append(MentionOption(
@@ -122,7 +130,11 @@ extension MinimalAppDelegate {
                 available: available
             ))
         }
-        return (true, options)
+        let enabled = userDefaults.bool(forKey: Self.agentModeEnabledKey)
+        let pinned = enabled
+            ? Self.mentionTrigger(forEngineId: AgentEngineRegistry.resolve(from: userDefaults).id)
+            : nil
+        return (options, pinned)
     }
 
     /// entry id → ACP 适配器 spawn 命令(P3 三引擎统一 ACP;非 ACP entry → nil 走 makeEngine)。
@@ -144,30 +156,43 @@ extension MinimalAppDelegate {
         return (try? ProjectConfig.ensure(for: project)) ?? project.rootURL
     }
 
-    // MARK: - 回复来源 segmented 配置（聊天面板 Composer 上方，直觉可用性）
+    // MARK: - P6 pin 模型(钉住 = 粘性默认引擎;原 segmented 配置已删)
 
-    /// 从 UserDefaults 派生回复来源配置：当前 target + 可选项列表。
-    /// 灵魂层（🐾 默认首项）+ `AgentEngineRegistry.all` 每个 engine 一项。聊天面板
-    /// 开卡时调，同步 segmented 与设置面板（两处写同一份 UD）。
-    nonisolated static func replyConfiguration(
-        for defaults: UserDefaults
-    ) -> (target: ReplyTarget, options: [ReplyOption]) {
-        let enabled = defaults.bool(forKey: agentModeEnabledKey)
-        let target: ReplyTarget = enabled
-            ? .agent(AgentEngineRegistry.resolve(from: defaults).id)
-            : .soul
-        var options: [ReplyOption] = [
-            ReplyOption(target: .soul, label: "聊天", systemImage: "pawprint.fill")
-        ]
-        options += AgentEngineRegistry.all.map { entry in
-            // 短标签：取 displayName 首词（"Claude Code"→"Claude"，"opencode (ACP)"→"opencode"）。
-            let short = entry.displayName.split(separator: " ").first.map(String.init) ?? entry.displayName
-            return ReplyOption(target: .agent(entry.id), label: short, systemImage: replyIcon(for: entry.id), brandLogo: replyBrandLogo(for: entry.id))
-        }
-        return (target, options)
+    /// P6 钉住引擎:UD `(enabled, kind)` 写入 + 装 engine + 回调 wiring + 补全/pin 配置刷新。
+    /// 副作用与原 `onCommitReplyTarget` agent 分支一致,触发点改为 composer pin。
+    @MainActor
+    func pinAgentEngine(_ kind: AgentEngineKind) {
+        userDefaults.set(true, forKey: Self.agentModeEnabledKey)
+        userDefaults.set(kind.rawValue, forKey: AgentEngineKind.userDefaultsKey)
+        Self.applySelectedAgentEngine(to: agentModeRouter, defaults: userDefaults)
+        wireACPPermissionHandler()   // 含 resetACPSessionUI + ACP 回调注入
+        Task { @MainActor in await syncMentionConfigurationToState() }
     }
 
-    /// engine id → SF Symbol 图标（segmented 紧凑展示用;P5 follow-up 补全弹层复用）。
+    /// P6 取消钉住:回灵魂层(engine 释放),UD `enabled=false`(kind 保留,再钉秒回)。
+    @MainActor
+    func unpinAgentEngine() {
+        userDefaults.set(false, forKey: Self.agentModeEnabledKey)
+        agentModeRouter?.setEngine(nil)
+        wireACPPermissionHandler()   // engine=nil → 只重置会话 UI,不注入回调
+        Task { @MainActor in await syncMentionConfigurationToState() }
+    }
+
+    /// 把最新补全/pin 配置刷进卡片 state(pin/unpin/设置保存后调;开卡走 provider 路径)。
+    @MainActor
+    func syncMentionConfigurationToState() async {
+        guard let state = chatCardWindowController?.cardState else { return }
+        let cfg = await refreshMentionConfiguration()
+        state.mentionOptions = cfg.options
+        state.pinnedMentionTrigger = cfg.pinnedTrigger
+    }
+
+    /// engine id → mention trigger(`AgentMention.engineCandidates` 反查;pin 态展示用)。
+    nonisolated static func mentionTrigger(forEngineId engineId: String) -> String? {
+        AgentMention.engineCandidates.first { $0.kind.rawValue == engineId }?.trigger
+    }
+
+    /// engine id → SF Symbol 图标(补全弹层 / 目标图标用)。
     /// 写死 id 映射（图标本就是 per-engine 定制）；未来 entry 加 iconSymbol 字段可去除此处 switch。
     nonisolated static func replyIcon(for engineId: String) -> String {
         switch engineId {
@@ -178,7 +203,7 @@ extension MinimalAppDelegate {
         }
     }
 
-    /// engine id → 品牌 logo（segmented / 补全弹层真品牌图标;无匹配时 nil 走 `systemImage`）。
+    /// engine id → 品牌 logo（弹层 / 目标图标真品牌图标;无匹配时 nil 走 `systemImage`）。
     nonisolated static func replyBrandLogo(for engineId: String) -> BrandLogo? {
         switch engineId {
         case AgentEngineKind.claudeCode.rawValue: return .claude

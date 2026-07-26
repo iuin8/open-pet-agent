@@ -105,12 +105,14 @@ struct ChatCardStateSourceTests {
 // MARK: - P5 follow-up @mention 补全
 
 @MainActor
-@Suite("ChatCardState @mention 补全配置")
+@Suite("ChatCardState @mention / pin 配置")
 struct ChatCardStateMentionTests {
-    @Test("默认关闭:候选空 + mentionEnabled false(灵魂层不弹补全)")
+    @Test("默认:候选空 + 未钉(nil = 默认灵魂层)+ pin 回调 nil")
     func mentionDefaultsOff() {
         let s = ChatCardState()
         #expect(s.mentionOptions.isEmpty)
-        #expect(s.mentionEnabled == false)
+        #expect(s.pinnedMentionTrigger == nil)
+        #expect(s.onPinMentionTrigger == nil)
+        #expect(s.onUnpinMention == nil)
     }
 }

@@ -71,11 +71,8 @@ struct PetChatTabContent: View {
                     ContextUsageBar(adaptiveUsed: used, cost: state.contextCost, detail: state.contextDetail)
                 }
             }
-            if !state.replyOptions.isEmpty || state.currentProject != nil {
+            if state.acpSessionUIEnabled || state.currentProject != nil {
                 HStack(spacing: 6) {
-                    if !state.replyOptions.isEmpty {
-                        ReplySourceBar(selected: replyTargetBinding, options: state.replyOptions)
-                    }
                     // ACP-4(P2):会话选择器,能力门控(loadSession + list 都支持 App 才置 enabled)
                     if state.acpSessionUIEnabled {
                         ACPSessionPicker(state: state)
@@ -107,7 +104,9 @@ struct PetChatTabContent: View {
                 draft: $state.draft,
                 isSending: state.isSending,
                 mentionOptions: state.mentionOptions,
-                mentionEnabled: state.mentionEnabled
+                pinnedMentionTrigger: state.pinnedMentionTrigger,
+                onPinMention: { state.onPinMentionTrigger?($0) },
+                onUnpinMention: { state.onUnpinMention?() }
             ) {
                 onSend(state.draft)
             }
@@ -115,13 +114,5 @@ struct PetChatTabContent: View {
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .padding(.bottom, 12)
-    }
-
-    /// 回复来源绑定：set 触发 `commitReplyTarget`（持久化 + 即时切 engine）。
-    private var replyTargetBinding: Binding<ReplyTarget> {
-        Binding(
-            get: { state.replyTarget },
-            set: { state.commitReplyTarget($0) }
-        )
     }
 }

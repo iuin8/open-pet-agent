@@ -96,20 +96,6 @@ public final class ChatCardState: ObservableObject {
     /// 避 accessory activate 闪 Dock）；取消钉住 → .normal+.transient 可被其他 app 盖住（标准切应用行为）。
     @Published public var isPinned: Bool = true
 
-    /// 回复来源（灵魂层 vs Agent 层 engine）—— Composer 上方 segmented 的当前选中。
-    /// App 注入（开卡时从 UserDefaults 派生）；用户切换经 `commitReplyTarget` 触发持久化。
-    @Published public var replyTarget: ReplyTarget = .soul
-    /// 可选回复来源列表（App 从 `AgentEngineRegistry.all` 派生注入）。空 → 不渲染 `ReplySourceBar`。
-    @Published public var replyOptions: [ReplyOption] = []
-    /// 切换回复来源回调（App 注入：写 UserDefaults + `router.setEngine` 即时生效）。nil → 仅改本地（测试/preview）。
-    public var onCommitReplyTarget: (@MainActor (ReplyTarget) -> Void)?
-
-    /// 设置回复来源 + 触发 `onCommitReplyTarget`（持久化 + 即时切 engine）。
-    public func commitReplyTarget(_ target: ReplyTarget) {
-        replyTarget = target
-        onCommitReplyTarget?(target)
-    }
-
     /// 当前 agent 工作项目(Composer 上方 `ProjectMenu` 的当前选中)。
     /// App 注入(开卡时从 `ProjectStore.current()` 派生);切换经 `commitProject` 触发持久化 + 重 apply engine。
     @Published public var currentProject: ProjectOption?
@@ -171,13 +157,18 @@ public final class ChatCardState: ObservableObject {
     /// 当前 in-flight stream task，cancel 用。非 @Published（不直接驱动 UI）。
     public var streamTask: Task<Void, Never>?
 
-    // MARK: - @mention 补全弹层(P5 follow-up)
+    // MARK: - @mention 补全弹层 + P6 pin 模型
 
-    /// 补全候选(App 开卡时注入:`AgentMention.candidates` × registry 展示/logo × CLI 可用性)。
-    /// 空 → 不弹补全(灵魂层 / 工具层关闭)。
+    /// 补全候选(App 开卡时注入:`AgentMention` 引擎候选 + soul 行 × registry 展示/logo ×
+    /// CLI 可用性)。空 → 不弹补全。
     @Published public var mentionOptions: [MentionOption] = []
-    /// @mention 是否启用(= 工具层开启;App 注入)。false → composer 不弹补全、占位文案不带 @ 提示。
-    @Published public var mentionEnabled: Bool = false
+    /// P6:当前钉住的引擎 trigger(nil = 未钉,默认灵魂层)。App 注入/刷新;
+    /// composer 目标图标按它 + draft 解析有效目标(`ComposerTargetResolver`)。
+    @Published public var pinnedMentionTrigger: String?
+    /// P6:composer 钉住回调(App 注入:UD enabled+kind 写入 + engine 装配 + 配置刷新)。
+    public var onPinMentionTrigger: (@MainActor (String) -> Void)?
+    /// P6:composer 取消钉住回调(App 注入:UD enabled=false + engine 释放 + 配置刷新)。
+    public var onUnpinMention: (@MainActor () -> Void)?
 
     public init() {}
 

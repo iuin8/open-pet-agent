@@ -201,18 +201,29 @@ public struct CompanionOrchestrator: Sendable {
             let timeout = Self.streamIdleTimeoutSeconds
 
             let work = Task {
-                // 工具层启用 + engine 注册 → 整条 prompt 走子进程, 跳过 LLM,
-                // **完全不启动 watchdog**(子进程时长无关 SSE idle 语义)。
-                if await agentModeBox.isAgentModeEnabled {
-                    // P5 @mention:行首 @opencode/@claude/@codex → 路由到对应 engine
-                    // (引擎池,各自私有 session);store 记**用户原文**(带 @,时间线可见),
-                    // engine 收剥离 mention 后的 prompt。
-                    let mention = AgentMention.parse(message)
+                // P6:@mention 解析**模式无关化** —— 先解析,再决定路径。
+                // `.engine(kind)` → 无视工具层开关直接路由池引擎(灵魂层默认态下 @ 也能唤起);
+                // `.soul`(@pet)→ 强制本条灵魂层(钉住引擎时的单条逃逸),prompt 剥离 mention;
+                // nil → 原分支(工具层启用 → 默认引擎;否则灵魂层)。
+                let mention = AgentMention.parse(message)
+                let mentionedKind: AgentEngineKind?
+                if case .engine(let kind) = mention.target {
+                    mentionedKind = kind
+                } else {
+                    mentionedKind = nil
+                }
+                let forceSoul = mention.target == .soul
+
+                // agent 路径:mention 指定引擎(P6 模式无关)或(工具层启用且未 @pet 强制灵魂)。
+                // 工具层路径**完全不启动 watchdog**(子进程时长无关 SSE idle 语义)。
+                let agentModeOn = await agentModeBox.isAgentModeEnabled
+                if mentionedKind != nil || (agentModeOn && !forceSoul) {
+                    // store 记**用户原文**(带 @,时间线可见),engine 收剥离 mention 后的 prompt。
                     let userMessage = ConversationMessage(role: .user, content: message)
                     await conversationStore?.append(userMessage)
                     // mention 引擎不可用(CLI 未装 / 工厂无法构建)→ 友好文案 finish,
                     // 不抛错打断卡片(用户可换引擎重发)。
-                    if let kind = mention.kind, await !agentModeBox.canRunAgent(kind: kind) {
+                    if let kind = mentionedKind, await !agentModeBox.canRunAgent(kind: kind) {
                         let hint = Self.mentionUnavailableMessage(kind: kind)
                         continuation.yield(hint)
                         await conversationStore?.append(ConversationMessage(
@@ -224,21 +235,21 @@ public struct CompanionOrchestrator: Sendable {
                     // 包进 prompt(一次性;store 只记用户原文,不记交接包装)。
                     // P5:桶按实际跑的 engine(mention 目标或默认)计算。
                     let prompt: String
-                    if let handoff = await agentHandoffContext?(mention.kind) {
+                    if let handoff = await agentHandoffContext?(mentionedKind) {
                         prompt = Self.wrapAgentHandoff(mention.prompt, handoff: handoff)
                     } else {
                         prompt = mention.prompt
                     }
                     var accumulated = ""
                     do {
-                        for try await delta in agentModeBox.runAgent(prompt: prompt, kind: mention.kind) {
+                        for try await delta in agentModeBox.runAgent(prompt: prompt, kind: mentionedKind) {
                             accumulated += delta
                             continuation.yield(delta)
                         }
                         if !accumulated.isEmpty {
                             // P5 署名:assistant 消息记实际跑的 engine kind(时间线 chip)。
                             let defaultKind = await agentModeBox.currentEngineKind
-                            let ranKind = mention.kind ?? defaultKind
+                            let ranKind = mentionedKind ?? defaultKind
                             let assistantMessage = ConversationMessage(
                                 role: .assistant,
                                 content: accumulated,
@@ -254,6 +265,8 @@ public struct CompanionOrchestrator: Sendable {
                 }
 
                 // 灵魂层 (LLM) 路径 — 启动 watchdog 监控 SSE idle。
+                // P6:@pet → prompt 剥离 mention(store 仍记原文)。
+                let soulPrompt = forceSoul ? mention.prompt : message
                 guard let provider = await llmProviderBox.current else {
                     // 用户没配 provider:yield 友好提示, finish, 不启 watchdog。
                     continuation.yield(Self.providerNotConfiguredMessage)
@@ -275,7 +288,7 @@ public struct CompanionOrchestrator: Sendable {
                 }
 
                 do {
-                    let messages = try await buildMessages(for: message)
+                    let messages = try await buildMessages(for: soulPrompt)
                     let userMessage = ConversationMessage(role: .user, content: message)
                     await conversationStore?.append(userMessage)
 
