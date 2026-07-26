@@ -10,13 +10,17 @@ public struct ChatCardRow: Identifiable, Equatable, Sendable {
     public let timestamp: Date
     /// P5:assistant 消息的来源 engine 短标签(@mention 多引擎署名 chip;nil = 不显示)。
     public let source: String?
+    /// P6.1:用户行行首 `@trigger`(引擎或 pet;落盘文本保留原文,渲染时换图标 chip
+    /// 并剥除前缀;nil = 普通用户行)。
+    public let userMentionTrigger: String?
 
-    public init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date(), source: String? = nil) {
+    public init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date(), source: String? = nil, userMentionTrigger: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.timestamp = timestamp
         self.source = source
+        self.userMentionTrigger = userMentionTrigger
     }
 }
 
@@ -165,6 +169,9 @@ public final class ChatCardState: ObservableObject {
     /// P6:当前钉住的引擎 trigger(nil = 未钉,默认灵魂层)。App 注入/刷新;
     /// composer 目标图标按它 + draft 解析有效目标(`ComposerTargetResolver`)。
     @Published public var pinnedMentionTrigger: String?
+    /// P6.1:胶囊选中的**一次性**目标 trigger(nil = 无;发送即清空回弹)。
+    /// 与 `pinnedMentionTrigger` 正交:打字完整 @ > 胶囊选中 > pinned > soul。
+    @Published public var selectedMentionTrigger: String?
     /// P6:composer 钉住回调(App 注入:UD enabled+kind 写入 + engine 装配 + 配置刷新)。
     public var onPinMentionTrigger: (@MainActor (String) -> Void)?
     /// P6:composer 取消钉住回调(App 注入:UD enabled=false + engine 释放 + 配置刷新)。
@@ -174,8 +181,9 @@ public final class ChatCardState: ObservableObject {
 
     /// 乐观追加：一条 user + 一条空 assistant（占位，供流式覆写）。返回 assistant row 的 id。
     /// P5:`assistantSource` = 目标 engine 短标签(@mention 署名 chip,App 注入解析;nil 无 chip)。
-    public func appendExchangePlaceholder(userText: String, now: Date = Date(), assistantSource: String? = nil) -> UUID {
-        messages.append(ChatCardRow(role: .user, text: userText, timestamp: now))
+    /// P6.1:`userMentionTrigger` = 用户行行首 mention trigger(渲染图标 chip;nil 普通行)。
+    public func appendExchangePlaceholder(userText: String, now: Date = Date(), assistantSource: String? = nil, userMentionTrigger: String? = nil) -> UUID {
+        messages.append(ChatCardRow(role: .user, text: userText, timestamp: now, userMentionTrigger: userMentionTrigger))
         let assistant = ChatCardRow(role: .assistant, text: "", timestamp: now, source: assistantSource)
         messages.append(assistant)
         return assistant.id

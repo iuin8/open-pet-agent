@@ -164,3 +164,69 @@ struct ChatCardWindowControllerTests {
         #expect(ctrl.cardState.codexProjectionSyncMessage == nil)
     }
 }
+
+
+// MARK: - P6.1 一次性目标烘焙与回弹
+
+@MainActor
+@Suite("ChatCardWindowController P6.1 一次性目标")
+struct ChatCardWindowControllerSelectionTests {
+
+    private func codexOption() -> MentionOption {
+        MentionOption(trigger: "codex", label: "Codex", systemImage: "x", brandLogo: .codex, available: true)
+    }
+
+    @Test("胶囊选中 → 发送烘焙 @ 前缀 + 选中态清空(回弹)+ 用户行带 chip + 文本保真")
+    func sendWithSelectedMention() async {
+        final class Box: @unchecked Sendable { var sent: String? }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { text in
+            box.sent = text
+            return AsyncThrowingStream { $0.finish() }
+        })
+        ctrl.cardState.mentionOptions = [codexOption()]
+        ctrl.cardState.selectedMentionTrigger = "codex"
+
+        ctrl.handleSend("看下构建")
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.sent == "@codex 看下构建")               // 烘焙进既有路由管线
+        #expect(ctrl.cardState.selectedMentionTrigger == nil)  // 发送即回弹
+        #expect(ctrl.cardState.messages[0].userMentionTrigger == "codex")
+        #expect(ctrl.cardState.messages[0].text == "@codex 看下构建")   // 落盘保真
+    }
+
+    @Test("打字完整 @ 时不重复补前缀(打字党优先)")
+    func sendWithTypedMentionNoDoubleBake() async {
+        final class Box: @unchecked Sendable { var sent: String? }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { text in
+            box.sent = text
+            return AsyncThrowingStream { $0.finish() }
+        })
+        ctrl.cardState.mentionOptions = [codexOption()]
+        ctrl.cardState.selectedMentionTrigger = "opencode"   // 胶囊还选着别的 → 打字党赢
+
+        ctrl.handleSend("@codex 看下")
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.sent == "@codex 看下")
+        #expect(ctrl.cardState.messages[0].userMentionTrigger == "codex")
+    }
+
+    @Test("无选中无 mention → 原文直发,行无 chip")
+    func sendPlain() async {
+        final class Box: @unchecked Sendable { var sent: String? }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { text in
+            box.sent = text
+            return AsyncThrowingStream { $0.finish() }
+        })
+
+        ctrl.handleSend("普通一句")
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.sent == "普通一句")
+        #expect(ctrl.cardState.messages[0].userMentionTrigger == nil)
+    }
+}

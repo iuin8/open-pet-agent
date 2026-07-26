@@ -10,8 +10,16 @@ struct ChatCardMessageRow: View {
     let row: ChatCardRow
     /// in-flight assistant row 思考中(text 空 + isThinking → 显示「思考中…」替代打点)。
     var isThinking: Bool = false
+    /// P6.1:mention 候选(用户行 `@trigger` → 图标 chip 解析;空 → 退化为原文)。
+    var mentionOptions: [MentionOption] = []
 
     private var isUser: Bool { row.role == .user }
+
+    /// P6.1:用户行 mention 图标(trigger → 候选;查不到 → nil 退化为原文展示)。
+    private var userMention: MentionOption? {
+        guard let trigger = row.userMentionTrigger else { return nil }
+        return mentionOptions.first { $0.trigger == trigger }
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -42,10 +50,18 @@ struct ChatCardMessageRow: View {
     @ViewBuilder
     private var bubbleContent: some View {
         if isUser {
-            Text(row.text)
-                .font(ChatCardTheme.body)
-                .foregroundStyle(ChatCardTheme.userBubbleText)
-                .textSelection(.enabled)
+            // P6.1:行首 @trigger 渲染为引擎 logo chip + 剥除前缀的正文(落盘原文不动)。
+            HStack(alignment: .center, spacing: 5) {
+                if let mention = userMention {
+                    mentionChip(mention)
+                }
+                Text(userMention != nil
+                     ? MentionAutocomplete.strippingLeadingMention(row.text, options: mentionOptions)
+                     : row.text)
+                    .font(ChatCardTheme.body)
+                    .foregroundStyle(ChatCardTheme.userBubbleText)
+                    .textSelection(.enabled)
+            }
         } else if row.text.isEmpty {
             if isThinking {
                 Text("思考中…")
@@ -63,6 +79,25 @@ struct ChatCardMessageRow: View {
             )
             .foregroundStyle(ChatCardTheme.petBubbleText)
         }
+    }
+
+    /// P6.1:用户行 mention 图标 chip(引擎 logo / paw;白字在 accent 气泡上)。
+    @ViewBuilder
+    private func mentionChip(_ option: MentionOption) -> some View {
+        Group {
+            if let logo = option.brandLogo {
+                BrandLogoShape(logo: logo)
+                    .fill(logo.defaultColor, style: logo.fillRule)
+                    .frame(width: 11, height: 11)
+                    .clipped()
+            } else {
+                Image(systemName: option.systemImage)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(ChatCardTheme.userBubbleText)
+            }
+        }
+        .padding(3)
+        .background(Circle().fill(Color.white.opacity(0.22)))
     }
 
     private var bubbleShape: UnevenRoundedRectangle {

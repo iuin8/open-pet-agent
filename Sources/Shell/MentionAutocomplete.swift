@@ -43,6 +43,39 @@ public enum MentionAutocomplete {
     public static func acceptedDraft(trigger: String) -> String {
         "@\(trigger) "
     }
+
+    // MARK: - P6.1 一次性目标烘焙 / 历史 chip 解析
+
+    /// 发送前烘焙:有选中目标且文本**不**已含完整行首 mention → 补 `@trigger ` 前缀
+    /// (交给既有路由管线,落盘保真原文);已有完整 mention(打字党)或 nil trigger → 原样。
+    public static func withMentionPrefix(_ text: String, trigger: String?, options: [MentionOption]) -> String {
+        guard let trigger, !trigger.isEmpty else { return text }
+        if resolvedTarget(in: text, options: options) != nil { return text }
+        return "@\(trigger) \(text)"
+    }
+
+    /// 用户行渲染数据:文本以完整 `@trigger `(词边界)开头 → 返回该候选;否则 nil。
+    /// 与 `resolvedTarget` 同规则但**要求 trigger 后有内容或正好结尾**(历史行总是完整消息)。
+    public static func leadingMention(in text: String, options: [MentionOption]) -> MentionOption? {
+        resolvedTarget(in: text, options: options)
+    }
+
+    /// 剥除行首 `@trigger ` 前缀后的展示正文(无 mention → 原文)。
+    public static func strippingLeadingMention(_ text: String, options: [MentionOption]) -> String {
+        guard leadingMention(in: text, options: options) != nil else { return text }
+        let rest = text.dropFirst()
+        let name = rest.prefix(while: \.isLetter)
+        return String(rest.dropFirst(name.count).drop(while: \.isWhitespace))
+    }
+
+    /// 胶囊选中时清理 draft:剥掉已键入的 `@片段`(连同后续空白),留下已写正文。
+    /// draft 不含行首 @ → 原样("@co" + 选 codex → "" + 目标,防"@co"残留进正文)。
+    public static func strippingDraftMention(_ draft: String) -> String {
+        guard draft.hasPrefix("@") else { return draft }
+        let rest = draft.dropFirst()
+        let name = rest.prefix(while: \.isLetter)
+        return String(rest.dropFirst(name.count).drop(while: \.isWhitespace))
+    }
 }
 
 /// 补全弹层一行候选。App 从 `AgentMention.candidates` × registry 展示名/logo × CLI
@@ -83,17 +116,23 @@ public enum ComposerTarget: Equatable, Sendable {
     case engine(MentionOption, pinned: Bool)
 }
 
-/// `ComposerTarget` 纯解析(可单测):draft 含完整 mention → 预览态(优先,哪怕 pin 了
-/// 别的引擎);否则 pinned;再否则 soul。
+/// `ComposerTarget` 纯解析(可单测)。优先级:**打字完整 @ > 胶囊选中 > pinned > soul**
+/// (打字党不被胶囊状态覆盖);胶囊 paw(isSoul)→ soul 一次性逃逸预览。
 public enum ComposerTargetResolver {
     public static func resolve(
         draft: String,
         options: [MentionOption],
-        pinnedTrigger: String?
+        pinnedTrigger: String?,
+        selectedTrigger: String? = nil
     ) -> ComposerTarget {
         if let preview = MentionAutocomplete.resolvedTarget(in: draft, options: options) {
             if preview.isSoul { return .soul }
             return .engine(preview, pinned: preview.trigger == pinnedTrigger)
+        }
+        if let selectedTrigger,
+           let selected = options.first(where: { $0.trigger == selectedTrigger }) {
+            if selected.isSoul { return .soul }
+            return .engine(selected, pinned: selected.trigger == pinnedTrigger)
         }
         if let pinnedTrigger,
            let pinned = options.first(where: { $0.trigger == pinnedTrigger && !$0.isSoul }) {

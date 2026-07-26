@@ -25,7 +25,7 @@ struct PetChatTabContent: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if state.messages.isEmpty { emptyHint }
                     ForEach(state.messages) { row in
-                        ChatCardMessageRow(row: row, isThinking: state.isThinking)
+                        ChatCardMessageRow(row: row, isThinking: state.isThinking, mentionOptions: state.mentionOptions)
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
@@ -105,6 +105,8 @@ struct PetChatTabContent: View {
                 isSending: state.isSending,
                 mentionOptions: state.mentionOptions,
                 pinnedMentionTrigger: state.pinnedMentionTrigger,
+                selectedMentionTrigger: state.selectedMentionTrigger,
+                onSelectMention: { state.selectedMentionTrigger = $0 },
                 onPinMention: { state.onPinMentionTrigger?($0) },
                 onUnpinMention: { state.onUnpinMention?() }
             ) {
