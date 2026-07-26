@@ -192,6 +192,18 @@ extension MinimalAppDelegate {
         AgentMention.engineCandidates.first { $0.kind.rawValue == engineId }?.trigger
     }
 
+    /// P6.1:用户消息行首 mention → trigger(历史用户行图标 chip;无 mention → nil)。
+    nonisolated static func mentionTrigger(from text: String) -> String? {
+        switch AgentMention.parse(text).target {
+        case .engine(let kind):
+            return AgentMention.engineCandidates.first { $0.kind == kind }?.trigger
+        case .soul:
+            return AgentMention.soulCanonicalTrigger
+        case nil:
+            return nil
+        }
+    }
+
     /// engine id → SF Symbol 图标(补全弹层 / 目标图标用)。
     /// 写死 id 映射（图标本就是 per-engine 定制）；未来 entry 加 iconSymbol 字段可去除此处 switch。
     nonisolated static func replyIcon(for engineId: String) -> String {

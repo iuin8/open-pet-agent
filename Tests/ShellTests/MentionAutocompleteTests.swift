@@ -139,3 +139,82 @@ struct ComposerTargetResolverTests {
         #expect(ComposerTarget.soul.helpText.contains("@"))
     }
 }
+
+
+// MARK: - P6.1 烘焙 / 历史 chip 解析 / draft 清理
+
+@Suite("MentionAutocomplete P6.1 烘焙与解析")
+struct MentionAutocompleteBakeTests {
+
+    private let options = [
+        MentionOption(trigger: "pet", label: "Pet", systemImage: "pawprint.fill", brandLogo: nil, available: true, isSoul: true),
+        MentionOption(trigger: "opencode", label: "opencode", systemImage: "terminal.fill", brandLogo: .opencode, available: true),
+        MentionOption(trigger: "claude", label: "Claude", systemImage: "bolt.fill", brandLogo: .claude, available: true),
+        MentionOption(trigger: "codex", label: "Codex", systemImage: "chevron.left.forwardslash.chevron.right", brandLogo: .codex, available: true),
+    ]
+
+    @Test("withMentionPrefix:有选中且无行首 mention → 补前缀;nil trigger → 原样")
+    func prefixBake() {
+        #expect(MentionAutocomplete.withMentionPrefix("看日志", trigger: "codex", options: options) == "@codex 看日志")
+        #expect(MentionAutocomplete.withMentionPrefix("看日志", trigger: nil, options: options) == "看日志")
+    }
+
+    @Test("withMentionPrefix:已含完整行首 mention(打字党)→ 不重复补")
+    func prefixNoDouble() {
+        #expect(MentionAutocomplete.withMentionPrefix("@claude 写测试", trigger: "codex", options: options) == "@claude 写测试")
+    }
+
+    @Test("leadingMention / strippingLeadingMention:chip 数据与展示正文(落盘原文不动)")
+    func leadingParse() {
+        #expect(MentionAutocomplete.leadingMention(in: "@codex 看日志", options: options)?.trigger == "codex")
+        #expect(MentionAutocomplete.leadingMention(in: "@pet 聊聊", options: options)?.isSoul == true)
+        #expect(MentionAutocomplete.leadingMention(in: "普通消息", options: options) == nil)
+        #expect(MentionAutocomplete.strippingLeadingMention("@codex 看日志", options: options) == "看日志")
+        #expect(MentionAutocomplete.strippingLeadingMention("普通消息", options: options) == "普通消息")
+    }
+
+    @Test("strippingDraftMention:剥掉已键入的 @ 片段,保留正文")
+    func draftStrip() {
+        #expect(MentionAutocomplete.strippingDraftMention("@co") == "")
+        #expect(MentionAutocomplete.strippingDraftMention("@codex ") == "")
+        #expect(MentionAutocomplete.strippingDraftMention("@codex 已写的正文") == "已写的正文")
+        #expect(MentionAutocomplete.strippingDraftMention("没有@") == "没有@")
+    }
+}
+
+// MARK: - P6.1 ComposerTargetResolver 胶囊选中优先级
+
+@Suite("ComposerTargetResolver P6.1 胶囊选中")
+struct ComposerTargetResolverSelectionTests {
+
+    private let options = [
+        MentionOption(trigger: "pet", label: "Pet", systemImage: "pawprint.fill", brandLogo: nil, available: true, isSoul: true),
+        MentionOption(trigger: "opencode", label: "opencode", systemImage: "terminal.fill", brandLogo: .opencode, available: true),
+        MentionOption(trigger: "codex", label: "Codex", systemImage: "chevron.left.forwardslash.chevron.right", brandLogo: .codex, available: true),
+    ]
+
+    @Test("胶囊选中(未打字)→ 一次性引擎目标(未钉)")
+    func capsuleSelection() {
+        let t = ComposerTargetResolver.resolve(draft: "干活", options: options, pinnedTrigger: nil, selectedTrigger: "codex")
+        #expect(t == .engine(options[2], pinned: false))
+        #expect(!t.isPinnedEngine)
+    }
+
+    @Test("打字完整 @ > 胶囊选中(打字党优先,不被胶囊状态覆盖)")
+    func typedBeatsSelection() {
+        let t = ComposerTargetResolver.resolve(draft: "@opencode 看", options: options, pinnedTrigger: nil, selectedTrigger: "codex")
+        #expect(t == .engine(options[1], pinned: false))
+    }
+
+    @Test("胶囊选中 > pinned;选中 paw → soul 一次性逃逸")
+    func selectionBeatsPinnedAndPawEscape() {
+        let t = ComposerTargetResolver.resolve(draft: "干活", options: options, pinnedTrigger: "codex", selectedTrigger: "opencode")
+        #expect(t == .engine(options[1], pinned: false))
+        #expect(ComposerTargetResolver.resolve(draft: "聊聊", options: options, pinnedTrigger: "codex", selectedTrigger: "pet") == .soul)
+    }
+
+    @Test("选中 trigger 不在候选里 → 继续往下判(pinned/soul 兜底)")
+    func selectionMissingFallback() {
+        #expect(ComposerTargetResolver.resolve(draft: "", options: options, pinnedTrigger: "codex", selectedTrigger: "gemini") == .engine(options[2], pinned: true))
+    }
+}

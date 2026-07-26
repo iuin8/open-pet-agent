@@ -116,3 +116,24 @@ struct ChatCardStateMentionTests {
         #expect(s.onUnpinMention == nil)
     }
 }
+
+
+// MARK: - P6.1 一次性目标(chip + 落盘保真)
+
+@MainActor
+@Suite("ChatCardState P6.1 一次性目标")
+struct ChatCardStateSelectionTests {
+    @Test("appendExchangePlaceholder 带 userMentionTrigger → user 行记录;assistant 行无;文本保真")
+    func placeholderUserMention() {
+        let s = ChatCardState()
+        _ = s.appendExchangePlaceholder(userText: "@codex 看下", userMentionTrigger: "codex")
+        #expect(s.messages[0].userMentionTrigger == "codex")
+        #expect(s.messages[0].text == "@codex 看下")   // 落盘/行文本保留 @ 原文
+        #expect(s.messages[1].userMentionTrigger == nil)
+    }
+
+    @Test("selectedMentionTrigger 默认 nil(无一次性目标)")
+    func selectionDefaultsNil() {
+        #expect(ChatCardState().selectedMentionTrigger == nil)
+    }
+}

@@ -504,7 +504,9 @@ extension MinimalAppDelegate {
             let msgs = await store.messages()
             return msgs.compactMap { m -> ChatCardRow? in
                 switch m.role {
-                case .user:      return ChatCardRow(role: .user, text: m.content, timestamp: m.timestamp)
+                case .user:      return ChatCardRow(
+                    role: .user, text: m.content, timestamp: m.timestamp,
+                    userMentionTrigger: Self.mentionTrigger(from: m.content))   // P6.1 mention chip
                 case .assistant: return ChatCardRow(
                     role: .assistant, text: m.content, timestamp: m.timestamp,
                     source: m.source.map { Self.engineShortLabel(forId: $0) })   // P5 署名 chip

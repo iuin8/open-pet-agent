@@ -143,15 +143,25 @@ public final class ChatCardWindowController {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !state.isSending else { return }
         state.draft = ""
+        // P6.1:一次性目标(胶囊选中)烘焙为 `@trigger ` 前缀,交给既有路由管线
+        // (orchestrator/署名/落盘零改动);打字完整 @ 的文本原样(不重复补)。
+        // 发送即清空选中态 —— 未钉住自动回弹 paw/pinned。
+        let effectiveText = MentionAutocomplete.withMentionPrefix(
+            trimmed, trigger: state.selectedMentionTrigger, options: state.mentionOptions)
+        state.selectedMentionTrigger = nil
         // P5 @mention 署名:发送时(App 注入解析)定下 assistant 行来源 chip。
-        let source = assistantSourceProvider?(trimmed)
-        let assistantID = state.appendExchangePlaceholder(userText: trimmed, assistantSource: source)
+        let source = assistantSourceProvider?(effectiveText)
+        // P6.1:用户行 mention chip(渲染换图标;落盘原文不动)。
+        let userMentionTrigger = MentionAutocomplete.leadingMention(
+            in: effectiveText, options: state.mentionOptions)?.trigger
+        let assistantID = state.appendExchangePlaceholder(
+            userText: effectiveText, assistantSource: source, userMentionTrigger: userMentionTrigger)
         state.isSending = true
         let provider = streamProvider
         state.streamTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let stream = provider(trimmed)
+                let stream = provider(effectiveText)
                 var full = ""
                 var lastUpdateAt = Date.distantPast
                 for try await delta in stream {
