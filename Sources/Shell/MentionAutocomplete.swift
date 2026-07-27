@@ -106,58 +106,37 @@ public struct MentionOption: Equatable, Sendable, Identifiable {
     }
 }
 
-// MARK: - composer 目标图标状态机(P6 pin 模型)
+// MARK: - P6.2 tray token(composer 上方标签条)
 
-/// composer 目标图标的有效目标(soul / pinned engine / @ 预览 engine)。
-public enum ComposerTarget: Equatable, Sendable {
-    /// 灵魂层(pet 人格聊天,默认)。
-    case soul
-    /// 引擎目标;pinned = true → 钉住态(实色 + pin badge),false → @ 输入中的预览态。
-    case engine(MentionOption, pinned: Bool)
+/// tray 里的 mention token:行首路由目标。深浅色 = 是否钉住。
+public struct MentionTrayToken: Equatable, Sendable {
+    public let option: MentionOption
+    /// true = 钉住(深色常驻);false = 一次性(浅色,发送后清空)。
+    public let isPinned: Bool
+
+    public init(option: MentionOption, isPinned: Bool) {
+        self.option = option
+        self.isPinned = isPinned
+    }
 }
 
-/// `ComposerTarget` 纯解析(可单测)。优先级:**打字完整 @ > 胶囊选中 > pinned > soul**
-/// (打字党不被胶囊状态覆盖);胶囊 paw(isSoul)→ soul 一次性逃逸预览。
-public enum ComposerTargetResolver {
-    public static func resolve(
-        draft: String,
-        options: [MentionOption],
+public extension MentionAutocomplete {
+    /// tray 有效 token:选中(picker/打字落 token)trigger ?? pinnedTrigger;都没有 → nil
+    ///(composer 无 chrome)。depth = trigger == pinnedTrigger;selected 查不到候选 →
+    /// pinned 兜底(数据不同步不裸奔)。
+    static func trayToken(
+        selectedTrigger: String?,
         pinnedTrigger: String?,
-        selectedTrigger: String? = nil
-    ) -> ComposerTarget {
-        if let preview = MentionAutocomplete.resolvedTarget(in: draft, options: options) {
-            if preview.isSoul { return .soul }
-            return .engine(preview, pinned: preview.trigger == pinnedTrigger)
-        }
+        options: [MentionOption]
+    ) -> MentionTrayToken? {
         if let selectedTrigger,
            let selected = options.first(where: { $0.trigger == selectedTrigger }) {
-            if selected.isSoul { return .soul }
-            return .engine(selected, pinned: selected.trigger == pinnedTrigger)
+            return MentionTrayToken(option: selected, isPinned: selected.trigger == pinnedTrigger)
         }
         if let pinnedTrigger,
-           let pinned = options.first(where: { $0.trigger == pinnedTrigger && !$0.isSoul }) {
-            return .engine(pinned, pinned: true)
+           let pinned = options.first(where: { $0.trigger == pinnedTrigger }) {
+            return MentionTrayToken(option: pinned, isPinned: true)
         }
-        return .soul
-    }
-}
-
-public extension ComposerTarget {
-    /// 是否 pinned 引擎态(实色 + pin badge)。
-    var isPinnedEngine: Bool {
-        if case .engine(_, pinned: true) = self { return true }
-        return false
-    }
-
-    /// 图标 tooltip(当前状态 + 可执行动作)。
-    var helpText: String {
-        switch self {
-        case .soul:
-            return "当前:Pet 聊天 · 输入 @ 点名引擎"
-        case .engine(let option, let pinned):
-            return pinned
-                ? "已钉住 @\(option.trigger)(点击取消,回到 Pet 聊天)"
-                : "本条将由 @\(option.trigger) 回复(点击钉住,之后不用每条 @)"
-        }
+        return nil
     }
 }

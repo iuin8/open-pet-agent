@@ -4,13 +4,14 @@ import SwiftUI
 /// 借鉴 AccountyCat (https://github.com/strjonas/AccountyCat) 的 ComposerView：focus 时 accent 描边、圆形发送钮带招牌
 /// `accentShadow` 静态压深（4pt y、0 radius）给按钮触感。
 ///
-/// P6.1 目标选择闭环:**图标 = 一次性目标选择器,pin 徽标 = 唯一粘性开关,发送即回弹**。
-/// - 点目标图标(或打字 @)→ 纯图标胶囊(pet + 三引擎,未装置灰)弹出,选中收起;
-///   选中 = 一次性目标(`selectedMentionTrigger`),draft 自动剥除已键入的 `@` 片段。
-/// - 目标是引擎时图标右上角出 pin 徽标(空心未钉/实心已钉),点徽标切钉住态;
-///   取消钉住只走徽标(一次性与粘性各有唯一入口)。
+/// P6.2 mention token 化:**mention 活在消息里,composer 无常驻 chrome**。
+/// - 打字 @ → 行式 picker(图标 + 名字 + trigger + 未安装置灰);选中/敲全 trigger →
+///   落成 **tray 标签**(pill 上方标签条),draft 自动剥除已键入的 `@` 片段。
+/// - tray 标签 = 行首路由目标:深色 = 钉住(常驻)、浅色 = 一次性(发送后清空);
+///   点击 pin 图标切换钉/取消;× 移除(钉住态先取消钉住)。
 /// - 发送时选中目标经 `MentionAutocomplete.withMentionPrefix` 烘焙进文本(controller 做),
-///   发送即清空选中态 → 图标回弹 paw/pinned。
+///   路由/署名/落盘管线零改动。
+/// - 真 inline chip(文本流内嵌)需 NSTextView 编辑器 + 中文 IME 专项,留作将来里程碑。
 struct ChatCardComposer: View {
     @Binding var draft: String
     let isSending: Bool
@@ -18,23 +19,21 @@ struct ChatCardComposer: View {
     var mentionOptions: [MentionOption] = []
     /// P6:当前钉住的引擎 trigger(nil = 未钉,默认灵魂层)。
     var pinnedMentionTrigger: String? = nil
-    /// P6.1:胶囊选中的一次性目标 trigger(含 paw;nil = 无,发送即清空)。
+    /// P6.2:落 token 的一次性目标 trigger(含 paw;nil = 无,发送即清空)。
     var selectedMentionTrigger: String? = nil
-    /// P6.1:选中/再点取消回调(trigger;paw 也回传,用于一次性灵魂逃逸)。
+    /// P6.2:落 token / 移除回调(trigger;nil = 移除一次性 token)。
     var onSelectMention: ((String?) -> Void)? = nil
-    /// P6:钉住回调(pin 徽标 → 钉住该引擎)。
+    /// P6:钉住回调(tray 浅色标签点 pin → 钉住该引擎)。
     var onPinMention: ((String) -> Void)? = nil
-    /// P6:取消钉住回调(pin 徽标 → 回灵魂层)。
+    /// P6:取消钉住回调(tray 深色标签点 pin / × → 取消)。
     var onUnpinMention: (() -> Void)? = nil
     let onSend: () -> Void
 
     @FocusState private var focused: Bool
-    /// 胶囊高亮位(方向键移动;过滤结果变化时重置)。
+    /// picker 高亮行(过滤结果变化时重置)。
     @State private var selectedMentionIndex: Int = 0
     /// 打字 @ 被 Esc 手动关闭后,本段 mention 输入内不再自动弹出(重新进入 mention 输入时恢复)。
     @State private var mentionDismissed: Bool = false
-    /// 图标点击展开的全量胶囊(与打字 @ 触发的过滤胶囊同一份 UI)。
-    @State private var capsuleOpen: Bool = false
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
@@ -46,23 +45,16 @@ struct ChatCardComposer: View {
         return MentionAutocomplete.filter(mentionOptions, query: query)
     }
 
-    /// 胶囊当前展示的候选:打字过滤态用过滤结果;图标点击展开用全量。
-    private var capsuleOptions: [MentionOption] {
-        if !mentionMatches.isEmpty && !mentionDismissed { return mentionMatches }
-        return capsuleOpen ? mentionOptions : []
+    private var pickerVisible: Bool {
+        !mentionMatches.isEmpty && !mentionDismissed
     }
 
-    private var capsuleVisible: Bool {
-        !capsuleOptions.isEmpty
-    }
-
-    /// 有效目标(图标状态机):打字完整 @ > 胶囊选中 > pinned > soul。
-    private var composerTarget: ComposerTarget {
-        ComposerTargetResolver.resolve(
-            draft: draft,
-            options: mentionOptions,
+    /// tray 有效 token:选中 trigger ?? pinnedTrigger(都没有 → nil 无 chrome)。
+    private var trayToken: MentionTrayToken? {
+        MentionAutocomplete.trayToken(
+            selectedTrigger: selectedMentionTrigger,
             pinnedTrigger: pinnedMentionTrigger,
-            selectedTrigger: selectedMentionTrigger
+            options: mentionOptions
         )
     }
 
@@ -70,7 +62,8 @@ struct ChatCardComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if capsuleVisible { mentionCapsule }
+            if let token = trayToken { trayChip(token) }
+            if pickerVisible { mentionPicker }
             inputPill
         }
         // 过滤结果变化 → 高亮归零;进入新一段 mention 输入 → dismiss 复位
@@ -78,16 +71,20 @@ struct ChatCardComposer: View {
             selectedMentionIndex = 0
             if !mentionMatches.isEmpty { mentionDismissed = false }
         }
+        // 敲全 trigger(词边界)→ 自动落 token 并剥除 draft 里的 @ 片段(打字党一等公民)。
+        // 剥除后 draft 不再命中 resolvedTarget,onChange 不会自旋。
+        .onChange(of: draft) { _, newDraft in
+            guard let option = MentionAutocomplete.resolvedTarget(in: newDraft, options: mentionOptions),
+                  option.trigger != selectedMentionTrigger else { return }
+            onSelectMention?(option.trigger)
+            draft = MentionAutocomplete.strippingDraftMention(newDraft)
+        }
     }
 
     // MARK: - 输入 pill
 
     private var inputPill: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            targetIcon
-                .padding(.leading, 6)
-                .padding(.bottom, 3)
-
             TextField(placeholder, text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(ChatCardTheme.body)
@@ -95,11 +92,9 @@ struct ChatCardComposer: View {
                 .lineLimit(1...4)
                 .focused($focused)
                 .onSubmit(submit)
-                .onKeyPress(.leftArrow) { moveMentionSelection(-1) }
-                .onKeyPress(.rightArrow) { moveMentionSelection(1) }
                 .onKeyPress(.upArrow) { moveMentionSelection(-1) }
                 .onKeyPress(.downArrow) { moveMentionSelection(1) }
-                .onKeyPress(.escape) { dismissMentionCapsule() }
+                .onKeyPress(.escape) { dismissMentionPicker() }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
 
@@ -137,172 +132,166 @@ struct ChatCardComposer: View {
     }
 
     private func submit() {
-        // 胶囊可见时 Enter = 接受高亮候选(而非发送);胶囊关闭才走正常发送。
-        if capsuleVisible, capsuleOptions.indices.contains(selectedMentionIndex) {
-            acceptMention(capsuleOptions[selectedMentionIndex])
+        // picker 可见时 Enter = 接受高亮候选(而非发送);picker 关闭才走正常发送。
+        if pickerVisible, mentionMatches.indices.contains(selectedMentionIndex) {
+            acceptMention(mentionMatches[selectedMentionIndex])
             return
         }
         guard canSend else { return }
         onSend()
     }
 
-    // MARK: - P6.1 目标图标 + pin 徽标
+    // MARK: - P6.2 tray 标签
 
-    /// pill 前置目标图标:soul 爪印 / pinned 引擎(实色)/ 一次性目标(降透明)。
-    /// 图标本体点击 = 展开/收起胶囊(全量候选);引擎目标右上角 pin 徽标 = 钉住切换。
-    private var targetIcon: some View {
-        let target = composerTarget
-        return ZStack(alignment: .topTrailing) {
-            Button {
-                withAnimation(.easeOut(duration: 0.12)) { capsuleOpen.toggle() }
-                focused = true
-            } label: {
-                targetIconContent(target)
-                    .frame(width: 26, height: 26)
-                    .background(
-                        Circle().fill(
-                            target.isPinnedEngine
-                                ? ChatCardTheme.accent.opacity(0.14)
-                                : ChatCardTheme.inputFill
-                        )
-                    )
-            }
-            .buttonStyle(.plain)
-            .help(target.helpText)
-
-            // pin 徽标:引擎目标才显示;空心 = 未钉(点击钉住),实心 = 已钉(点击取消)。
-            if case .engine(let option, let pinned) = target {
+    /// tray 标签:引擎 logo/爪印 + 名字 + pin 切换(非 soul)+ × 移除。
+    /// 深色(钉住,白字)/ 浅色(一次性,accent 字)。
+    private func trayChip(_ token: MentionTrayToken) -> some View {
+        let pinned = token.isPinned
+        return HStack(spacing: 5) {
+            chipIcon(token.option, pinned: pinned)
+            Text(token.option.label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(chipForeground(pinned))
+            if !token.option.isSoul {
                 Button {
                     if pinned {
                         onUnpinMention?()
                     } else {
-                        onPinMention?(option.trigger)
+                        onPinMention?(token.option.trigger)
                     }
                 } label: {
                     Image(systemName: pinned ? "pin.fill" : "pin")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(ChatCardTheme.accent)
-                        .frame(width: 14, height: 14)
-                        .background(Circle().fill(ChatCardTheme.inputFill))
-                        .overlay(Circle().stroke(ChatCardTheme.accent.opacity(0.4), lineWidth: 0.5))
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(chipForeground(pinned).opacity(0.85))
                 }
                 .buttonStyle(.plain)
-                .help(pinned ? "取消钉住,回到 Pet 聊天" : "钉住 @\(option.trigger),之后不用每条 @")
-                .offset(x: 3, y: -3)
+                .help(pinned ? "取消钉住(转为一次性)" : "钉住 @\(token.option.trigger)(之后不用每条 @)")
             }
+            Button {
+                // × 移除:一次性 → 清选中;钉住态 → 取消钉住(token 随之消失)
+                if pinned {
+                    onUnpinMention?()
+                } else {
+                    onSelectMention?(nil)
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(chipForeground(pinned).opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("移除")
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule().fill(
+                pinned ? ChatCardTheme.accent.opacity(0.85) : ChatCardTheme.accent.opacity(0.14)
+            )
+        )
+    }
+
+    private func chipForeground(_ pinned: Bool) -> Color {
+        pinned ? Color.white : ChatCardTheme.accent
     }
 
     @ViewBuilder
-    private func targetIconContent(_ target: ComposerTarget) -> some View {
-        switch target {
-        case .soul:
-            Image(systemName: "pawprint.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(ChatCardTheme.accent)
-        case .engine(let option, let pinned):
-            Group {
-                if let logo = option.brandLogo {
-                    BrandLogoShape(logo: logo)
-                        .fill(logo.defaultColor, style: logo.fillRule)
-                        .frame(width: 14, height: 14)
-                        .clipped()
-                } else {
-                    Image(systemName: option.systemImage)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(ChatCardTheme.accent)
-                }
-            }
-            .opacity(pinned ? 1 : 0.55)   // 一次性目标降透明,与 pinned 区分
+    private func chipIcon(_ option: MentionOption, pinned: Bool) -> some View {
+        if let logo = option.brandLogo {
+            BrandLogoShape(logo: logo)
+                .fill(pinned ? Color.white : logo.defaultColor, style: logo.fillRule)
+                .frame(width: 11, height: 11)
+                .clipped()
+        } else {
+            Image(systemName: option.systemImage)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(chipForeground(pinned))
         }
     }
 
-    // MARK: - P6.1 纯图标胶囊
+    // MARK: - P6.2 行式 picker
 
-    /// 目标选择胶囊:pet + 三引擎纯图标横排,未装置灰;打字 @ 过滤 / 点图标全量同一份 UI。
-    private var mentionCapsule: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(capsuleOptions.enumerated()), id: \.element.id) { index, option in
+    /// 打字 @ 弹出的候选列表:图标 + 名字 + trigger + 未安装置灰(将来可按类型分区)。
+    private var mentionPicker: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(mentionMatches.enumerated()), id: \.element.id) { index, option in
                 Button {
                     acceptMention(option)
                 } label: {
-                    capsuleIcon(option)
-                        .frame(width: 30, height: 30)
-                        .background(
-                            Circle().fill(
-                                index == selectedMentionIndex
-                                    ? ChatCardTheme.accent.opacity(0.18)
-                                    : (selectedMentionTrigger == option.trigger
-                                        ? ChatCardTheme.accent.opacity(0.10)
-                                        : .clear)
-                            )
-                        )
+                    HStack(spacing: 8) {
+                        pickerIcon(option)
+                        Text(option.label)
+                            .font(ChatCardTheme.body)
+                            .foregroundStyle(ChatCardTheme.textPrimary)
+                        Text("@\(option.trigger)")
+                            .font(ChatCardTheme.timestamp)
+                            .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.4))
+                        Spacer()
+                        if !option.available {
+                            Text("未安装")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.4))
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(index == selectedMentionIndex ? ChatCardTheme.accent.opacity(0.14) : .clear)
+                    )
                 }
                 .buttonStyle(.plain)
-                .opacity(option.available ? 1 : 0.45)
-                .help(option.isSoul
-                      ? "Pet 灵魂层"
-                      : "\(option.label)(@\(option.trigger))\(option.available ? "" : " · 未安装")")
+                .opacity(option.available ? 1 : 0.55)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
+        .padding(4)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(ChatCardTheme.inputFill)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(ChatCardTheme.hairline, lineWidth: 1)
                 )
         )
     }
 
-    /// 品牌 logo 优先(与目标图标同款渲染),否则 SF Symbol(paw 走这里)。
+    /// 品牌 logo 优先,否则 SF Symbol(paw 走这里)。
     @ViewBuilder
-    private func capsuleIcon(_ option: MentionOption) -> some View {
+    private func pickerIcon(_ option: MentionOption) -> some View {
         if let logo = option.brandLogo {
             BrandLogoShape(logo: logo)
                 .fill(logo.defaultColor, style: logo.fillRule)
-                .frame(width: 15, height: 15)
+                .frame(width: 13, height: 13)
                 .clipped()
         } else {
             Image(systemName: option.systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(ChatCardTheme.accent)
         }
     }
 
-    // MARK: - 弹层交互
+    // MARK: - picker 交互
 
     private func moveMentionSelection(_ delta: Int) -> KeyPress.Result {
-        guard capsuleVisible else { return .ignored }
-        let count = capsuleOptions.count
+        guard pickerVisible else { return .ignored }
+        let count = mentionMatches.count
         selectedMentionIndex = (selectedMentionIndex + delta + count) % count
         return .handled
     }
 
-    private func dismissMentionCapsule() -> KeyPress.Result {
-        if capsuleOpen {
-            capsuleOpen = false
-            return .handled
-        }
-        guard !mentionMatches.isEmpty, !mentionDismissed else { return .ignored }
+    private func dismissMentionPicker() -> KeyPress.Result {
+        guard pickerVisible else { return .ignored }
         mentionDismissed = true
         return .handled
     }
 
-    /// 选中候选:一次性目标入 state(paw 也回传,一次性灵魂逃逸);draft 剥除已键入
-    /// 的 `@` 片段;再点同一候选 = 取消选中(回弹 nil)。选中后收起胶囊。
+    /// 选中候选:落 token(含 paw 一次性灵魂逃逸);draft 剥除已键入的 `@` 片段;收起 picker。
     private func acceptMention(_ option: MentionOption) {
-        if selectedMentionTrigger == option.trigger {
-            onSelectMention?(nil)
-        } else {
-            onSelectMention?(option.trigger)
-        }
+        onSelectMention?(option.trigger)
         draft = MentionAutocomplete.strippingDraftMention(draft)
         selectedMentionIndex = 0
         mentionDismissed = false
-        capsuleOpen = false
         focused = true
     }
 }
