@@ -3,7 +3,7 @@ import Testing
 @testable import Shell
 
 // P5 follow-up:@mention 补全弹层纯逻辑单测 —— query 判定(行首 @ 字母前缀)、
-// 前缀过滤(大小写不敏感)、接受补全 draft。弹层可见性 = 过滤结果非空(纯组合,不另测)。
+// 前缀过滤(大小写不敏感)、接受补全 draft。picker 可见性 = 过滤结果非空(纯组合,不另测)。
 
 @Suite("MentionAutocomplete 补全纯逻辑")
 struct MentionAutocompleteTests {
@@ -43,8 +43,7 @@ struct MentionAutocompleteTests {
     }
 }
 
-
-// MARK: - P6 resolvedTarget(composer 图标预览)
+// MARK: - P6 resolvedTarget(完整 trigger 词边界判定)
 
 @Suite("MentionAutocomplete resolvedTarget(P6)")
 struct MentionAutocompleteResolvedTargetTests {
@@ -56,7 +55,7 @@ struct MentionAutocompleteResolvedTargetTests {
         MentionOption(trigger: "codex", label: "Codex", systemImage: "chevron.left.forwardslash.chevron.right", brandLogo: .codex, available: false),
     ]
 
-    @Test("完整 trigger 即命中(无需空格/内容 —— 预览是「识别成功」反馈)")
+    @Test("完整 trigger 即命中(无需空格/内容 —— 落 token 判定)")
     func completeTriggerResolves() {
         #expect(MentionAutocomplete.resolvedTarget(in: "@codex", options: options)?.trigger == "codex")
         #expect(MentionAutocomplete.resolvedTarget(in: "@codex ", options: options)?.trigger == "codex")
@@ -79,67 +78,6 @@ struct MentionAutocompleteResolvedTargetTests {
         #expect(MentionAutocomplete.resolvedTarget(in: "", options: options) == nil)
     }
 }
-
-// MARK: - P6 ComposerTargetResolver(pin 模型状态机)
-
-@Suite("ComposerTargetResolver(P6 pin 模型)")
-struct ComposerTargetResolverTests {
-
-    private let options = [
-        MentionOption(trigger: "pet", label: "Pet", systemImage: "pawprint.fill", brandLogo: nil, available: true, isSoul: true),
-        MentionOption(trigger: "opencode", label: "opencode", systemImage: "terminal.fill", brandLogo: .opencode, available: true),
-        MentionOption(trigger: "codex", label: "Codex", systemImage: "chevron.left.forwardslash.chevron.right", brandLogo: .codex, available: true),
-    ]
-
-    @Test("无 mention + 未钉 → soul")
-    func defaultSoul() {
-        #expect(ComposerTargetResolver.resolve(draft: "", options: options, pinnedTrigger: nil) == .soul)
-        #expect(ComposerTargetResolver.resolve(draft: "普通一句", options: options, pinnedTrigger: nil) == .soul)
-    }
-
-    @Test("无 mention + 已钉 codex → pinned engine")
-    func pinnedEngine() {
-        let t = ComposerTargetResolver.resolve(draft: "干活", options: options, pinnedTrigger: "codex")
-        #expect(t == .engine(options[2], pinned: true))
-        #expect(t.isPinnedEngine)
-    }
-
-    @Test("draft 含完整 mention → 预览态优先(哪怕 pin 了别的引擎)")
-    func previewWins() {
-        // pin 的 codex,但 draft 是 @opencode → 预览 opencode(未钉)
-        let t = ComposerTargetResolver.resolve(draft: "@opencode 看一眼", options: options, pinnedTrigger: "codex")
-        #expect(t == .engine(options[1], pinned: false))
-        #expect(!t.isPinnedEngine)
-    }
-
-    @Test("mention 与 pin 同引擎 → pinned 预览(图标保持钉住态)")
-    func previewSameAsPinned() {
-        let t = ComposerTargetResolver.resolve(draft: "@codex 继续", options: options, pinnedTrigger: "codex")
-        #expect(t == .engine(options[2], pinned: true))
-    }
-
-    @Test("@pet 预览 → soul(钉住时的逃逸预览)")
-    func soulPreview() {
-        #expect(ComposerTargetResolver.resolve(draft: "@pet 聊聊", options: options, pinnedTrigger: "codex") == .soul)
-    }
-
-    @Test("pinned trigger 不在候选里(数据不同步)→ 回 soul 兜底")
-    func pinnedMissingFallback() {
-        #expect(ComposerTargetResolver.resolve(draft: "", options: options, pinnedTrigger: "gemini") == .soul)
-    }
-
-    @Test("helpText / isPinnedEngine 语义")
-    func helpAndFlags() {
-        let pinned = ComposerTarget.engine(options[2], pinned: true)
-        let preview = ComposerTarget.engine(options[1], pinned: false)
-        #expect(pinned.isPinnedEngine)
-        #expect(!preview.isPinnedEngine)
-        #expect(pinned.helpText.contains("取消"))
-        #expect(preview.helpText.contains("钉住"))
-        #expect(ComposerTarget.soul.helpText.contains("@"))
-    }
-}
-
 
 // MARK: - P6.1 烘焙 / 历史 chip 解析 / draft 清理
 
@@ -182,10 +120,10 @@ struct MentionAutocompleteBakeTests {
     }
 }
 
-// MARK: - P6.1 ComposerTargetResolver 胶囊选中优先级
+// MARK: - P6.2 trayToken(tray 标签纯逻辑)
 
-@Suite("ComposerTargetResolver P6.1 胶囊选中")
-struct ComposerTargetResolverSelectionTests {
+@Suite("MentionAutocomplete trayToken(P6.2)")
+struct MentionTrayTokenTests {
 
     private let options = [
         MentionOption(trigger: "pet", label: "Pet", systemImage: "pawprint.fill", brandLogo: nil, available: true, isSoul: true),
@@ -193,28 +131,36 @@ struct ComposerTargetResolverSelectionTests {
         MentionOption(trigger: "codex", label: "Codex", systemImage: "chevron.left.forwardslash.chevron.right", brandLogo: .codex, available: true),
     ]
 
-    @Test("胶囊选中(未打字)→ 一次性引擎目标(未钉)")
-    func capsuleSelection() {
-        let t = ComposerTargetResolver.resolve(draft: "干活", options: options, pinnedTrigger: nil, selectedTrigger: "codex")
-        #expect(t == .engine(options[2], pinned: false))
-        #expect(!t.isPinnedEngine)
+    @Test("无选中无 pinned → nil(composer 无 chrome)")
+    func noneNil() {
+        #expect(MentionAutocomplete.trayToken(selectedTrigger: nil, pinnedTrigger: nil, options: options) == nil)
     }
 
-    @Test("打字完整 @ > 胶囊选中(打字党优先,不被胶囊状态覆盖)")
-    func typedBeatsSelection() {
-        let t = ComposerTargetResolver.resolve(draft: "@opencode 看", options: options, pinnedTrigger: nil, selectedTrigger: "codex")
-        #expect(t == .engine(options[1], pinned: false))
+    @Test("选中一次性引擎 → token(未钉);选中 == pinned → 钉住态")
+    func selectionToken() {
+        let oneOff = MentionAutocomplete.trayToken(selectedTrigger: "codex", pinnedTrigger: nil, options: options)
+        #expect(oneOff?.option.trigger == "codex")
+        #expect(oneOff?.isPinned == false)
+
+        let pinned = MentionAutocomplete.trayToken(selectedTrigger: "codex", pinnedTrigger: "codex", options: options)
+        #expect(pinned?.isPinned == true)
     }
 
-    @Test("胶囊选中 > pinned;选中 paw → soul 一次性逃逸")
-    func selectionBeatsPinnedAndPawEscape() {
-        let t = ComposerTargetResolver.resolve(draft: "干活", options: options, pinnedTrigger: "codex", selectedTrigger: "opencode")
-        #expect(t == .engine(options[1], pinned: false))
-        #expect(ComposerTargetResolver.resolve(draft: "聊聊", options: options, pinnedTrigger: "codex", selectedTrigger: "pet") == .soul)
+    @Test("仅 pinned → 钉住 token 常驻")
+    func pinnedOnly() {
+        let t = MentionAutocomplete.trayToken(selectedTrigger: nil, pinnedTrigger: "codex", options: options)
+        #expect(t?.option.trigger == "codex")
+        #expect(t?.isPinned == true)
     }
 
-    @Test("选中 trigger 不在候选里 → 继续往下判(pinned/soul 兜底)")
-    func selectionMissingFallback() {
-        #expect(ComposerTargetResolver.resolve(draft: "", options: options, pinnedTrigger: "codex", selectedTrigger: "gemini") == .engine(options[2], pinned: true))
+    @Test("选中 paw → soul token(一次性逃逸);选中查不到候选 → pinned 兜底")
+    func pawAndFallback() {
+        let paw = MentionAutocomplete.trayToken(selectedTrigger: "pet", pinnedTrigger: "codex", options: options)
+        #expect(paw?.option.isSoul == true)
+        #expect(paw?.isPinned == false)
+
+        let fallback = MentionAutocomplete.trayToken(selectedTrigger: "gemini", pinnedTrigger: "codex", options: options)
+        #expect(fallback?.option.trigger == "codex")
+        #expect(fallback?.isPinned == true)
     }
 }

@@ -167,7 +167,7 @@ public final class ChatCardState: ObservableObject {
     /// CLI 可用性)。空 → 不弹补全。
     @Published public var mentionOptions: [MentionOption] = []
     /// P6:当前钉住的引擎 trigger(nil = 未钉,默认灵魂层)。App 注入/刷新;
-    /// composer 目标图标按它 + draft 解析有效目标(`ComposerTargetResolver`)。
+    /// tray 标签按它与选中态解析有效 token(`MentionAutocomplete.trayToken`)。
     @Published public var pinnedMentionTrigger: String?
     /// P6.1:胶囊选中的**一次性**目标 trigger(nil = 无;发送即清空回弹)。
     /// 与 `pinnedMentionTrigger` 正交:打字完整 @ > 胶囊选中 > pinned > soul。
