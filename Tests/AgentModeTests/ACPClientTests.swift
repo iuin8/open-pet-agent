@@ -337,3 +337,23 @@ func clientPromptImages() async throws {
     #expect(blocks?[1].objectValue?["mimeType"]?.stringValue == "image/png")
     #expect(blocks?[1].objectValue?["data"]?.stringValue == png.base64EncodedString())
 }
+
+@Test("ACPClient.prompt(images:):空文本有图 → 不前置 text block(纯图片消息,ACP spec 合法)")
+func clientPromptImagesOnly() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+        resp(1, #"{"sessionId":"sess_1"}"#),
+        resp(2, #"{"stopReason":"end_turn"}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    _ = try await client.connect()
+    _ = try await client.createSession(cwd: "/tmp", mcpServers: [])
+    let png = Data([0x89, 0x50, 0x4E, 0x47])
+    _ = try await client.prompt(text: "", images: [ChatImage(data: png, mediaType: "image/png")], onUpdate: { _ in })
+
+    let sent = mock.sentLines.last.map { ACPJSON.parse($0) ?? .null } ?? .null
+    let blocks = sent.objectValue?["params"]?.objectValue?["prompt"]?.arrayValue
+    #expect(blocks?.count == 1)
+    #expect(blocks?[0].objectValue?["type"]?.stringValue == "image")
+    #expect(blocks?[0].objectValue?["data"]?.stringValue == png.base64EncodedString())
+}

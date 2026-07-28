@@ -79,6 +79,37 @@ struct ComposerPartsRoutingTests {
         #expect(!ComposerParts.hasContent([.mention(trigger: "codex", isPinned: true), .text("  \n ")]))
         #expect(!ComposerParts.hasContent([]))
     }
+
+    @Test("sendable:有正文或有图即可发送;只有 chip 无图不算")
+    func sendable() {
+        #expect(ComposerParts.sendable([.text("hi")], imageCount: 0))
+        #expect(ComposerParts.sendable([], imageCount: 1))                       // 纯图片消息
+        #expect(ComposerParts.sendable([.mention(trigger: "codex", isPinned: true)], imageCount: 2))
+        #expect(!ComposerParts.sendable([], imageCount: 0))
+        #expect(!ComposerParts.sendable([.mention(trigger: "codex", isPinned: true)], imageCount: 0))
+    }
+
+    @Test("pickerLeading:对齐光标,左右越界 clamp 在容器内")
+    func pickerLeading() {
+        // 正常:跟光标
+        #expect(ComposerParts.pickerLeading(caretMinX: 100, containerWidth: 400, pickerWidth: 260) == 100)
+        // 左越界 → margin
+        #expect(ComposerParts.pickerLeading(caretMinX: 2, containerWidth: 400, pickerWidth: 260) == 8)
+        // 右越界 → containerWidth - width - margin(400-260-8=132)
+        #expect(ComposerParts.pickerLeading(caretMinX: 300, containerWidth: 400, pickerWidth: 260) == 132)
+        // 容器比 picker 还窄 → 兜底 margin(不出负数)
+        #expect(ComposerParts.pickerLeading(caretMinX: 50, containerWidth: 200, pickerWidth: 260) == 8)
+    }
+
+    @Test("pickerTop:上方放得下弹上方;越顶翻转光标下方")
+    func pickerTop() {
+        // 上方空间足:caretTop 100 - gap 6 - 高 39 = 55
+        #expect(ComposerParts.pickerTop(caretTop: 100, caretBottom: 120, pickerHeight: 39) == 55)
+        // 上方空间不足(caretTop 20)→ 翻转到 caretBottom + gap
+        #expect(ComposerParts.pickerTop(caretTop: 20, caretBottom: 38, pickerHeight: 39) == 44)
+        // 恰好贴 margin(50-6-36=8 ≥ 8)→ 仍弹上方
+        #expect(ComposerParts.pickerTop(caretTop: 50, caretBottom: 68, pickerHeight: 36) == 8)
+    }
 }
 
 @Suite("ComposerParts 纯函数操作")

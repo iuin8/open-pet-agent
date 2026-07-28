@@ -61,6 +61,9 @@ struct ChatComposerEditor: NSViewRepresentable {
     var onFocusChange: (Bool) -> Void
     /// P7.2:粘贴/拖拽进来一张图(已经 `ChatImageIngest` 重编码 PNG + 5MB 过滤)。
     var onImage: (ChatImage) -> Void
+    /// P7-polish:光标矩形变化(picker 锚定用)。坐标 = window content 左上原点
+    /// (与 SwiftUI .global 同空间);marked text 期间不上报。
+    var onCaretChange: (CGRect) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -148,6 +151,8 @@ struct ChatComposerEditor: NSViewRepresentable {
         /// 程序化渲染标记(textDidChange 不重建,防自旋)。
         var isRendering = false
         private var lastQuery: String?
+        /// 最近一次上报的光标矩形(dedupe;picker 锚定)。
+        private var lastCaretRect: CGRect?
 
         init(_ parent: ChatComposerEditor) { self.parent = parent }
 
@@ -197,6 +202,7 @@ struct ChatComposerEditor: NSViewRepresentable {
             guard let textView, !textView.hasMarkedText() else { return }
             updateQuery()
             sanitizeTypingAttributes()
+            reportCaret()
         }
 
         /// 防 typing-attributes 泄漏:光标贴 chip 时键入会继承 chip attribute → 重置回正文属性。
@@ -250,6 +256,34 @@ struct ChatComposerEditor: NSViewRepresentable {
             // 异步派发:render/textDidChange 可能发生在 SwiftUI update 周期内,
             // 同步写 composer @State 会触发「modifying state during view update」。
             DispatchQueue.main.async { callback(query) }
+        }
+
+        // MARK: 光标矩形上报(picker 锚定;window content 左上原点,与 SwiftUI .global 同空间)
+
+        /// 取光标字符的 glyph 矩形 → window 坐标 → 翻成左上原点上报(去重;异步派发,
+        /// 避免在 SwiftUI update 周期内同步写 composer @State)。marked text 期间不上报。
+        func reportCaret() {
+            guard let textView, !textView.hasMarkedText(),
+                  let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer,
+                  let storage = textView.textStorage else { return }
+            let range = textView.selectedRange()
+            guard range.length == 0, range.location <= storage.length else { return }
+            let glyph = layoutManager.glyphIndexForCharacter(at: range.location)
+            var rect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 0), in: container)
+            rect.origin.x += textView.textContainerInset.width
+            rect.origin.y += textView.textContainerInset.height
+            let inWindow = textView.convert(rect, to: nil)
+            // window content 坐标是左下原点;翻成左上原点(rect.minY = 光标顶缘)。
+            let contentHeight = textView.window?.contentView?.bounds.height ?? 0
+            let topLeft = CGRect(
+                x: inWindow.minX, y: contentHeight - inWindow.maxY,
+                width: inWindow.width, height: inWindow.height
+            )
+            guard topLeft != lastCaretRect else { return }
+            lastCaretRect = topLeft
+            let callback = parent.onCaretChange
+            DispatchQueue.main.async { callback(topLeft) }
         }
 
         // MARK: picker 接受:chip 替换已键入 @query 段 + 尾随空格

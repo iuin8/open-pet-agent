@@ -473,7 +473,7 @@ extension MinimalAppDelegate {
         }
         // 「清空对话」：卡片 trash 按钮 → app 确认弹窗 → 清 ConversationStore + 重置卡片。
         cardCtrl.onClearConversation = { [weak self] in self?.confirmAndClearConversation() }
-        // P6 pin 模型:composer 目标图标的钉住/取消回调(替代原 segmented 回复来源选择器)。
+        // P6 pin 模型:composer mention chip 菜单的钉住/取消回调(替代原 segmented 回复来源选择器)。
         // pin → UD(enabled+kind) + 装 engine + wiring;unpin → 回灵魂层。副作用经
         // `syncMentionConfigurationToState` 刷回卡片(候选 + pinnedTrigger)。
         cardCtrl.cardState.onPinMentionTrigger = { [weak self] trigger in
