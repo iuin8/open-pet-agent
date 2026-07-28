@@ -1,47 +1,56 @@
+import AppKit
+import Orchestrator
 import SwiftUI
 
-/// 对话卡片底部 pill 输入条：多行自适应 TextField + 圆形 accent 发送钮。
-/// 借鉴 AccountyCat (https://github.com/strjonas/AccountyCat) 的 ComposerView：focus 时 accent 描边、圆形发送钮带招牌
-/// `accentShadow` 静态压深（4pt y、0 radius）给按钮触感。
+/// 对话卡片底部 pill 输入条:`ChatComposerEditor`(NSTextView 富文本)+ 圆形 accent 发送钮。
+/// 借鉴 AccountyCat (https://github.com/strjonas/AccountyCat) 的 ComposerView:focus 时 accent 描边、圆形发送钮带招牌
+/// `accentShadow` 静态压深(4pt y、0 radius)给按钮触感。
 ///
-/// P6.2 mention token 化:**mention 活在消息里,composer 无常驻 chrome**。
+/// P7.1:composer 从 SwiftUI TextField 重写为 NSTextView 编辑器,mention 从 P6.2 tray 标签
+/// 迁移为**文本流内嵌 chip**(U+FFFC attachment,单字符原子删除):
+/// - 行首 chip = 路由目标(深色 = 钉住常驻、浅色 = 一次性);发送清空后钉住 chip 自动回补
+///   (`ChatCardState.syncPinnedChip`),语义与 P6.2 tray 逐项对齐;
 /// - 打字 @ → 行式 picker(图标 + 名字 + trigger + 未安装置灰);选中/敲全 trigger →
-///   落成 **tray 标签**(pill 上方标签条),draft 自动剥除已键入的 `@` 片段。
-/// - tray 标签 = 行首路由目标:深色 = 钉住(常驻)、浅色 = 一次性(发送后清空);
-///   点击 pin 图标切换钉/取消;× 移除(钉住态先取消钉住)。
-/// - 发送时选中目标经 `MentionAutocomplete.withMentionPrefix` 烘焙进文本(controller 做),
-///   路由/署名/落盘管线零改动。
-/// - 真 inline chip(文本流内嵌)需 NSTextView 编辑器 + 中文 IME 专项,留作将来里程碑。
+///   chip 替换已键入的 `@query` 段;paw(soul)= 一次性逃逸;
+/// - chip 点击 → 菜单(行首引擎 chip [钉住/取消钉住, 移除];其余 [移除]);
+/// - 发送时 `state.draft` 已是 parts 序列化出的 wire format,路由/署名/落盘管线零改动。
 struct ChatCardComposer: View {
-    @Binding var draft: String
+    /// composer 内容(`ChatCardState.composerParts`;draft 是其序列化投影)。
+    @Binding var parts: [ComposerPart]
+    /// P7.2:待发送图片附件(粘贴/拖拽入;附件条展示 + hover × 移除)。
+    @Binding var images: [ChatImage]
     let isSending: Bool
     /// @mention 补全候选(App 注入;空 → 不弹)。恒含 soul 行 + 三引擎。
     var mentionOptions: [MentionOption] = []
     /// P6:当前钉住的引擎 trigger(nil = 未钉,默认灵魂层)。
     var pinnedMentionTrigger: String? = nil
-    /// P6.2:落 token 的一次性目标 trigger(含 paw;nil = 无,发送即清空)。
-    var selectedMentionTrigger: String? = nil
-    /// P6.2:落 token / 移除回调(trigger;nil = 移除一次性 token)。
-    var onSelectMention: ((String?) -> Void)? = nil
-    /// P6:钉住回调(tray 浅色标签点 pin → 钉住该引擎)。
+    /// P6:钉住回调(chip 菜单「钉住」)。
     var onPinMention: ((String) -> Void)? = nil
-    /// P6:取消钉住回调(tray 深色标签点 pin / × → 取消)。
+    /// P6:取消钉住回调(chip 菜单「取消钉住」/ 移除钉住 chip)。
     var onUnpinMention: (() -> Void)? = nil
     let onSend: () -> Void
 
-    @FocusState private var focused: Bool
+    /// 编辑器驱动句柄(接受候选 / 聚焦)。
+    @State private var editorProxy = ChatComposerEditorProxy()
+    /// 编辑器焦点(描边高亮;由 editor didBegin/EndEditing 驱动)。
+    @State private var editorFocused: Bool = false
+    /// 光标前「当前键入段」的 @ query(editor 回调;nil = 不在 mention 输入中)。
+    @State private var mentionQuery: String? = nil
     /// picker 高亮行(过滤结果变化时重置)。
     @State private var selectedMentionIndex: Int = 0
     /// 打字 @ 被 Esc 手动关闭后,本段 mention 输入内不再自动弹出(重新进入 mention 输入时恢复)。
     @State private var mentionDismissed: Bool = false
+    /// P7.2:附件条 hover 中的缩略图下标(× 移除钮显隐)。
+    @State private var hoveredThumbIndex: Int? = nil
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
+        // 只有 chip 不算可发送(路由要求 mention 后有正文)。
+        ComposerParts.hasContent(parts) && !isSending
     }
 
-    /// 打字 @ 触发的过滤候选(不处于行首 mention 输入 → 空)。
+    /// 打字 @ 触发的过滤候选(不处于 mention 输入 → 空)。
     private var mentionMatches: [MentionOption] {
-        guard let query = MentionAutocomplete.query(in: draft) else { return [] }
+        guard let query = mentionQuery else { return [] }
         return MentionAutocomplete.filter(mentionOptions, query: query)
     }
 
@@ -49,21 +58,12 @@ struct ChatCardComposer: View {
         !mentionMatches.isEmpty && !mentionDismissed
     }
 
-    /// tray 有效 token:选中 trigger ?? pinnedTrigger(都没有 → nil 无 chrome)。
-    private var trayToken: MentionTrayToken? {
-        MentionAutocomplete.trayToken(
-            selectedTrigger: selectedMentionTrigger,
-            pinnedTrigger: pinnedMentionTrigger,
-            options: mentionOptions
-        )
-    }
-
     private let placeholder = "问点什么，@ 可点名引擎…"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let token = trayToken { trayChip(token) }
             if pickerVisible { mentionPicker }
+            if !images.isEmpty { attachmentStrip }
             inputPill
         }
         // 过滤结果变化 → 高亮归零;进入新一段 mention 输入 → dismiss 复位
@@ -71,13 +71,78 @@ struct ChatCardComposer: View {
             selectedMentionIndex = 0
             if !mentionMatches.isEmpty { mentionDismissed = false }
         }
-        // 敲全 trigger(词边界)→ 自动落 token 并剥除 draft 里的 @ 片段(打字党一等公民)。
-        // 剥除后 draft 不再命中 resolvedTarget,onChange 不会自旋。
-        .onChange(of: draft) { _, newDraft in
-            guard let option = MentionAutocomplete.resolvedTarget(in: newDraft, options: mentionOptions),
-                  option.trigger != selectedMentionTrigger else { return }
-            onSelectMention?(option.trigger)
-            draft = MentionAutocomplete.strippingDraftMention(newDraft)
+        // 敲全 trigger(与候选精确匹配)→ 自动落 chip(打字党一等公民,同 P6.2 词边界落 token)。
+        // 接受后 editor 重建使 query 归零,onChange 不会自旋。
+        .onChange(of: mentionQuery) { _, query in
+            guard let query,
+                  let option = mentionOptions.first(where: { $0.trigger == query.lowercased() }) else { return }
+            acceptMention(option)
+        }
+    }
+
+    // MARK: - P7.2 图片附件条(editor 上方,仅非空)
+
+    /// 待发送图片横条:48pt 圆角缩略图(scaledToFill),hover 浮 × 移除;样式随 picker/inputFill。
+    private var attachmentStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(images.enumerated()), id: \.offset) { index, image in
+                    attachmentThumb(image, index: index)
+                }
+            }
+            .padding(4)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(ChatCardTheme.inputFill)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(ChatCardTheme.hairline, lineWidth: 1)
+                )
+        )
+    }
+
+    /// 单张附件缩略图:NSImage 解码失败 → 占位图标(不裸奔);hover 右上浮 ×。
+    private func attachmentThumb(_ image: ChatImage, index: Int) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let nsImage = NSImage(data: image.data) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 18))
+                        .foregroundStyle(ChatCardTheme.textPrimary.opacity(0.4))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(ChatCardTheme.inputFill)
+                }
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(ChatCardTheme.hairline, lineWidth: 1)
+            )
+
+            if hoveredThumbIndex == index {
+                Button {
+                    images.remove(at: index)
+                    hoveredThumbIndex = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 14, height: 14)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                }
+                .buttonStyle(.plain)
+                .help("移除图片")
+                .offset(x: 4, y: -4)
+            }
+        }
+        .onHover { hovering in
+            hoveredThumbIndex = hovering ? index : (hoveredThumbIndex == index ? nil : hoveredThumbIndex)
         }
     }
 
@@ -85,18 +150,23 @@ struct ChatCardComposer: View {
 
     private var inputPill: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(placeholder, text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(ChatCardTheme.body)
-                .foregroundStyle(ChatCardTheme.textPrimary)
-                .lineLimit(1...4)
-                .focused($focused)
-                .onSubmit(submit)
-                .onKeyPress(.upArrow) { moveMentionSelection(-1) }
-                .onKeyPress(.downArrow) { moveMentionSelection(1) }
-                .onKeyPress(.escape) { dismissMentionPicker() }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
+            ChatComposerEditor(
+                parts: $parts,
+                mentionOptions: mentionOptions,
+                pinnedMentionTrigger: pinnedMentionTrigger,
+                placeholder: placeholder,
+                proxy: editorProxy,
+                onSubmit: submit,
+                onEscape: dismissMentionPicker,
+                onArrow: moveMentionSelection,
+                onQueryChange: { mentionQuery = $0 },
+                onPinMention: { onPinMention?($0) },
+                onUnpinMention: { onUnpinMention?() },
+                onFocusChange: { editorFocused = $0 },
+                onImage: { images.append($0) }
+            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
 
             sendButton
                 .padding(.trailing, 4)
@@ -107,11 +177,11 @@ struct ChatCardComposer: View {
                 .fill(ChatCardTheme.inputFill)
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(focused ? ChatCardTheme.accent.opacity(0.5) : ChatCardTheme.hairline, lineWidth: 1)
+                        .stroke(editorFocused ? ChatCardTheme.accent.opacity(0.5) : ChatCardTheme.hairline, lineWidth: 1)
                 )
         )
-        .animation(.easeOut(duration: 0.15), value: focused)
-        .onAppear { focused = true }
+        .animation(.easeOut(duration: 0.15), value: editorFocused)
+        .onAppear { editorProxy.focus() }
     }
 
     private var sendButton: some View {
@@ -141,75 +211,7 @@ struct ChatCardComposer: View {
         onSend()
     }
 
-    // MARK: - P6.2 tray 标签
-
-    /// tray 标签:引擎 logo/爪印 + 名字 + pin 切换(非 soul)+ × 移除。
-    /// 深色(钉住,白字)/ 浅色(一次性,accent 字)。
-    private func trayChip(_ token: MentionTrayToken) -> some View {
-        let pinned = token.isPinned
-        return HStack(spacing: 5) {
-            chipIcon(token.option, pinned: pinned)
-            Text(token.option.label)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(chipForeground(pinned))
-            if !token.option.isSoul {
-                Button {
-                    if pinned {
-                        onUnpinMention?()
-                    } else {
-                        onPinMention?(token.option.trigger)
-                    }
-                } label: {
-                    Image(systemName: pinned ? "pin.fill" : "pin")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(chipForeground(pinned).opacity(0.85))
-                }
-                .buttonStyle(.plain)
-                .help(pinned ? "取消钉住(转为一次性)" : "钉住 @\(token.option.trigger)(之后不用每条 @)")
-            }
-            Button {
-                // × 移除:一次性 → 清选中;钉住态 → 取消钉住(token 随之消失)
-                if pinned {
-                    onUnpinMention?()
-                } else {
-                    onSelectMention?(nil)
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(chipForeground(pinned).opacity(0.6))
-            }
-            .buttonStyle(.plain)
-            .help("移除")
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            Capsule().fill(
-                pinned ? ChatCardTheme.accent.opacity(0.85) : ChatCardTheme.accent.opacity(0.14)
-            )
-        )
-    }
-
-    private func chipForeground(_ pinned: Bool) -> Color {
-        pinned ? Color.white : ChatCardTheme.accent
-    }
-
-    @ViewBuilder
-    private func chipIcon(_ option: MentionOption, pinned: Bool) -> some View {
-        if let logo = option.brandLogo {
-            BrandLogoShape(logo: logo)
-                .fill(pinned ? Color.white : logo.defaultColor, style: logo.fillRule)
-                .frame(width: 11, height: 11)
-                .clipped()
-        } else {
-            Image(systemName: option.systemImage)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(chipForeground(pinned))
-        }
-    }
-
-    // MARK: - P6.2 行式 picker
+    // MARK: - 行式 picker(P6.2 沿用,数据从 editor query 驱动)
 
     /// 打字 @ 弹出的候选列表:图标 + 名字 + trigger + 未安装置灰(将来可按类型分区)。
     private var mentionPicker: some View {
@@ -273,25 +275,23 @@ struct ChatCardComposer: View {
 
     // MARK: - picker 交互
 
-    private func moveMentionSelection(_ delta: Int) -> KeyPress.Result {
-        guard pickerVisible else { return .ignored }
+    private func moveMentionSelection(_ delta: Int) -> Bool {
+        guard pickerVisible else { return false }
         let count = mentionMatches.count
         selectedMentionIndex = (selectedMentionIndex + delta + count) % count
-        return .handled
+        return true
     }
 
-    private func dismissMentionPicker() -> KeyPress.Result {
-        guard pickerVisible else { return .ignored }
+    private func dismissMentionPicker() -> Bool {
+        guard pickerVisible else { return false }
         mentionDismissed = true
-        return .handled
+        return true
     }
 
-    /// 选中候选:落 token(含 paw 一次性灵魂逃逸);draft 剥除已键入的 `@` 片段;收起 picker。
+    /// 选中候选:editor 用 chip 替换已键入的 `@query` 段(含 paw 一次性灵魂逃逸);收起 picker。
     private func acceptMention(_ option: MentionOption) {
-        onSelectMention?(option.trigger)
-        draft = MentionAutocomplete.strippingDraftMention(draft)
+        editorProxy.accept(option)
         selectedMentionIndex = 0
         mentionDismissed = false
-        focused = true
     }
 }

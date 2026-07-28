@@ -131,9 +131,67 @@ struct ChatCardStateSelectionTests {
         #expect(s.messages[0].text == "@codex 看下")   // 落盘/行文本保留 @ 原文
         #expect(s.messages[1].userMentionTrigger == nil)
     }
+}
 
-    @Test("selectedMentionTrigger 默认 nil(无一次性目标)")
-    func selectionDefaultsNil() {
-        #expect(ChatCardState().selectedMentionTrigger == nil)
+
+// MARK: - P7.1 composerParts 投影 + pinned chip 同步
+
+@MainActor
+@Suite("ChatCardState composerParts(P7.1)")
+struct ChatCardStateComposerPartsTests {
+    @Test("默认:parts 空,draft 空(selectedMentionTrigger 已随 P6.2 tray 退役)")
+    func defaults() {
+        let s = ChatCardState()
+        #expect(s.composerParts.isEmpty)
+        #expect(s.draft == "")
+    }
+
+    @Test("外部写 draft → parts 文本投影(prefill/clear 路径零改动)")
+    func draftToParts() {
+        let s = ChatCardState()
+        s.draft = "你好"
+        #expect(s.composerParts == [.text("你好")])
+        s.draft = ""
+        #expect(s.composerParts.isEmpty)
+    }
+
+    @Test("写 parts → draft 序列化投影(wire format,行首 chip → '@trigger ')")
+    func partsToDraft() {
+        let s = ChatCardState()
+        s.composerParts = [.mention(trigger: "codex", isPinned: true), .text("看日志")]
+        #expect(s.draft == "@codex 看日志")
+    }
+
+    @Test("syncPinnedChip:parts 空 + pinned → 行首重插钉住 chip(发送后回补/tray 常驻)")
+    func pinnedReinsert() {
+        let s = ChatCardState()
+        s.pinnedMentionTrigger = "codex"   // didSet → syncPinnedChip
+        #expect(s.composerParts == [.mention(trigger: "codex", isPinned: true)])
+        #expect(s.draft == "@codex ")
+    }
+
+    @Test("syncPinnedChip:pinned 变 nil 且行首是钉住 chip → 移除(取消钉住)")
+    func unpinRemovesChip() {
+        let s = ChatCardState()
+        s.pinnedMentionTrigger = "codex"
+        s.composerParts = [.mention(trigger: "codex", isPinned: true), .text("正文")]
+        s.pinnedMentionTrigger = nil
+        #expect(s.composerParts == [.text("正文")])
+    }
+
+    @Test("syncPinnedChip:行首一次性 chip 的 trigger 被钉住(菜单钉住回环)→ 转钉住深色")
+    func pinMarksLeadingChip() {
+        let s = ChatCardState()
+        s.composerParts = [.mention(trigger: "claude", isPinned: false), .text("正文")]
+        s.pinnedMentionTrigger = "claude"
+        #expect(s.composerParts.first == .mention(trigger: "claude", isPinned: true))
+    }
+
+    @Test("syncPinnedChip:已有正文时 pinned 到来不强插 chip(只认空 parts)")
+    func noInsertWhenTyping() {
+        let s = ChatCardState()
+        s.composerParts = [.text("正在写")]
+        s.pinnedMentionTrigger = "codex"
+        #expect(s.composerParts == [.text("正在写")])
     }
 }

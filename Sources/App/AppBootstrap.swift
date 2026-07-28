@@ -63,7 +63,8 @@ public struct ConversationResponder: Sendable, Equatable {
     private let replyHandler: @Sendable (String) async -> String
     /// A.1.3: streaming variant — returns a live stream of delta tokens.
     /// Each yielded value is an incremental token string. The caller accumulates.
-    private let streamProvider: @Sendable (String) -> AsyncThrowingStream<String, Error>
+    /// P7.2:第二参 = 图片附件(ACP image content block 管线;空 = 纯文本)。
+    private let streamProvider: @Sendable (String, [ChatImage]) -> AsyncThrowingStream<String, Error>
     /// Task C — Spotlight QuickAsk 一次性流式 provider。
     /// 与 `streamProvider` 行为差异:**不写 ConversationStore + 不通知状态机**,
     /// 用于 QuickAsk 浮窗这类不应污染 pet 头顶 bonded session 历史的场景。
@@ -75,7 +76,7 @@ public struct ConversationResponder: Sendable, Equatable {
     public init(replyHandler: @escaping @Sendable (String) async -> String) {
         self.replyHandler = replyHandler
         let capturedReply = replyHandler
-        let stream: @Sendable (String) -> AsyncThrowingStream<String, Error> = { message in
+        let stream: @Sendable (String, [ChatImage]) -> AsyncThrowingStream<String, Error> = { message, _ in
             AsyncThrowingStream { continuation in
                 Task {
                     let reply = await capturedReply(message)
@@ -85,7 +86,15 @@ public struct ConversationResponder: Sendable, Equatable {
             }
         }
         self.streamProvider = stream
-        self.oneShotStreamProvider = stream
+        self.oneShotStreamProvider = { message in
+            AsyncThrowingStream { continuation in
+                Task {
+                    let reply = await capturedReply(message)
+                    continuation.yield(reply)
+                    continuation.finish()
+                }
+            }
+        }
     }
 
     /// Full init with explicit streaming provider. Used by `AppBootstrap.makeRootSystem`.
@@ -93,12 +102,12 @@ public struct ConversationResponder: Sendable, Equatable {
     /// QuickAsk 路径调用方应显式注入独立的 oneShot 实现。
     public init(
         replyHandler: @escaping @Sendable (String) async -> String,
-        streamProvider: @escaping @Sendable (String) -> AsyncThrowingStream<String, Error>,
+        streamProvider: @escaping @Sendable (String, [ChatImage]) -> AsyncThrowingStream<String, Error>,
         oneShotStreamProvider: (@Sendable (String) -> AsyncThrowingStream<String, Error>)? = nil
     ) {
         self.replyHandler = replyHandler
         self.streamProvider = streamProvider
-        self.oneShotStreamProvider = oneShotStreamProvider ?? streamProvider
+        self.oneShotStreamProvider = oneShotStreamProvider ?? { message in streamProvider(message, []) }
     }
 
     public func reply(to message: String) async -> String {
@@ -107,8 +116,9 @@ public struct ConversationResponder: Sendable, Equatable {
 
     /// A.1.3: returns a live stream of incremental delta strings.
     /// The caller is responsible for accumulating deltas and updating UI.
-    public func replyStream(for message: String) -> AsyncThrowingStream<String, Error> {
-        streamProvider(message)
+    /// P7.2:`images` 透传 orchestrator 的 ACP image content block 管线(默认空 = 纯文本)。
+    public func replyStream(for message: String, images: [ChatImage] = []) -> AsyncThrowingStream<String, Error> {
+        streamProvider(message, images)
     }
 
     /// Task C — QuickAsk 一次性流式问答(不写历史 / 不触发状态机)。
@@ -580,8 +590,8 @@ public struct AppBootstrap: Sendable {
             replyHandler: { message in
                 await orchestrator.reply(to: message)
             },
-            streamProvider: { message in
-                orchestrator.replyStream(for: message)
+            streamProvider: { message, images in
+                orchestrator.replyStream(for: message, images: images)
             },
             // Task C — QuickAsk 浮窗一次性问答路径(不写历史 / 不通知状态机)。
             oneShotStreamProvider: { message in

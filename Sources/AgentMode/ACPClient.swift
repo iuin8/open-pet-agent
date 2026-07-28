@@ -34,19 +34,24 @@ public struct ACPAgentCapabilities: Sendable, Equatable {
     public let loadSession: Bool
     /// `agentCapabilities.sessionCapabilities` 里值非 null 的子能力(list/resume/…)。
     public let sessionCapabilities: Set<ACPSessionCapability>
+    /// P7.2:`agentCapabilities.promptCapabilities` 里值为 true 的 prompt 内容类型能力
+    /// (image/audio/embeddedContext)。**omitted = unsupported**,client 按能力裁剪 prompt。
+    public let promptCapabilities: Set<ACPPromptCapability>
 
     public init(
         protocolVersion: Int,
         agentCapabilities: Set<String>,
         mcpCapabilities: Set<ACPMCPCapability> = [],
         loadSession: Bool = false,
-        sessionCapabilities: Set<ACPSessionCapability> = []
+        sessionCapabilities: Set<ACPSessionCapability> = [],
+        promptCapabilities: Set<ACPPromptCapability> = []
     ) {
         self.protocolVersion = protocolVersion
         self.agentCapabilities = agentCapabilities
         self.mcpCapabilities = mcpCapabilities
         self.loadSession = loadSession
         self.sessionCapabilities = sessionCapabilities
+        self.promptCapabilities = promptCapabilities
     }
 }
 
@@ -62,6 +67,13 @@ public enum ACPSessionCapability: String, Sendable, Equatable {
     case resume
     case fork
     case delete
+}
+
+/// ACP v1 `promptCapabilities` 的 prompt 内容类型能力项(P7.2;值 true = 支持)。
+public enum ACPPromptCapability: String, Sendable, Equatable {
+    case image
+    case audio
+    case embeddedContext
 }
 
 /// ACP client:经 transport 跟 agent 子进程通信。
@@ -126,10 +138,17 @@ public actor ACPClient {
                 guard entry.value != .null, let capability = ACPSessionCapability(rawValue: entry.key) else { return }
                 caps.insert(capability)
             }
+        // prompt 内容类型能力(P7.2):promptCapabilities 子项(值 true 才收;omitted = unsupported)。
+        let promptCaps = (agentCaps?["promptCapabilities"]?.objectValue ?? [:])
+            .reduce(into: Set<ACPPromptCapability>()) { caps, entry in
+                guard case .bool(let supported) = entry.value, supported,
+                      let capability = ACPPromptCapability(rawValue: entry.key) else { return }
+                caps.insert(capability)
+            }
         didConnect = true
         return ACPAgentCapabilities(
             protocolVersion: proto, agentCapabilities: capsKeys, mcpCapabilities: mcpCaps,
-            loadSession: loadSession, sessionCapabilities: sessionCaps
+            loadSession: loadSession, sessionCapabilities: sessionCaps, promptCapabilities: promptCaps
         )
     }
 
@@ -190,14 +209,27 @@ public actor ACPClient {
 
     // MARK: - prompt(session/prompt + 流式 update)
 
-    public func prompt(text: String, onUpdate: @escaping @Sendable (ACPSessionUpdate) -> Void) async throws -> ACPPromptResult {
+    /// P7.2:`images` 追加 ACP image content block(text 块在前,每图一个 image 块,
+    /// `mimeType` + base64 `data`;空 data 图防御跳过)。调用方负责按 `promptCapabilities`
+    /// 裁剪(能力门闸在 App 层,此处忠实透传)。
+    public func prompt(
+        text: String,
+        images: [ChatImage] = [],
+        onUpdate: @escaping @Sendable (ACPSessionUpdate) -> Void
+    ) async throws -> ACPPromptResult {
         guard didConnect else { throw ACPClientError.notConnected }
         updateHandler = onUpdate
         defer { updateHandler = nil }
         let id = nextRequestID()
-        var params: [String: ACPJSON] = [
-            "prompt": .array([.object(["type": .string("text"), "text": .string(text)])]),
-        ]
+        var blocks: [ACPJSON] = [.object(["type": .string("text"), "text": .string(text)])]
+        for image in images where !image.data.isEmpty {
+            blocks.append(.object([
+                "type": .string("image"),
+                "mimeType": .string(image.mediaType),
+                "data": .string(image.data.base64EncodedString()),
+            ]))
+        }
+        var params: [String: ACPJSON] = ["prompt": .array(blocks)]
         if let sessionId { params["sessionId"] = .string(sessionId) }
         let result = try await sendRequest(
             id: id, method: ACPMethod.sessionPrompt, params: .object(params), timeoutNs: Self.promptTimeoutNs)

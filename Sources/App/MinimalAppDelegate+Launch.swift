@@ -456,10 +456,11 @@ extension MinimalAppDelegate {
     func setupChatCardAndHotkeys(controller: DesktopShellController) {
         let capturedRootSystem = rootSystem
         let cardCtrl = ChatCardWindowController(
-            streamProvider: { message in
+            streamProvider: { message, images in
                 // 多轮：replyStream 写 ConversationStore + 拼历史上下文（不同于旧 QuickAsk
                 // 的 replyStreamOneShot 隔离路径 —— 对话卡片要"记住"前文）。
-                capturedRootSystem.conversationResponder.replyStream(for: message)
+                // P7.2:图片附件透传 ACP image content block 管线(空 = 纯文本)。
+                capturedRootSystem.conversationResponder.replyStream(for: message, images: images)
             }
         )
         // 锚定到 pet 旁：注入 pet 锚矩形 + 屏幕可见区。App 持窗口引用注入闭包，
@@ -484,6 +485,22 @@ extension MinimalAppDelegate {
         cardCtrl.cardState.onUnpinMention = { [weak self] in
             self?.unpinAgentEngine()
         }
+        // P7.2 图片能力门闸(不静默丢图):行首 mention → 目标引擎;无 mention → 钉住引擎;
+        // 灵魂层(@pet/未钉)/ engine 不支持(ACP promptCapabilities 无 image)→ false,
+        // composer 恢复草稿 + 附件,store 零写入。
+        cardCtrl.imageGateProvider = { [weak self] text, imageCount in
+            guard let self, imageCount > 0 else { return true }
+            switch AgentMention.parse(text).target {
+            case .soul:
+                return false
+            case .engine(let kind):
+                return await self.agentModeRouter?.supportsImagePrompt(kind: kind) ?? false
+            case nil:
+                guard self.userDefaults.bool(forKey: Self.agentModeEnabledKey),
+                      let kind = self.agentModeRouter?.currentKind else { return false }
+                return await self.agentModeRouter?.supportsImagePrompt(kind: kind) ?? false
+            }
+        }
         // 项目选择器 Menu(P1b 多项目):current/list 从 ProjectStore 派生;切项目重 apply engine;新建走 NSAlert。
         wireProjectConfiguration(to: cardCtrl)
         // ACP 会话管理(P2):会话选择器回调 + 开卡恢复 hook + 指针 store 读盘。
@@ -506,7 +523,8 @@ extension MinimalAppDelegate {
                 switch m.role {
                 case .user:      return ChatCardRow(
                     role: .user, text: m.content, timestamp: m.timestamp,
-                    userMentionTrigger: Self.mentionTrigger(from: m.content))   // P6.1 mention chip
+                    userMentionTrigger: Self.mentionTrigger(from: m.content),   // P6.1 mention chip
+                    images: m.images ?? [])                                     // P7.2 图片回显
                 case .assistant: return ChatCardRow(
                     role: .assistant, text: m.content, timestamp: m.timestamp,
                     source: m.source.map { Self.engineShortLabel(forId: $0) })   // P5 署名 chip

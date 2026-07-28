@@ -1,3 +1,5 @@
+import AppKit
+import Orchestrator
 import SwiftUI
 
 /// 对话卡片单条消息行。
@@ -50,17 +52,21 @@ struct ChatCardMessageRow: View {
     @ViewBuilder
     private var bubbleContent: some View {
         if isUser {
-            // P6.1:行首 @trigger 渲染为引擎 logo chip + 剥除前缀的正文(落盘原文不动)。
-            HStack(alignment: .center, spacing: 5) {
-                if let mention = userMention {
-                    mentionChip(mention)
+            // P7.2:图片附件在正文上方缩略横排(无图零影响)。
+            VStack(alignment: .trailing, spacing: 6) {
+                if !row.images.isEmpty { imageStrip }
+                // P6.1:行首 @trigger 渲染为引擎 logo chip + 剥除前缀的正文(落盘原文不动)。
+                HStack(alignment: .center, spacing: 5) {
+                    if let mention = userMention {
+                        mentionChip(mention)
+                    }
+                    Text(userMention != nil
+                         ? MentionAutocomplete.strippingLeadingMention(row.text, options: mentionOptions)
+                         : row.text)
+                        .font(ChatCardTheme.body)
+                        .foregroundStyle(ChatCardTheme.userBubbleText)
+                        .textSelection(.enabled)
                 }
-                Text(userMention != nil
-                     ? MentionAutocomplete.strippingLeadingMention(row.text, options: mentionOptions)
-                     : row.text)
-                    .font(ChatCardTheme.body)
-                    .foregroundStyle(ChatCardTheme.userBubbleText)
-                    .textSelection(.enabled)
             }
         } else if row.text.isEmpty {
             if isThinking {
@@ -78,6 +84,29 @@ struct ChatCardMessageRow: View {
                 baseFont: ChatCardTheme.body
             )
             .foregroundStyle(ChatCardTheme.petBubbleText)
+        }
+    }
+
+    /// P7.2:用户行图片附件横排(64pt 圆角,多图 HStack;解码失败 → 占位图标)。
+    private var imageStrip: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(row.images.enumerated()), id: \.offset) { _, image in
+                Group {
+                    if let nsImage = NSImage(data: image.data) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.system(size: 20))
+                            .foregroundStyle(ChatCardTheme.userBubbleText.opacity(0.7))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.white.opacity(0.15))
+                    }
+                }
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
         }
     }
 

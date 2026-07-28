@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import AgentMode
 @testable import Shell
 
 @MainActor
@@ -7,7 +8,7 @@ import Testing
 struct ChatCardWindowControllerTests {
     @Test("handleSend：乐观追加 user + 流式累积进 assistant row")
     func sendAccumulates() async {
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { c in
                 for d in ["你", "好", "呀"] { c.yield(d) }
                 c.finish()
@@ -27,7 +28,7 @@ struct ChatCardWindowControllerTests {
 
     @Test("handleSend：空白输入不发送")
     func emptyNoSend() {
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { $0.finish() }
         })
         ctrl.handleSend("   \n ")
@@ -37,7 +38,7 @@ struct ChatCardWindowControllerTests {
     @Test("handleSend：流式抛错 → assistant row 显示友好文案，isSending 复位")
     func streamErrorShown() async {
         struct Boom: Error {}
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { c in c.finish(throwing: Boom()) }
         })
         ctrl.handleSend("x")
@@ -50,7 +51,7 @@ struct ChatCardWindowControllerTests {
 
     @Test("refreshProjectConfiguration：同步 Codex projection 回调")
     func refreshProjectConfigurationWiresCodexSync() {
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { $0.finish() }
         })
         var requested = false
@@ -76,7 +77,7 @@ struct ChatCardWindowControllerTests {
 
     @Test("refreshProjectConfiguration：同步 Claude Code projection 回调")
     func refreshProjectConfigurationWiresClaudeCodeSync() {
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { $0.finish() }
         })
         var requested = false
@@ -100,7 +101,7 @@ struct ChatCardWindowControllerTests {
 
     @Test("refreshProjectConfiguration：同步 opencode projection 回调")
     func refreshProjectConfigurationWiresOpencodeSync() {
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { $0.finish() }
         })
         var requested = false
@@ -124,7 +125,7 @@ struct ChatCardWindowControllerTests {
 
     @Test("refreshProjectConfiguration：项目变化时清掉旧项目配置反馈")
     func refreshProjectConfigurationClearsProjectFeedbackOnProjectChange() {
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { $0.finish() }
         })
         var current = ProjectOption(id: "a", name: "A", isExternal: true)
@@ -143,7 +144,7 @@ struct ChatCardWindowControllerTests {
 
     @Test("refreshProjectConfiguration：项目能力管理触发管理入口")
     func refreshProjectConfigurationWiresProjectCapabilityManagerOpenAction() {
-        let ctrl = ChatCardWindowController(streamProvider: { _ in
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
             AsyncThrowingStream { $0.finish() }
         })
         var requested = false
@@ -166,46 +167,65 @@ struct ChatCardWindowControllerTests {
 }
 
 
-// MARK: - P6.1 一次性目标烘焙与回弹
+// MARK: - P7.1 行首 chip wire format + 钉住回补
 
 @MainActor
-@Suite("ChatCardWindowController P6.1 一次性目标")
-struct ChatCardWindowControllerSelectionTests {
+@Suite("ChatCardWindowController P7.1 composer parts")
+struct ChatCardWindowControllerComposerPartsTests {
 
     private func codexOption() -> MentionOption {
         MentionOption(trigger: "codex", label: "Codex", systemImage: "x", brandLogo: .codex, available: true)
     }
 
-    @Test("胶囊选中 → 发送烘焙 @ 前缀 + 选中态清空(回弹)+ 用户行带 chip + 文本保真")
-    func sendWithSelectedMention() async {
+    @Test("行首 chip → 序列化即 wire format(无需烘焙)+ 用户行带 chip + 文本保真;一次性 chip 不回补")
+    func sendWithLeadingChip() async {
         final class Box: @unchecked Sendable { var sent: String? }
         let box = Box()
-        let ctrl = ChatCardWindowController(streamProvider: { text in
+        let ctrl = ChatCardWindowController(streamProvider: { text, _ in
             box.sent = text
             return AsyncThrowingStream { $0.finish() }
         })
         ctrl.cardState.mentionOptions = [codexOption()]
-        ctrl.cardState.selectedMentionTrigger = "codex"
+        ctrl.cardState.composerParts = [.mention(trigger: "codex", isPinned: false), .text("看下构建")]
 
-        ctrl.handleSend("看下构建")
+        ctrl.handleSend(ctrl.cardState.draft)
         await ctrl.cardState.streamTask?.value
 
-        #expect(box.sent == "@codex 看下构建")               // 烘焙进既有路由管线
-        #expect(ctrl.cardState.selectedMentionTrigger == nil)  // 发送即回弹
+        #expect(box.sent == "@codex 看下构建")                      // draft 投影已是 wire format
         #expect(ctrl.cardState.messages[0].userMentionTrigger == "codex")
         #expect(ctrl.cardState.messages[0].text == "@codex 看下构建")   // 落盘保真
+        #expect(ctrl.cardState.composerParts.isEmpty)                // 一次性 chip 发送后不回补
     }
 
-    @Test("打字完整 @ 时不重复补前缀(打字党优先)")
-    func sendWithTypedMentionNoDoubleBake() async {
+    @Test("钉住 chip 发送清空后自动回补(tray 常驻的 inline 版)")
+    func pinnedChipReinsertedAfterSend() async {
         final class Box: @unchecked Sendable { var sent: String? }
         let box = Box()
-        let ctrl = ChatCardWindowController(streamProvider: { text in
+        let ctrl = ChatCardWindowController(streamProvider: { text, _ in
             box.sent = text
             return AsyncThrowingStream { $0.finish() }
         })
         ctrl.cardState.mentionOptions = [codexOption()]
-        ctrl.cardState.selectedMentionTrigger = "opencode"   // 胶囊还选着别的 → 打字党赢
+        ctrl.cardState.pinnedMentionTrigger = "codex"   // didSet → 行首钉住 chip
+        ctrl.cardState.composerParts = [.mention(trigger: "codex", isPinned: true), .text("看下")]
+
+        ctrl.handleSend(ctrl.cardState.draft)
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.sent == "@codex 看下")
+        #expect(ctrl.cardState.composerParts == [.mention(trigger: "codex", isPinned: true)])
+        #expect(ctrl.cardState.draft == "@codex ")
+    }
+
+    @Test("打字完整 @(纯文本无 chip)仍按行首 mention 解析路由")
+    func typedMentionTextStillRoutes() async {
+        final class Box: @unchecked Sendable { var sent: String? }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { text, _ in
+            box.sent = text
+            return AsyncThrowingStream { $0.finish() }
+        })
+        ctrl.cardState.mentionOptions = [codexOption()]
 
         ctrl.handleSend("@codex 看下")
         await ctrl.cardState.streamTask?.value
@@ -214,11 +234,11 @@ struct ChatCardWindowControllerSelectionTests {
         #expect(ctrl.cardState.messages[0].userMentionTrigger == "codex")
     }
 
-    @Test("无选中无 mention → 原文直发,行无 chip")
+    @Test("无 chip 无 mention → 原文直发,行无 chip")
     func sendPlain() async {
         final class Box: @unchecked Sendable { var sent: String? }
         let box = Box()
-        let ctrl = ChatCardWindowController(streamProvider: { text in
+        let ctrl = ChatCardWindowController(streamProvider: { text, _ in
             box.sent = text
             return AsyncThrowingStream { $0.finish() }
         })
@@ -228,5 +248,86 @@ struct ChatCardWindowControllerSelectionTests {
 
         #expect(box.sent == "普通一句")
         #expect(ctrl.cardState.messages[0].userMentionTrigger == nil)
+    }
+}
+
+
+// MARK: - P7.2 图片能力门闸
+
+@MainActor
+@Suite("ChatCardWindowController P7.2 图片门闸")
+struct ChatCardWindowControllerImageGateTests {
+
+    private func makeImage() -> ChatImage {
+        ChatImage(data: Data([0x89, 0x50, 0x4E, 0x47]), mediaType: "image/png")
+    }
+
+    @Test("gate false → assistant 行友好文案 + draft/parts/images 恢复 + streamProvider 未调(store 零写入)")
+    func gateRejectedRestoresDraft() async {
+        final class Box: @unchecked Sendable { var calls = 0 }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { _, _ in
+            box.calls += 1
+            return AsyncThrowingStream { $0.finish() }
+        })
+        ctrl.imageGateProvider = { _, _ in false }
+        let image = makeImage()
+        ctrl.cardState.composerParts = [.mention(trigger: "codex", isPinned: true), .text("看图")]
+        ctrl.cardState.composerImages = [image]
+
+        ctrl.handleSend(ctrl.cardState.draft)
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.calls == 0)                                       // provider 未调(store 零写入)
+        #expect(ctrl.cardState.messages.count == 2)                   // 乐观 user + assistant 文案
+        #expect(ctrl.cardState.messages[0].images == [image])         // 用户行回显保留
+        #expect(ctrl.cardState.messages[1].text == LLMErrorMessages.imageUnsupported)
+        #expect(ctrl.cardState.composerParts == [.mention(trigger: "codex", isPinned: true), .text("看图")])
+        #expect(ctrl.cardState.draft == "@codex 看图")                // 投影回 wire format
+        #expect(ctrl.cardState.composerImages == [image])
+        #expect(ctrl.cardState.isSending == false)
+    }
+
+    @Test("gate true → images 随 provider 收到并随发送清空")
+    func gatePassedSendsImages() async {
+        final class Box: @unchecked Sendable { var images: [ChatImage]? }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { _, images in
+            box.images = images
+            return AsyncThrowingStream { $0.finish() }
+        })
+        ctrl.imageGateProvider = { _, _ in true }
+        let image = makeImage()
+        ctrl.cardState.composerParts = [.text("看图")]
+        ctrl.cardState.composerImages = [image]
+
+        ctrl.handleSend(ctrl.cardState.draft)
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.images == [image])
+        #expect(ctrl.cardState.composerImages.isEmpty)                // 发送清空
+        #expect(ctrl.cardState.messages[0].images == [image])         // 用户行回显
+    }
+
+    @Test("无图 → gate 不被调用,provider 收到空数组")
+    func noImageSkipsGate() async {
+        final class Box: @unchecked Sendable { var gateCalls = 0; var images: [ChatImage]? }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { _, images in
+            box.images = images
+            return AsyncThrowingStream { $0.finish() }
+        })
+        ctrl.imageGateProvider = { _, _ in
+            box.gateCalls += 1
+            return false   // 即使 false,无图也不应被拦
+        }
+        ctrl.cardState.composerParts = [.text("纯文本")]
+
+        ctrl.handleSend(ctrl.cardState.draft)
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.gateCalls == 0)
+        #expect(box.images == [])
+        #expect(ctrl.cardState.messages[1].text != LLMErrorMessages.imageUnsupported)
     }
 }

@@ -79,9 +79,10 @@ struct MentionAutocompleteResolvedTargetTests {
     }
 }
 
-// MARK: - P6.1 烘焙 / 历史 chip 解析 / draft 清理
+// MARK: - 历史 chip 解析 / draft 清理(P7.1:withMentionPrefix/tray 已退役,行首 chip 由
+// ComposerParts 序列化直接产出 wire format)
 
-@Suite("MentionAutocomplete P6.1 烘焙与解析")
+@Suite("MentionAutocomplete 历史 chip 解析与 draft 清理")
 struct MentionAutocompleteBakeTests {
 
     private let options = [
@@ -90,17 +91,6 @@ struct MentionAutocompleteBakeTests {
         MentionOption(trigger: "claude", label: "Claude", systemImage: "bolt.fill", brandLogo: .claude, available: true),
         MentionOption(trigger: "codex", label: "Codex", systemImage: "chevron.left.forwardslash.chevron.right", brandLogo: .codex, available: true),
     ]
-
-    @Test("withMentionPrefix:有选中且无行首 mention → 补前缀;nil trigger → 原样")
-    func prefixBake() {
-        #expect(MentionAutocomplete.withMentionPrefix("看日志", trigger: "codex", options: options) == "@codex 看日志")
-        #expect(MentionAutocomplete.withMentionPrefix("看日志", trigger: nil, options: options) == "看日志")
-    }
-
-    @Test("withMentionPrefix:已含完整行首 mention(打字党)→ 不重复补")
-    func prefixNoDouble() {
-        #expect(MentionAutocomplete.withMentionPrefix("@claude 写测试", trigger: "codex", options: options) == "@claude 写测试")
-    }
 
     @Test("leadingMention / strippingLeadingMention:chip 数据与展示正文(落盘原文不动)")
     func leadingParse() {
@@ -117,50 +107,5 @@ struct MentionAutocompleteBakeTests {
         #expect(MentionAutocomplete.strippingDraftMention("@codex ") == "")
         #expect(MentionAutocomplete.strippingDraftMention("@codex 已写的正文") == "已写的正文")
         #expect(MentionAutocomplete.strippingDraftMention("没有@") == "没有@")
-    }
-}
-
-// MARK: - P6.2 trayToken(tray 标签纯逻辑)
-
-@Suite("MentionAutocomplete trayToken(P6.2)")
-struct MentionTrayTokenTests {
-
-    private let options = [
-        MentionOption(trigger: "pet", label: "Pet", systemImage: "pawprint.fill", brandLogo: nil, available: true, isSoul: true),
-        MentionOption(trigger: "opencode", label: "opencode", systemImage: "terminal.fill", brandLogo: .opencode, available: true),
-        MentionOption(trigger: "codex", label: "Codex", systemImage: "chevron.left.forwardslash.chevron.right", brandLogo: .codex, available: true),
-    ]
-
-    @Test("无选中无 pinned → nil(composer 无 chrome)")
-    func noneNil() {
-        #expect(MentionAutocomplete.trayToken(selectedTrigger: nil, pinnedTrigger: nil, options: options) == nil)
-    }
-
-    @Test("选中一次性引擎 → token(未钉);选中 == pinned → 钉住态")
-    func selectionToken() {
-        let oneOff = MentionAutocomplete.trayToken(selectedTrigger: "codex", pinnedTrigger: nil, options: options)
-        #expect(oneOff?.option.trigger == "codex")
-        #expect(oneOff?.isPinned == false)
-
-        let pinned = MentionAutocomplete.trayToken(selectedTrigger: "codex", pinnedTrigger: "codex", options: options)
-        #expect(pinned?.isPinned == true)
-    }
-
-    @Test("仅 pinned → 钉住 token 常驻")
-    func pinnedOnly() {
-        let t = MentionAutocomplete.trayToken(selectedTrigger: nil, pinnedTrigger: "codex", options: options)
-        #expect(t?.option.trigger == "codex")
-        #expect(t?.isPinned == true)
-    }
-
-    @Test("选中 paw → soul token(一次性逃逸);选中查不到候选 → pinned 兜底")
-    func pawAndFallback() {
-        let paw = MentionAutocomplete.trayToken(selectedTrigger: "pet", pinnedTrigger: "codex", options: options)
-        #expect(paw?.option.isSoul == true)
-        #expect(paw?.isPinned == false)
-
-        let fallback = MentionAutocomplete.trayToken(selectedTrigger: "gemini", pinnedTrigger: "codex", options: options)
-        #expect(fallback?.option.trigger == "codex")
-        #expect(fallback?.isPinned == true)
     }
 }

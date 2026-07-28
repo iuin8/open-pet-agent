@@ -44,15 +44,7 @@ public enum MentionAutocomplete {
         "@\(trigger) "
     }
 
-    // MARK: - P6.1 一次性目标烘焙 / 历史 chip 解析
-
-    /// 发送前烘焙:有选中目标且文本**不**已含完整行首 mention → 补 `@trigger ` 前缀
-    /// (交给既有路由管线,落盘保真原文);已有完整 mention(打字党)或 nil trigger → 原样。
-    public static func withMentionPrefix(_ text: String, trigger: String?, options: [MentionOption]) -> String {
-        guard let trigger, !trigger.isEmpty else { return text }
-        if resolvedTarget(in: text, options: options) != nil { return text }
-        return "@\(trigger) \(text)"
-    }
+    // MARK: - 历史 chip 解析
 
     /// 用户行渲染数据:文本以完整 `@trigger `(词边界)开头 → 返回该候选;否则 nil。
     /// 与 `resolvedTarget` 同规则但**要求 trigger 后有内容或正好结尾**(历史行总是完整消息)。
@@ -103,40 +95,5 @@ public struct MentionOption: Equatable, Sendable, Identifiable {
         self.brandLogo = brandLogo
         self.available = available
         self.isSoul = isSoul
-    }
-}
-
-// MARK: - P6.2 tray token(composer 上方标签条)
-
-/// tray 里的 mention token:行首路由目标。深浅色 = 是否钉住。
-public struct MentionTrayToken: Equatable, Sendable {
-    public let option: MentionOption
-    /// true = 钉住(深色常驻);false = 一次性(浅色,发送后清空)。
-    public let isPinned: Bool
-
-    public init(option: MentionOption, isPinned: Bool) {
-        self.option = option
-        self.isPinned = isPinned
-    }
-}
-
-public extension MentionAutocomplete {
-    /// tray 有效 token:选中(picker/打字落 token)trigger ?? pinnedTrigger;都没有 → nil
-    ///(composer 无 chrome)。depth = trigger == pinnedTrigger;selected 查不到候选 →
-    /// pinned 兜底(数据不同步不裸奔)。
-    static func trayToken(
-        selectedTrigger: String?,
-        pinnedTrigger: String?,
-        options: [MentionOption]
-    ) -> MentionTrayToken? {
-        if let selectedTrigger,
-           let selected = options.first(where: { $0.trigger == selectedTrigger }) {
-            return MentionTrayToken(option: selected, isPinned: selected.trigger == pinnedTrigger)
-        }
-        if let pinnedTrigger,
-           let pinned = options.first(where: { $0.trigger == pinnedTrigger }) {
-            return MentionTrayToken(option: pinned, isPinned: true)
-        }
-        return nil
     }
 }

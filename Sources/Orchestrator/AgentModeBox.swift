@@ -74,12 +74,17 @@ public final class AgentModeBox: @unchecked Sendable {
     /// 用户 (`isAgentModeEnabled` 应该先判, 这里只是 belt-and-suspenders)。
     ///
     /// P5:`kind` 显式指定(@mention)→ 透传 router 路由到该 kind 的 engine。
+    /// P7.2:`images` 透传(ACP image content block 管线)。
     ///
     /// 内部用 outer-stream 包了一层 inner-stream 是为了:
     /// 1. 跨 actor 把 MainActor 的 router stream 桥到非 actor 的调用方
     /// 2. 调用方取消 outer stream 时也能传播到 router 的子进程 (router
     ///    的 onTermination 会 SIGTERM 子进程)
-    public func runAgent(prompt: String, kind: AgentEngineKind? = nil) -> AsyncThrowingStream<String, Error> {
+    public func runAgent(
+        prompt: String,
+        kind: AgentEngineKind? = nil,
+        images: [ChatImage] = []
+    ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task { @MainActor in
                 guard let router = self.routerProvider(),
@@ -88,7 +93,7 @@ public final class AgentModeBox: @unchecked Sendable {
                     return
                 }
                 do {
-                    for try await delta in router.runAgent(prompt: prompt, kind: kind) {
+                    for try await delta in router.runAgent(prompt: prompt, kind: kind, images: images) {
                         continuation.yield(delta)
                     }
                     continuation.finish()

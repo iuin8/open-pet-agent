@@ -101,12 +101,11 @@ struct PetChatTabContent: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             ChatCardComposer(
-                draft: $state.draft,
+                parts: $state.composerParts,
+                images: $state.composerImages,
                 isSending: state.isSending,
                 mentionOptions: state.mentionOptions,
                 pinnedMentionTrigger: state.pinnedMentionTrigger,
-                selectedMentionTrigger: state.selectedMentionTrigger,
-                onSelectMention: { state.selectedMentionTrigger = $0 },
                 onPinMention: { state.onPinMentionTrigger?($0) },
                 onUnpinMention: { state.onUnpinMention?() }
             ) {

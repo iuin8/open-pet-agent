@@ -18,6 +18,23 @@ public protocol AgentEngine: Sendable {
     /// MVP stub 实现:yield 一条"工具引擎尚未接入"文案 + finish。
     /// 真实 engine 实现会 spawn subprocess,把 stdout 按行 yield 出去。
     func run(prompt: String) -> AsyncThrowingStream<String, Error>
+
+    /// P7.2:带图片附件跑一轮(ACP image content block 管线;`ChatImage`)。
+    /// 非 ACP / 不支持图片的 engine 可安全降级忽略图片(见 extension 默认实现)。
+    func run(prompt: String, images: [ChatImage]) -> AsyncThrowingStream<String, Error>
+}
+
+public extension AgentEngine {
+    /// 默认:无图调用转发带空图片数组(P7.2 起新 conformer 只实现带图版即可)。
+    func run(prompt: String) -> AsyncThrowingStream<String, Error> {
+        run(prompt: prompt, images: [])
+    }
+
+    /// 默认:带图调用退化为纯文本(老 conformer 零改动,不炸)。
+    /// ⚠️ conformer **必须至少实现两个 `run` 之一**,否则两个默认实现互相转发死循环。
+    func run(prompt: String, images: [ChatImage]) -> AsyncThrowingStream<String, Error> {
+        run(prompt: prompt)
+    }
 }
 
 /// 工具 engine 调用失败的错误类型。

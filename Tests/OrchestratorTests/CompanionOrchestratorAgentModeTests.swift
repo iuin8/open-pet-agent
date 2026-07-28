@@ -443,3 +443,54 @@ struct CompanionOrchestratorPinModelTests {
         }
     }
 }
+
+
+// MARK: - P7.2 图片落盘(agent 路径用户消息结构化字段)
+
+@Suite("CompanionOrchestrator P7.2 图片落盘")
+struct CompanionOrchestratorImageStoreTests {
+
+    @Test("agent 路径:用户消息带 images 落盘(结构化字段,不进 content)")
+    @MainActor
+    func agentPathStoresImages() async throws {
+        let router = AgentModeRouter()
+        router.setEngine(StubClaudeCodeEngine())
+        let box = AgentModeBox { router }
+        let store = makeHermeticStore()
+        let orchestrator = CompanionOrchestrator(
+            llmProvider: TrackingStreamingProvider(),
+            agentModeBox: box,
+            conversationStore: store
+        )
+        let image = ChatImage(data: Data([0x89, 0x50]), mediaType: "image/png")
+
+        for try await _ in orchestrator.replyStream(for: "看图", images: [image]) {}
+
+        let messages = await store.messages()
+        #expect(messages.first?.role == .user)
+        #expect(messages.first?.content == "看图")
+        #expect(messages.first?.images?.count == 1)
+        #expect(messages.first?.images?.first?.mediaType == "image/png")
+        #expect(messages.first?.images?.first?.data == Data([0x89, 0x50]))
+    }
+
+    @Test("无图:用户消息 images 为 nil(旧行为不变)")
+    @MainActor
+    func noImageStoresNil() async throws {
+        let router = AgentModeRouter()
+        router.setEngine(StubClaudeCodeEngine())
+        let box = AgentModeBox { router }
+        let store = makeHermeticStore()
+        let orchestrator = CompanionOrchestrator(
+            llmProvider: TrackingStreamingProvider(),
+            agentModeBox: box,
+            conversationStore: store
+        )
+
+        for try await _ in orchestrator.replyStream(for: "纯文本") {}
+
+        let messages = await store.messages()
+        #expect(messages.first?.role == .user)
+        #expect(messages.first?.images == nil)
+    }
+}

@@ -1,4 +1,10 @@
 import Foundation
+import AgentMode
+
+/// P7.2:跨模块图片类型的唯一事实源在 AgentMode(ACP prompt 管线同型);Orchestrator
+/// 再导出 —— Shell 聊天区保持「不 import AgentMode」的惯例,只 `import Orchestrator` 即可用,
+/// 全链路同一名词类型,零映射样板。
+public typealias ChatImage = AgentMode.ChatImage
 
 /// A single turn in a conversation (user, assistant, or system).
 public struct ConversationMessage: Codable, Sendable, Equatable, Identifiable {
@@ -12,6 +18,9 @@ public struct ConversationMessage: Codable, Sendable, Equatable, Identifiable {
     /// @mention 多引擎时间线的署名;nil = 灵魂层 / 用户消息 / 未知)。
     /// Codable 可选:旧 JSON 无此键解码为 nil,零迁移。
     public let source: String?
+    /// P7.2:随消息内联的图片(用户粘贴的附件;**结构化字段,不进 content 文本**)。
+    /// Codable 可选:旧 JSON 无此键解码为 nil,零迁移;Data 自动 base64。
+    public let images: [ChatImage]?
 
     public init(
         id: UUID = UUID(),
@@ -19,7 +28,8 @@ public struct ConversationMessage: Codable, Sendable, Equatable, Identifiable {
         content: String,
         timestamp: Date = Date(),
         model: String? = nil,
-        source: String? = nil
+        source: String? = nil,
+        images: [ChatImage]? = nil
     ) {
         self.id = id
         self.role = role
@@ -27,6 +37,7 @@ public struct ConversationMessage: Codable, Sendable, Equatable, Identifiable {
         self.timestamp = timestamp
         self.model = model
         self.source = source
+        self.images = images
     }
 }
 

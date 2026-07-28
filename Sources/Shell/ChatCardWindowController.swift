@@ -1,4 +1,5 @@
 import AppKit
+import Orchestrator
 import SwiftUI
 
 /// 锚定式多轮对话卡片控制器（替代 Spotlight 式单轮 `QuickAskWindowController`）。
@@ -18,7 +19,8 @@ public final class ChatCardWindowController {
     // MARK: - Types
 
     /// 多轮流式 provider。注入自 App：内部走 `replyStream`（写 ConversationStore + 拼历史）。
-    public typealias StreamProvider = @MainActor (String) -> AsyncThrowingStream<String, Error>
+    /// P7.2:第二参 = 图片附件(ACP image content block 管线;空 = 纯文本)。
+    public typealias StreamProvider = @MainActor (String, [ChatImage]) -> AsyncThrowingStream<String, Error>
     /// 历史快照 provider。注入自 App：读 `ConversationStore.messages()` 映射成 `[ChatCardRow]`。
     public typealias HistoryProvider = @MainActor () async -> [ChatCardRow]
 
@@ -55,6 +57,11 @@ public final class ChatCardWindowController {
     /// pinnedTrigger = 当前钉住引擎,nil = 未钉;异步因可用性探测)。开卡时在弹出后的
     /// Task 里同步进 state;pin/unpin 由 App 经 `syncMentionConfigurationToState` 直接刷。
     public var mentionConfigurationProvider: (@MainActor () async -> (options: [MentionOption], pinnedTrigger: String?))?
+
+    /// App 注入:P7.2 图片能力门闸(入参 = effectiveText + 图片数;内部解析路由目标 →
+    /// 目标 engine 的 ACP `promptCapabilities.image`)。nil provider 或 0 图 → 放行;
+    /// 灵魂层(@pet/未钉)/ 无能力引擎 → false(handleSend 恢复草稿,不静默丢图)。
+    public var imageGateProvider: (@MainActor (String, Int) async -> Bool)?
 
     /// App 注入:项目配置 provider(当前 project + 可选项)。每次开卡调,从 `ProjectStore` 派生
     /// 最新值刷进 state → 驱动 `ProjectMenu`。nil → 不显示项目选择器。
@@ -142,26 +149,43 @@ public final class ChatCardWindowController {
     func handleSend(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !state.isSending else { return }
+        // P7.2:发送前快照(gate 失败恢复用:parts 原结构 + 图片附件)。
+        let images = state.composerImages
+        let originalParts = state.composerParts
         state.draft = ""
-        // P6.1:一次性目标(胶囊选中)烘焙为 `@trigger ` 前缀,交给既有路由管线
-        // (orchestrator/署名/落盘零改动);打字完整 @ 的文本原样(不重复补)。
-        // 发送即清空选中态 —— 未钉住自动回弹 paw/pinned。
-        let effectiveText = MentionAutocomplete.withMentionPrefix(
-            trimmed, trigger: state.selectedMentionTrigger, options: state.mentionOptions)
-        state.selectedMentionTrigger = nil
+        // P7.1:发送清空后回补行首钉住 chip(tray 常驻的 inline 版;一次性 chip 不回补)。
+        state.syncPinnedChip()
+        // P7.2:图片附件随发送清空(gate 失败恢复路径会放回)。
+        state.composerImages = []
+        // P7.1:draft 已是 parts 序列化出的 wire format(行首 mention chip → `@trigger `
+        // 前缀),发送前无需再烘焙 —— orchestrator/署名/落盘管线零改动。
+        let effectiveText = trimmed
         // P5 @mention 署名:发送时(App 注入解析)定下 assistant 行来源 chip。
         let source = assistantSourceProvider?(effectiveText)
         // P6.1:用户行 mention chip(渲染换图标;落盘原文不动)。
         let userMentionTrigger = MentionAutocomplete.leadingMention(
             in: effectiveText, options: state.mentionOptions)?.trigger
         let assistantID = state.appendExchangePlaceholder(
-            userText: effectiveText, assistantSource: source, userMentionTrigger: userMentionTrigger)
+            userText: effectiveText, assistantSource: source, userMentionTrigger: userMentionTrigger,
+            images: images)
         state.isSending = true
         let provider = streamProvider
         state.streamTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            // P7.2 能力门闸(不静默丢图):目标不支持图片 → assistant 行友好文案 +
+            // 恢复 draft/parts/图片(用户不丢稿),不调 streamProvider(store 零写入)。
+            if !images.isEmpty, let gate = self.imageGateProvider {
+                let allowed = await gate(effectiveText, images.count)
+                guard allowed else {
+                    self.state.updateAssistant(id: assistantID, text: LLMErrorMessages.imageUnsupported)
+                    self.state.composerParts = originalParts
+                    self.state.composerImages = images
+                    self.state.isSending = false
+                    return
+                }
+            }
             do {
-                let stream = provider(effectiveText)
+                let stream = provider(effectiveText, images)
                 var full = ""
                 var lastUpdateAt = Date.distantPast
                 for try await delta in stream {
