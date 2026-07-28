@@ -18,6 +18,11 @@ public enum LLMErrorMessages {
     public static let providerNotConfigured: String =
         "⚠️ **未配置 AI 模型** —— 请打开菜单栏 → ⚙️ 设置,填写 baseURL / API key / 模型名后重试。"
 
+    /// P7.2:能力门闸拦截 —— 目标对话对象的 ACP `promptCapabilities` 不含 image。
+    /// 图片未发送且草稿/附件已恢复(用户不丢稿),store 零写入。
+    public static let imageUnsupported: String =
+        "⚠️ **当前对话对象不支持图片输入** —— 图片未发送。可以 @ 一个支持图片的引擎,或移除图片后重发。"
+
     /// 把任意 `Error` 翻译成 Markdown 友好文案。
     public static func friendly(for error: Error) -> String {
         if let urlError = error as? URLError {

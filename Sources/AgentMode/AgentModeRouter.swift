@@ -79,14 +79,19 @@ public final class AgentModeRouter {
     ///
     /// P5:`kind` 显式指定(@mention 路由)→ 跑该 kind 的 engine(当前或池);池引擎
     /// 首跑前等 `preparePooledEngine` 一次性恢复会话。`kind == nil` → 当前默认 engine。
-    public func runAgent(prompt: String, kind: AgentEngineKind? = nil) -> AsyncThrowingStream<String, Error> {
+    /// P7.2:`images` 透传 engine(ACP image content block;非 ACP engine 默认降级忽略)。
+    public func runAgent(
+        prompt: String,
+        kind: AgentEngineKind? = nil,
+        images: [ChatImage] = []
+    ) -> AsyncThrowingStream<String, Error> {
         guard let kind else {
             guard let engine = currentEngine else {
                 return AsyncThrowingStream { continuation in
                     continuation.finish(throwing: AgentEngineError.notImplemented(.claudeCode))
                 }
             }
-            return engine.run(prompt: prompt)
+            return engine.run(prompt: prompt, images: images)
         }
         guard let engine = engine(for: kind) else {
             return AsyncThrowingStream { continuation in
@@ -94,7 +99,7 @@ public final class AgentModeRouter {
             }
         }
         // 当前 engine 同 kind:直接跑(接线/会话恢复 App 在切 engine 时已完成)。
-        if currentKind == kind { return engine.run(prompt: prompt) }
+        if currentKind == kind { return engine.run(prompt: prompt, images: images) }
         // 池引擎:首跑前一次性准备(持久指针 → loadSession 恢复),再转发流。
         return AsyncThrowingStream { continuation in
             let task = Task { @MainActor in
@@ -103,7 +108,7 @@ public final class AgentModeRouter {
                     await self.preparePooledEngine?(kind, engine)
                 }
                 do {
-                    for try await delta in engine.run(prompt: prompt) {
+                    for try await delta in engine.run(prompt: prompt, images: images) {
                         continuation.yield(delta)
                     }
                     continuation.finish()
@@ -112,6 +117,23 @@ public final class AgentModeRouter {
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// P7.2 能力门闸:某 kind engine 的 ACP `promptCapabilities.image`(initialize 协商)。
+    /// 池引擎未准备先 `preparePooledEngine`(与 runAgent 同款一次性,防门闸先于首跑);
+    /// engine 非 ACP / 协商失败(prepare 抛错、子进程起不来)→ false(不静默丢图)。
+    public func supportsImagePrompt(kind: AgentEngineKind) async -> Bool {
+        guard let engine = engine(for: kind) else { return false }
+        if currentKind != kind, !preparedKinds.contains(kind) {
+            preparedKinds.insert(kind)
+            await preparePooledEngine?(kind, engine)
+        }
+        guard let acp = engine as? ACPAgentEngine else { return false }
+        do {
+            return try await acp.ensureReady().promptCapabilities.contains(.image)
+        } catch {
+            return false
         }
     }
 

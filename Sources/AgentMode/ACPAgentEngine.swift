@@ -231,7 +231,9 @@ public class ACPAgentEngine: AgentEngine, @unchecked Sendable {
         return sid
     }
 
-    public func run(prompt: String) -> AsyncThrowingStream<String, Error> {
+    /// P7.2:带图跑一轮(images → ACP image content block 透传 client;`run(prompt:)`
+    /// 由协议 extension 默认转发到这里的空数组版)。
+    public func run(prompt: String, images: [ChatImage]) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -242,7 +244,7 @@ public class ACPAgentEngine: AgentEngine, @unchecked Sendable {
                     let onThoughtHandler = onThought   // 捕获当前值(Sendable closure,run 时快照)
                     let onUsageHandler = onUsage       // 同上
                     let sawUsage = ACPUsageArrivalFlag()
-                    let result = try await c.prompt(text: prompt) { update in
+                    let result = try await c.prompt(text: prompt, images: images) { update in
                         // agent_message_chunk → yield text delta(最终回复)
                         // agent_thought_chunk → onThought 回调(思考流 → App「思考中」状态;不 yield 免碎片)
                         // usage_update → onUsage 回调(上下文占用 → App 占用条;不 yield)

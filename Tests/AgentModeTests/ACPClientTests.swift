@@ -287,3 +287,53 @@ func clientEOFDuringConnect() async throws {
         _ = try await client.connect()
     }
 }
+
+// MARK: - P7.2 promptCapabilities + 图片 content block
+
+@Test("ACPClient.connect: 解析 promptCapabilities(值 true 才收;false/缺省 → 不收)")
+func clientConnectPromptCapabilities() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{"promptCapabilities":{"image":true,"audio":false,"embeddedContext":true}}}"#),
+    ])
+    let caps = try await ACPClient(transport: mock).connect()
+    #expect(caps.promptCapabilities == [.image, .embeddedContext])
+}
+
+@Test("ACPClient.connect: 无 promptCapabilities → 空(omitted = unsupported)")
+func clientConnectNoPromptCapabilities() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+    ])
+    #expect(try await ACPClient(transport: mock).connect().promptCapabilities.isEmpty)
+}
+
+@Test("ACPClient.prompt(images:):blocks 顺序 text→image,mimeType/base64 正确,空 data 图跳过")
+func clientPromptImages() async throws {
+    let mock = MockACPTransport([
+        resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+        resp(1, #"{"sessionId":"sess_1"}"#),
+        resp(2, #"{"stopReason":"end_turn"}"#),
+    ])
+    let client = ACPClient(transport: mock)
+    _ = try await client.connect()
+    _ = try await client.createSession(cwd: "/tmp", mcpServers: [])
+    let png = Data([0x89, 0x50, 0x4E, 0x47])
+    _ = try await client.prompt(
+        text: "看图",
+        images: [
+            ChatImage(data: png, mediaType: "image/png"),
+            ChatImage(data: Data(), mediaType: "image/png"),   // 空 data → 应被跳过
+        ],
+        onUpdate: { _ in }
+    )
+
+    let sent = mock.sentLines.last.map { ACPJSON.parse($0) ?? .null } ?? .null
+    #expect(sent.objectValue?["method"]?.stringValue == "session/prompt")
+    let blocks = sent.objectValue?["params"]?.objectValue?["prompt"]?.arrayValue
+    #expect(blocks?.count == 2)   // text + 1 图(空 data 已跳过)
+    #expect(blocks?[0].objectValue?["type"]?.stringValue == "text")
+    #expect(blocks?[0].objectValue?["text"]?.stringValue == "看图")
+    #expect(blocks?[1].objectValue?["type"]?.stringValue == "image")
+    #expect(blocks?[1].objectValue?["mimeType"]?.stringValue == "image/png")
+    #expect(blocks?[1].objectValue?["data"]?.stringValue == png.base64EncodedString())
+}

@@ -189,7 +189,10 @@ public struct CompanionOrchestrator: Sendable {
     /// 常见场景: 国内云厂商 SSE 建连成功但服务端 chunk 卡死, URLSession
     /// 默认 60s 单 chunk timeout 偶有不可靠。Shell 层 LLMErrorMessages.friendly
     /// 会把 URLError(.timedOut) surface 成"请求超时"友好文案。
-    public func replyStream(for message: String) -> AsyncThrowingStream<String, Error> {
+    ///
+    /// P7.2:`images` 随用户消息落盘(结构化字段)并透传 agent 路径的 ACP image
+    /// content block;灵魂层路径不支持图片(上游能力门闸已拦,这里只保 store 保真)。
+    public func replyStream(for message: String, images: [ChatImage] = []) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             // N2.3 + C1 修复:把"走工具层 vs 灵魂层"的判断放在最外层 Task,
             // **再决定是否启动 watchdog**。之前 watchdog 跟 streamTask 并发
@@ -219,7 +222,9 @@ public struct CompanionOrchestrator: Sendable {
                 let agentModeOn = await agentModeBox.isAgentModeEnabled
                 if mentionedKind != nil || (agentModeOn && !forceSoul) {
                     // store 记**用户原文**(带 @,时间线可见),engine 收剥离 mention 后的 prompt。
-                    let userMessage = ConversationMessage(role: .user, content: message)
+                    // P7.2:图片作为结构化字段随用户消息落盘(不进 content 文本)。
+                    let userMessage = ConversationMessage(
+                        role: .user, content: message, images: images.isEmpty ? nil : images)
                     await conversationStore?.append(userMessage)
                     // mention 引擎不可用(CLI 未装 / 工厂无法构建)→ 友好文案 finish,
                     // 不抛错打断卡片(用户可换引擎重发)。
@@ -242,7 +247,7 @@ public struct CompanionOrchestrator: Sendable {
                     }
                     var accumulated = ""
                     do {
-                        for try await delta in agentModeBox.runAgent(prompt: prompt, kind: mentionedKind) {
+                        for try await delta in agentModeBox.runAgent(prompt: prompt, kind: mentionedKind, images: images) {
                             accumulated += delta
                             continuation.yield(delta)
                         }
@@ -289,7 +294,9 @@ public struct CompanionOrchestrator: Sendable {
 
                 do {
                     let messages = try await buildMessages(for: soulPrompt)
-                    let userMessage = ConversationMessage(role: .user, content: message)
+                    // P7.2:灵魂层不收图片(上游门闸已拦),但若带图仍随用户消息落盘保真。
+                    let userMessage = ConversationMessage(
+                        role: .user, content: message, images: images.isEmpty ? nil : images)
                     await conversationStore?.append(userMessage)
 
                     var accumulated = ""

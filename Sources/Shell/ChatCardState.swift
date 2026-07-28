@@ -1,4 +1,5 @@
 import Foundation
+import Orchestrator
 
 /// 对话卡片里的一条消息行（user 或 assistant）。`Identifiable` 供 SwiftUI ForEach 稳定身份；
 /// `text` 可变以承接流式 delta 覆写。App 层从 `ConversationStore` 历史映射成它（开卡片恢复）。
@@ -13,14 +14,20 @@ public struct ChatCardRow: Identifiable, Equatable, Sendable {
     /// P6.1:用户行行首 `@trigger`(引擎或 pet;落盘文本保留原文,渲染时换图标 chip
     /// 并剥除前缀;nil = 普通用户行)。
     public let userMentionTrigger: String?
+    /// P7.2:用户行内联图片(发送时带的附件;历史恢复自 store 的结构化字段)。
+    public let images: [ChatImage]
 
-    public init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date(), source: String? = nil, userMentionTrigger: String? = nil) {
+    public init(
+        id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date(),
+        source: String? = nil, userMentionTrigger: String? = nil, images: [ChatImage] = []
+    ) {
         self.id = id
         self.role = role
         self.text = text
         self.timestamp = timestamp
         self.source = source
         self.userMentionTrigger = userMentionTrigger
+        self.images = images
     }
 }
 
@@ -53,8 +60,26 @@ public struct ACPSessionItem: Identifiable, Equatable, Sendable {
 public final class ChatCardState: ObservableObject {
     /// 渲染用的消息列表（user/assistant 交替）。
     @Published public var messages: [ChatCardRow] = []
-    /// composer 输入草稿（双向绑定）。
-    @Published public var draft: String = ""
+    /// composer 输入草稿 —— P7.1 起为 `composerParts` 的**序列化投影**(parts 是唯一事实源)。
+    /// 外部写 draft(prefill/clear)→ parts = 空 ? [] : [.text(draft)];读 draft = wire format
+    /// (行首 mention chip → `@trigger ` 前缀),`handleSend(state.draft)` 与 prefill 路径零改动。
+    @Published public var draft: String = "" {
+        didSet {
+            guard draft != ComposerParts.serialized(composerParts) else { return }
+            composerParts = draft.isEmpty ? [] : [.text(draft)]
+        }
+    }
+    /// P7.1:composer 内容模型(opencode part 模型:文本段 + mention chip,NSTextView 编辑器双向投影)。
+    @Published public var composerParts: [ComposerPart] = [] {
+        didSet {
+            let projected = ComposerParts.serialized(composerParts)
+            guard projected != draft else { return }
+            draft = projected
+        }
+    }
+    /// P7.2:composer 待发送图片附件(粘贴/拖拽进 editor 上方附件条;发送清空,
+    /// 能力门闸失败恢复路径会放回)。
+    @Published public var composerImages: [ChatImage] = []
     /// 是否有一轮回答正在流式中（禁发送 + 显示打点）。
     @Published public var isSending: Bool = false
     /// agent 思考中(ACP `agent_thought_chunk` 来时 true;流式 message 来时 false)。
@@ -167,23 +192,50 @@ public final class ChatCardState: ObservableObject {
     /// CLI 可用性)。空 → 不弹补全。
     @Published public var mentionOptions: [MentionOption] = []
     /// P6:当前钉住的引擎 trigger(nil = 未钉,默认灵魂层)。App 注入/刷新;
-    /// tray 标签按它与选中态解析有效 token(`MentionAutocomplete.trayToken`)。
-    @Published public var pinnedMentionTrigger: String?
-    /// P6.1:胶囊选中的**一次性**目标 trigger(nil = 无;发送即清空回弹)。
-    /// 与 `pinnedMentionTrigger` 正交:打字完整 @ > 胶囊选中 > pinned > soul。
-    @Published public var selectedMentionTrigger: String?
+    /// 变化经 `syncPinnedChip` 同步行首钉住 chip(P7.1 inline 版 tray 常驻语义)。
+    @Published public var pinnedMentionTrigger: String? {
+        didSet { syncPinnedChip() }
+    }
     /// P6:composer 钉住回调(App 注入:UD enabled+kind 写入 + engine 装配 + 配置刷新)。
     public var onPinMentionTrigger: (@MainActor (String) -> Void)?
     /// P6:composer 取消钉住回调(App 注入:UD enabled=false + engine 释放 + 配置刷新)。
     public var onUnpinMention: (@MainActor () -> Void)?
+
+    /// P7.1 pinned chip 同步(tray 常驻的 inline 版)。调用点:发送清空 draft 后、
+    /// 开卡 show 时、App 刷新 pin 配置后(后两者走 `pinnedMentionTrigger.didSet`)。
+    /// - parts 为空且 pinnedTrigger 非 nil → 行首重插钉住 chip(发送后回补);
+    /// - pinnedTrigger 变 nil 且行首是钉住 chip → 移除(取消钉住);
+    /// - 行首一次性 chip 的 trigger 已等于 pinnedTrigger(菜单钉住的 App 回环)→ 转钉住深色。
+    public func syncPinnedChip() {
+        if composerParts.isEmpty {
+            if let pinned = pinnedMentionTrigger {
+                composerParts = [.mention(trigger: pinned, isPinned: true)]
+            }
+            return
+        }
+        if let pinned = pinnedMentionTrigger,
+           case .mention(let trigger, isPinned: false) = composerParts.first,
+           trigger == pinned {
+            composerParts = ComposerParts.togglingPin(at: 0, in: composerParts)
+            return
+        }
+        if pinnedMentionTrigger == nil,
+           case .mention(_, isPinned: true) = composerParts.first {
+            composerParts = ComposerParts.removingMention(at: 0, in: composerParts)
+        }
+    }
 
     public init() {}
 
     /// 乐观追加：一条 user + 一条空 assistant（占位，供流式覆写）。返回 assistant row 的 id。
     /// P5:`assistantSource` = 目标 engine 短标签(@mention 署名 chip,App 注入解析;nil 无 chip)。
     /// P6.1:`userMentionTrigger` = 用户行行首 mention trigger(渲染图标 chip;nil 普通行)。
-    public func appendExchangePlaceholder(userText: String, now: Date = Date(), assistantSource: String? = nil, userMentionTrigger: String? = nil) -> UUID {
-        messages.append(ChatCardRow(role: .user, text: userText, timestamp: now, userMentionTrigger: userMentionTrigger))
+    /// P7.2:`images` = 用户行内联图片附件(空 = 无图,渲染零影响)。
+    public func appendExchangePlaceholder(
+        userText: String, now: Date = Date(), assistantSource: String? = nil,
+        userMentionTrigger: String? = nil, images: [ChatImage] = []
+    ) -> UUID {
+        messages.append(ChatCardRow(role: .user, text: userText, timestamp: now, userMentionTrigger: userMentionTrigger, images: images))
         let assistant = ChatCardRow(role: .assistant, text: "", timestamp: now, source: assistantSource)
         messages.append(assistant)
         return assistant.id

@@ -284,6 +284,38 @@ struct ACPAgentEngineTests {
         #expect(usages[1].prompt == ACPPromptUsage(inputTokens: 93, cachedReadTokens: 29_568, totalTokens: 29_727))
     }
 
+    // MARK: - P7.2 图片透传
+
+    @Test("ACPAgentEngine.run(prompt:images:):图片透传 client(session/prompt 带 image block)")
+    func runPassesImagesToClient() async throws {
+        let mock = MockACPTransport([
+            resp(0, #"{"protocolVersion":1,"agentCapabilities":{}}"#),
+            resp(1, #"{"sessionId":"sess_1"}"#),
+            updateChunk("看到了"),
+            resp(2, #"{"stopReason":"end_turn"}"#),
+        ])
+        let engine = makeEngine(mock)
+        let png = Data([0x89, 0x50, 0x4E, 0x47])
+
+        var deltas: [String] = []
+        for try await d in engine.run(prompt: "看图", images: [ChatImage(data: png, mediaType: "image/png")]) {
+            deltas.append(d)
+        }
+
+        #expect(deltas == ["看到了"])
+        let promptLines = mock.sentLines
+            .compactMap { ACPJSON.parse($0)?.objectValue }
+            .filter { $0["method"]?.stringValue == "session/prompt" }
+        #expect(promptLines.count == 1)
+        let blocks = promptLines[0]["params"]?.objectValue?["prompt"]?.arrayValue
+        #expect(blocks?.count == 2)
+        #expect(blocks?[0].objectValue?["type"]?.stringValue == "text")
+        #expect(blocks?[0].objectValue?["text"]?.stringValue == "看图")
+        #expect(blocks?[1].objectValue?["type"]?.stringValue == "image")
+        #expect(blocks?[1].objectValue?["mimeType"]?.stringValue == "image/png")
+        #expect(blocks?[1].objectValue?["data"]?.stringValue == png.base64EncodedString())
+    }
+
     // MARK: - P2 会话管理(list / load / new)
 
     private func makeEngine(_ mock: MockACPTransport) -> ACPAgentEngine {
