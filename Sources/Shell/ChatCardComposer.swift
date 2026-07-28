@@ -44,8 +44,8 @@ struct ChatCardComposer: View {
     @State private var hoveredThumbIndex: Int? = nil
 
     private var canSend: Bool {
-        // 只有 chip 不算可发送(路由要求 mention 后有正文)。
-        ComposerParts.hasContent(parts) && !isSending
+        // 有正文或有图片附件即可发送;只有 chip 不算(路由要求 mention 后有正文)。
+        ComposerParts.sendable(parts, imageCount: images.count) && !isSending
     }
 
     /// 打字 @ 触发的过滤候选(不处于 mention 输入 → 空)。
@@ -58,13 +58,35 @@ struct ChatCardComposer: View {
         !mentionMatches.isEmpty && !mentionDismissed
     }
 
+    /// P7-polish:光标矩形(editor 上报,window content 左上原点;picker 锚定)。
+    @State private var caretRect: CGRect = .zero
+
     private let placeholder = "问点什么，@ 可点名引擎…"
+
+    /// picker 定宽(光标锚定浮层;不再占布局位)。
+    private static let pickerWidth: CGFloat = 260
+    /// picker 行高估值(7+7 padding + ~17 文本;配合 6pt gap 吸收字体度量误差)。
+    private static let pickerRowHeight: CGFloat = 31
+
+    private var pickerHeight: CGFloat {
+        CGFloat(mentionMatches.count) * Self.pickerRowHeight + 8
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if pickerVisible { mentionPicker }
             if !images.isEmpty { attachmentStrip }
             inputPill
+        }
+        // P7-polish:picker 浮层锚定光标(上方弹出,空间不足翻转下方),不占布局位 —
+        // 出现/收起不再推挤附件条与输入 pill。
+        .overlay {
+            if pickerVisible {
+                GeometryReader { geo in
+                    mentionPicker
+                        .frame(width: Self.pickerWidth)
+                        .position(pickerPosition(in: geo))
+                }
+            }
         }
         // 过滤结果变化 → 高亮归零;进入新一段 mention 输入 → dismiss 复位
         .onChange(of: mentionMatches.map(\.trigger)) { _, _ in
@@ -163,7 +185,8 @@ struct ChatCardComposer: View {
                 onPinMention: { onPinMention?($0) },
                 onUnpinMention: { onUnpinMention?() },
                 onFocusChange: { editorFocused = $0 },
-                onImage: { images.append($0) }
+                onImage: { images.append($0) },
+                onCaretChange: { caretRect = $0 }
             )
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
@@ -274,6 +297,22 @@ struct ChatCardComposer: View {
     }
 
     // MARK: - picker 交互
+
+    /// picker 中心点(overlay 内):caret 矩形(window 左上原点)换算 geo 局部 → 纯函数定位。
+    private func pickerPosition(in geo: GeometryProxy) -> CGPoint {
+        let origin = geo.frame(in: .global).origin
+        let leading = ComposerParts.pickerLeading(
+            caretMinX: caretRect.minX - origin.x,
+            containerWidth: geo.size.width,
+            pickerWidth: Self.pickerWidth
+        )
+        let top = ComposerParts.pickerTop(
+            caretTop: caretRect.minY - origin.y,
+            caretBottom: caretRect.maxY - origin.y,
+            pickerHeight: pickerHeight
+        )
+        return CGPoint(x: leading + Self.pickerWidth / 2, y: top + pickerHeight / 2)
+    }
 
     private func moveMentionSelection(_ delta: Int) -> Bool {
         guard pickerVisible else { return false }

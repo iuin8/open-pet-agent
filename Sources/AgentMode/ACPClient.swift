@@ -212,6 +212,8 @@ public actor ACPClient {
     /// P7.2:`images` 追加 ACP image content block(text 块在前,每图一个 image 块,
     /// `mimeType` + base64 `data`;空 data 图防御跳过)。调用方负责按 `promptCapabilities`
     /// 裁剪(能力门闸在 App 层,此处忠实透传)。
+    /// P7-polish:文本为空且有图 → **不前置 text block**(ACP prompt = ContentBlock[],
+    /// 只含 image blocks 合法);文本图片皆空保持原样(防御,UI 层不可达)。
     public func prompt(
         text: String,
         images: [ChatImage] = [],
@@ -221,7 +223,10 @@ public actor ACPClient {
         updateHandler = onUpdate
         defer { updateHandler = nil }
         let id = nextRequestID()
-        var blocks: [ACPJSON] = [.object(["type": .string("text"), "text": .string(text)])]
+        var blocks: [ACPJSON] = []
+        if !text.isEmpty || images.isEmpty {
+            blocks.append(.object(["type": .string("text"), "text": .string(text)]))
+        }
         for image in images where !image.data.isEmpty {
             blocks.append(.object([
                 "type": .string("image"),

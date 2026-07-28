@@ -148,7 +148,8 @@ public final class ChatCardWindowController {
 
     func handleSend(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !state.isSending else { return }
+        // P7-polish:纯图片消息(trimmed 空 + 附件非空)也放行 —— 空文本不前置 text block。
+        guard (!trimmed.isEmpty || !state.composerImages.isEmpty), !state.isSending else { return }
         // P7.2:发送前快照(gate 失败恢复用:parts 原结构 + 图片附件)。
         let images = state.composerImages
         let originalParts = state.composerParts

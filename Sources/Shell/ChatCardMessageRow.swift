@@ -55,17 +55,20 @@ struct ChatCardMessageRow: View {
             // P7.2:图片附件在正文上方缩略横排(无图零影响)。
             VStack(alignment: .trailing, spacing: 6) {
                 if !row.images.isEmpty { imageStrip }
-                // P6.1:行首 @trigger 渲染为引擎 logo chip + 剥除前缀的正文(落盘原文不动)。
-                HStack(alignment: .center, spacing: 5) {
-                    if let mention = userMention {
-                        mentionChip(mention)
+                // P7-polish:纯图片消息(空文本)不渲染空文本泡。
+                if !row.text.isEmpty {
+                    // P6.1:行首 @trigger 渲染为引擎 logo chip + 剥除前缀的正文(落盘原文不动)。
+                    HStack(alignment: .center, spacing: 5) {
+                        if let mention = userMention {
+                            mentionChip(mention)
+                        }
+                        Text(userMention != nil
+                             ? MentionAutocomplete.strippingLeadingMention(row.text, options: mentionOptions)
+                             : row.text)
+                            .font(ChatCardTheme.body)
+                            .foregroundStyle(ChatCardTheme.userBubbleText)
+                            .textSelection(.enabled)
                     }
-                    Text(userMention != nil
-                         ? MentionAutocomplete.strippingLeadingMention(row.text, options: mentionOptions)
-                         : row.text)
-                        .font(ChatCardTheme.body)
-                        .foregroundStyle(ChatCardTheme.userBubbleText)
-                        .textSelection(.enabled)
                 }
             }
         } else if row.text.isEmpty {

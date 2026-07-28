@@ -330,4 +330,27 @@ struct ChatCardWindowControllerImageGateTests {
         #expect(box.images == [])
         #expect(ctrl.cardState.messages[1].text != LLMErrorMessages.imageUnsupported)
     }
+
+    @Test("纯图片消息(空文本 + 附件)→ 放行发送,provider 收到空串 + 图")
+    func imageOnlyMessageSends() async {
+        final class Box: @unchecked Sendable { var text: String?; var images: [ChatImage]? }
+        let box = Box()
+        let ctrl = ChatCardWindowController(streamProvider: { text, images in
+            box.text = text
+            box.images = images
+            return AsyncThrowingStream { $0.finish() }
+        })
+        ctrl.imageGateProvider = { _, _ in true }
+        let image = makeImage()
+        ctrl.cardState.composerImages = [image]
+
+        ctrl.handleSend(ctrl.cardState.draft)   // draft == ""
+        await ctrl.cardState.streamTask?.value
+
+        #expect(box.text == "")
+        #expect(box.images == [image])
+        #expect(ctrl.cardState.messages[0].text == "")            // 用户行空文本
+        #expect(ctrl.cardState.messages[0].images == [image])     // 缩略图回显
+        #expect(ctrl.cardState.composerImages.isEmpty)
+    }
 }

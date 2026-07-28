@@ -62,6 +62,13 @@ public enum ComposerParts {
         return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// 发送闸门(P7-polish):有正文 **或** 有图片附件即可发送(纯图片消息 = 空文本 +
+    /// image content blocks,ACP spec 合法;空文本时 ACPClient 不前置 text block)。
+    /// 纯逻辑不依赖 ChatImage 类型,调用方传 `images.count`。
+    public static func sendable(_ parts: [ComposerPart], imageCount: Int) -> Bool {
+        hasContent(parts) || imageCount > 0
+    }
+
     // MARK: - 纯函数操作
 
     /// picker 接受 mention:用 chip 替换已键入的 `@query` 段。
@@ -139,6 +146,23 @@ public enum ComposerParts {
             return [.togglePin, .remove]
         }
         return [.remove]
+    }
+
+    // MARK: - picker 光标锚定(P7-polish;坐标均为 composer 局部,单位 pt)
+
+    /// picker 前缘 x:对齐光标,clamp 在容器内(左右各留 margin)。
+    public static func pickerLeading(
+        caretMinX: CGFloat, containerWidth: CGFloat, pickerWidth: CGFloat, margin: CGFloat = 8
+    ) -> CGFloat {
+        min(max(caretMinX, margin), max(margin, containerWidth - pickerWidth - margin))
+    }
+
+    /// picker 顶缘 y:光标上方 gap 处;上方放不下(越顶)→ 翻转到光标下方(群聊/IDE 补全惯例)。
+    public static func pickerTop(
+        caretTop: CGFloat, caretBottom: CGFloat, pickerHeight: CGFloat, gap: CGFloat = 6, margin: CGFloat = 8
+    ) -> CGFloat {
+        let above = caretTop - gap - pickerHeight
+        return above >= margin ? above : caretBottom + gap
     }
 
     // MARK: - 规范化
